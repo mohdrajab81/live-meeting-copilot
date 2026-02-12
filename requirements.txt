@@ -1,0 +1,8 @@
+azure-ai-projects
+azure-cognitiveservices-speech
+azure-identity
+fastapi
+pydantic
+pydantic-settings
+python-dotenv
+uvicorn[standard]

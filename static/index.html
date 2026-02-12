@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live Speech Translator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=IBM+Plex+Sans+Arabic:wght@300;500;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">Live Speech Translator</div>
+      <div class="status-wrap">
+        <span id="statusDot" class="status-dot"></span>
+        <span id="statusText" class="status-text">connecting</span>
+      </div>
+      <button id="startBtn" class="btn btn-start" type="button">Start</button>
+      <button id="stopBtn" class="btn btn-stop" type="button">Stop</button>
+      <button id="clearBtn" class="btn" type="button">Clear Transcript</button>
+      <span id="reconnectBadge" class="badge hidden">Reconnecting...</span>
+      <div class="time-strip">
+        <span id="clockNow" class="chip">Now --:--:--</span>
+        <span id="sessionStart" class="chip">Session --:--:--</span>
+        <span id="recordTimer" class="chip chip-strong">Record 00:00:00</span>
+      </div>
+    </header>
+
+    <main class="stage">
+      <section class="timeline-wrap">
+        <div class="timeline-head">
+          <div class="timeline-title">Transcript Timeline</div>
+          <div class="timeline-cols">
+            <span>English</span>
+            <span>Arabic</span>
+          </div>
+          <input id="transcriptSearch" class="search-input" type="text" placeholder="Search transcript text..." />
+        </div>
+        <div id="timeline" class="timeline show-ts"></div>
+        <div id="timelineDivider" class="timeline-divider" title="Drag to resize live area"></div>
+
+        <section class="live-strip live-bottom">
+          <div class="live-card">
+            <div class="card-label">English Live</div>
+            <div id="enInterim" class="live-text en interim"></div>
+          </div>
+          <div class="live-card">
+            <div class="card-label">Arabic Live</div>
+            <div id="arInterim" class="live-text ar interim"></div>
+          </div>
+        </section>
+      </section>
+
+      <aside class="side-panel">
+        <div class="tabs">
+          <button class="tab-btn active" type="button" data-tab="logsTab">Logs</button>
+          <button class="tab-btn" type="button" data-tab="coachTab">Coach</button>
+          <button class="tab-btn" type="button" data-tab="settingsTab">Settings</button>
+          <button class="tab-btn" type="button" data-tab="exportTab">Export</button>
+        </div>
+
+        <section id="logsTab" class="tab-pane active panel">
+          <div class="panel-head">
+            <h3>Logs</h3>
+            <div class="actions compact">
+              <button id="copyLogsBtn" class="btn" type="button">Copy</button>
+              <button id="clearLogsBtn" class="btn" type="button">Clear</button>
+              <button id="exportLogsBtn" class="btn" type="button">Export TXT</button>
+            </div>
+          </div>
+          <input id="logsSearch" class="search-input" type="text" placeholder="Search logs..." />
+          <div id="logs" class="logs"></div>
+        </section>
+
+        <section id="coachTab" class="tab-pane panel">
+          <div class="panel-head">
+            <h3>Interview Coach</h3>
+            <div class="actions compact">
+              <button id="clearCoachBtn" class="btn" type="button">Clear</button>
+            </div>
+          </div>
+          <label>Manual Ask</label>
+          <textarea id="coachPrompt" rows="4" placeholder="Ask for a suggested reply or strategy..."></textarea>
+          <div class="actions compact">
+            <button id="askCoachBtn" class="btn" type="button">Ask Agent</button>
+          </div>
+          <div id="coachStatus" class="muted">Coach suggestions appear here.</div>
+          <div id="coachHints" class="coach-hints"></div>
+        </section>
+
+        <section id="settingsTab" class="tab-pane panel">
+          <h3>Configuration</h3>
+          <label>Recognition Language</label>
+          <input id="cfgLang" type="text" />
+          <label>Capture Mode</label>
+          <select id="cfgCaptureMode">
+            <option value="single">Single Input</option>
+            <option value="dual">Dual Input (You + Remote)</option>
+          </select>
+          <label>Audio Input Source</label>
+          <select id="cfgAudioSource">
+            <option value="default">Default Microphone</option>
+            <option value="device_id">Specific Device ID</option>
+          </select>
+          <label>Input Device ID</label>
+          <input id="cfgInputDeviceId" type="text" list="audioDevicesList" placeholder="{0.0.1.00000000}.{...}" />
+          <datalist id="audioDevicesList"></datalist>
+          <div class="actions compact">
+            <button id="refreshAudioDevicesBtn" class="btn" type="button">Refresh Devices</button>
+          </div>
+          <div id="audioDevicesHint" class="muted">Use Default for normal mic, or choose Specific Device ID for VB Cable/Voicemeeter.</div>
+          <div id="dualInputGroup">
+            <label>Your Speaker Label</label>
+            <input id="cfgLocalSpeakerLabel" type="text" placeholder="You" />
+            <label>Your Input Device ID</label>
+            <input id="cfgLocalInputDeviceId" type="text" list="audioDevicesList" placeholder="{0.0.1.00000000}.{...}" />
+            <label>Remote Speaker Label</label>
+            <input id="cfgRemoteSpeakerLabel" type="text" placeholder="Remote" />
+            <label>Remote Input Device ID</label>
+            <input id="cfgRemoteInputDeviceId" type="text" list="audioDevicesList" placeholder="{0.0.1.00000000}.{...}" />
+            <div class="muted">Dual mode needs two different active devices for clean separation.</div>
+          </div>
+          <label>End Silence (ms)</label>
+          <input id="cfgEnd" type="number" />
+          <label>Initial Silence (ms)</label>
+          <input id="cfgInitial" type="number" />
+          <label>Max Finals</label>
+          <input id="cfgMaxFinals" type="number" />
+          <label class="check">
+            <input id="cfgDebug" type="checkbox" />
+            Enable Debug Logs
+          </label>
+          <label class="check">
+            <input id="showTs" type="checkbox" />
+            Show Entry Timestamps
+          </label>
+          <label class="check">
+            <input id="cfgCoachEnabled" type="checkbox" />
+            Enable Auto Interview Coach
+          </label>
+          <label>Coach Trigger Speaker</label>
+          <select id="cfgCoachTriggerSpeaker">
+            <option value="remote">Remote</option>
+            <option value="local">Local</option>
+            <option value="default">Default</option>
+            <option value="any">Any</option>
+          </select>
+          <label>Coach Cooldown (sec)</label>
+          <input id="cfgCoachCooldownSec" type="number" min="0" max="120" />
+          <label>Coach Context Turns</label>
+          <input id="cfgCoachMaxTurns" type="number" min="2" max="30" />
+          <label>Coach Instruction</label>
+          <textarea id="cfgCoachInstruction" rows="4" placeholder="How the coach should respond..."></textarea>
+          <label>App Font</label>
+          <select id="fontFamily">
+            <option value="Manrope">Manrope</option>
+            <option value="Segoe UI">Segoe UI</option>
+            <option value="Arial">Arial</option>
+            <option value="Noto Sans Arabic">Noto Sans Arabic</option>
+          </select>
+          <label>Transcript Font Size</label>
+          <input id="fontScale" type="range" min="0.8" max="1.4" step="0.05" value="1" />
+          <div id="fontScaleVal" class="muted">100%</div>
+          <div class="actions">
+            <button id="applyConfigBtn" class="btn" type="button">Apply</button>
+            <button id="saveConfigBtn" class="btn" type="button">Save</button>
+            <button id="reloadConfigBtn" class="btn" type="button">Reload</button>
+          </div>
+        </section>
+
+        <section id="exportTab" class="tab-pane panel">
+          <h3>Exports</h3>
+          <p class="muted">Download transcript/translation or logs with timestamps.</p>
+          <div class="actions">
+            <button id="exportTranscriptJsonBtn" class="btn" type="button">Export JSON</button>
+            <button id="exportTranscriptCsvBtn" class="btn" type="button">Export CSV</button>
+            <button id="exportLogsFromExportBtn" class="btn" type="button">Export Logs TXT</button>
+          </div>
+        </section>
+      </aside>
+    </main>
+  </div>
+  <script src="/client.js"></script>
+</body>
+</html>
