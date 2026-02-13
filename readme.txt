@@ -11,7 +11,8 @@ Features
 - Dual input mode (local + remote microphones with separate labels)
 - Live transcript stream over WebSocket (`/ws`)
 - Runtime configuration API (`/api/config`)
-- Optional AI coach hints (quick + deep suggestions)
+- Optional AI coach hints (manual + auto deep suggestions)
+- Session-scoped coach conversation continuity using Azure OpenAI Conversations API
 
 Tech Stack
 ----------
@@ -113,6 +114,13 @@ Key fields accepted by `PUT /api/config`:
 - `coach_cooldown_sec`, `coach_max_turns`, `coach_instruction`
 - `end_silence_ms`, `initial_silence_ms`, `max_finals`, `debug`
 
+Coach Runtime Behavior
+----------------------
+- On `POST /api/start`, if coach is enabled, the app initializes one conversation session and reuses it for manual and auto coach asks until stop/reset.
+- Auto coach sends transcript updates incrementally (delta since last sent point), not full history every turn.
+- If a new coach trigger arrives while a coach call is running, latest trigger is queued and resumed after current call completes.
+- Manual coach asks continue in the same active conversation session.
+
 Troubleshooting
 ---------------
 - PowerShell execution policy issue:
@@ -125,6 +133,11 @@ Troubleshooting
   - Login with Azure CLI to the correct tenant and scope:
   - `az logout`
   - `az login --tenant "<tenant-id>" --scope "https://ai.azure.com/.default"`
+- Start blocked with conversations support error:
+  - Current runtime/client must support `openai_client.conversations.create()`.
+  - Update dependencies and retry:
+  - `python -m pip install -U azure-ai-projects openai`
+  - Verify you are using the intended Python environment (`.venv`).
 - After project folder rename:
   - If `.venv` breaks, recreate it and reinstall requirements
 
