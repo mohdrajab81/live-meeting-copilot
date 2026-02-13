@@ -43,6 +43,9 @@ class AppController:
         self.coach_pending = False
         self.coach_last_run_ts = 0.0
         self.coach_group_seq = 0
+        self.coach_last_sent_final_idx = 0
+        self.coach_inflight_final_idx = 0
+        self.coach_queued_trigger: dict[str, Any] | None = None
 
         self.speech = SpeechService(
             settings=settings,
@@ -109,6 +112,8 @@ class AppController:
                 "coach": {
                     "configured": self.coach.is_configured,
                     "pending": self.coach_pending,
+                    "queued": self.coach_queued_trigger is not None,
+                    "last_sent_final_idx": self.coach_last_sent_final_idx,
                     "hints": list(self.coach_hints),
                 },
             }
@@ -145,18 +150,23 @@ class AppController:
         if loop and loop.is_running():
             asyncio.run_coroutine_threadsafe(self.broadcast(payload), loop)
 
-    def _should_trigger_coach_unlocked(self, item: dict[str, Any]) -> bool:
+    def _should_trigger_coach_unlocked(
+        self,
+        item: dict[str, Any],
+        *,
+        ignore_busy: bool = False,
+        ignore_cooldown: bool = False,
+    ) -> bool:
         if not self.config.coach_enabled:
             return False
         if not self.coach.is_configured:
             return False
-        if not self._is_meaningful_coach_turn_unlocked(item):
+        if (not ignore_busy) and self.coach_pending:
             return False
-        if self.coach_pending:
-            return False
-        now = time.time()
-        if now - self.coach_last_run_ts < float(self.config.coach_cooldown_sec):
-            return False
+        if not ignore_cooldown:
+            now = time.time()
+            if now - self.coach_last_run_ts < float(self.config.coach_cooldown_sec):
+                return False
 
         trigger = self.config.coach_trigger_speaker
         speaker = str(item.get("speaker", "default") or "default")
@@ -164,49 +174,20 @@ class AppController:
             return True
         return trigger == speaker
 
-    def _is_meaningful_coach_turn_unlocked(self, item: dict[str, Any]) -> bool:
-        text = str(item.get("en", "") or "").strip().lower()
-        if not text:
-            return False
-
-        words = [w for w in text.replace("?", " ").replace(".", " ").split() if w]
-        if len(words) < 4:
-            return False
-
-        greeting_starts = (
-            "hello",
-            "hi",
-            "hey",
-            "good morning",
-            "good afternoon",
-            "good evening",
-            "thank you",
-            "thanks",
+    def _has_text_unlocked(self, item: dict[str, Any]) -> bool:
+        text = (
+            str(item.get("en", "") or "").strip()
+            or str(item.get("ar", "") or "").strip()
         )
-        question_cues = (
-            "?",
-            "please",
-            "can you",
-            "could you",
-            "would you",
-            "tell me",
-            "describe",
-            "introduce",
-            "what",
-            "why",
-            "how",
-            "when",
-            "where",
-        )
+        return bool(text)
 
-        if text.startswith(greeting_starts):
-            # Skip short opening pleasantries unless they already contain a clear request.
-            if not any(cue in text for cue in question_cues):
-                return False
-
-        return True
-
-    def _build_coach_prompt_unlocked(self, trigger_item: dict[str, Any]) -> str:
+    def _build_coach_prompt_unlocked(
+        self,
+        trigger_item: dict[str, Any],
+        delta_turns: list[dict[str, Any]],
+        *,
+        session_start: bool,
+    ) -> str:
         turns = self.finals[-self.config.coach_max_turns :]
         lines: list[str] = []
         for turn in turns:
@@ -218,6 +199,17 @@ class AppController:
                 continue
             ts = time.strftime("%H:%M:%S", time.localtime(float(turn.get("ts") or time.time())))
             lines.append(f"[{ts}] {label}: {text}")
+
+        delta_lines: list[str] = []
+        for turn in delta_turns:
+            label = str(turn.get("speaker_label", "Speaker") or "Speaker")
+            en = str(turn.get("en", "") or "").strip()
+            ar = str(turn.get("ar", "") or "").strip()
+            text = en or ar
+            if not text:
+                continue
+            ts = time.strftime("%H:%M:%S", time.localtime(float(turn.get("ts") or time.time())))
+            delta_lines.append(f"[{ts}] {label}: {text}")
 
         trigger_label = str(trigger_item.get("speaker_label", "Speaker") or "Speaker")
         trigger_en = (
@@ -240,7 +232,13 @@ class AppController:
                 "Latest interviewer utterance:",
                 f"{trigger_label}: {trigger_en}",
                 "",
-                "Recent conversation context:",
+                "Session transcript update:",
+                "This is the full transcript from session start."
+                if session_start
+                else "This is only the new transcript delta since last update.",
+                "\n".join(delta_lines) if delta_lines else "(no new turns)",
+                "",
+                "Recent conversation window:",
                 "\n".join(lines) if lines else "(no recent turns)",
                 "",
                 "Return format:",
@@ -254,26 +252,43 @@ class AppController:
         self.coach_group_seq += 1
         return f"coach-{int(time.time())}-{self.coach_group_seq}"
 
-    def _build_quick_hint_unlocked(self, trigger_item: dict[str, Any]) -> str:
-        text = str(trigger_item.get("en", "") or "").strip()
-        low = text.lower()
-        if any(k in low for k in ("introduce yourself", "tell me about yourself", "summarize your background")):
-            return (
-                "Quick draft: 1) one-line intro, 2) years/domain focus, 3) one high-impact result, "
-                "4) why this role. Keep it under 60-90 seconds."
-            )
-        if any(k in low for k in ("why should we hire", "why you", "why are you a good fit")):
-            return (
-                "Quick draft: match role needs to your strengths + one measurable outcome + close with readiness."
-            )
-        if "?" in text or any(
-            k in low
-            for k in ("can you", "could you", "would you", "what", "why", "how", "describe", "please")
+    def _prepare_coach_call_unlocked(
+        self,
+        trigger_item: dict[str, Any],
+        *,
+        ignore_cooldown: bool = False,
+    ) -> tuple[str, str, float, int] | None:
+        if not self._has_text_unlocked(trigger_item):
+            return None
+        if not self._should_trigger_coach_unlocked(
+            trigger_item,
+            ignore_busy=False,
+            ignore_cooldown=ignore_cooldown,
         ):
-            return (
-                "Quick draft: acknowledge question, answer in 2-3 points, give one concrete project proof."
-            )
-        return "Quick tip: stay concise, answer directly, then add one verified proof point."
+            return None
+
+        end_idx = len(self.finals)
+        start_idx = int(self.coach_last_sent_final_idx)
+        if start_idx < 0:
+            start_idx = 0
+        if start_idx > end_idx:
+            start_idx = end_idx
+        delta_turns = self.finals[start_idx:end_idx]
+        if not delta_turns:
+            return None
+
+        session_start = start_idx == 0
+        coach_prompt = self._build_coach_prompt_unlocked(
+            trigger_item,
+            delta_turns,
+            session_start=session_start,
+        )
+
+        self.coach_pending = True
+        self.coach_last_run_ts = time.time()
+        self.coach_inflight_final_idx = end_idx
+        coach_group_id = self._next_coach_group_id_unlocked()
+        return coach_prompt, coach_group_id, self.coach_last_run_ts, end_idx
 
     async def _run_coach(
         self,
@@ -281,6 +296,7 @@ class AppController:
         trigger_item: dict[str, Any],
         group_id: str,
         trigger_ts: float,
+        inflight_end_idx: int,
     ) -> None:
         try:
             run_start = time.time()
@@ -333,11 +349,48 @@ class AppController:
                     f"total_ms={result.total_ms}, end_to_end_ms={end_to_end_ms}"
                 ),
             )
+            with self.lock:
+                if inflight_end_idx > self.coach_last_sent_final_idx:
+                    self.coach_last_sent_final_idx = inflight_end_idx
         except Exception as ex:
             await self.broadcast_log("error", f"Coach request failed: {ex}")
         finally:
+            queued: dict[str, Any] | None = None
+            next_call: tuple[str, str, float, int] | None = None
             with self.lock:
                 self.coach_pending = False
+                self.coach_inflight_final_idx = 0
+                queued = self.coach_queued_trigger
+                self.coach_queued_trigger = None
+                if queued:
+                    next_call = self._prepare_coach_call_unlocked(
+                        queued,
+                        ignore_cooldown=True,
+                    )
+
+            if queued and not next_call:
+                await self.broadcast_log(
+                    "debug",
+                    "Queued coach trigger dropped (not eligible by current settings).",
+                )
+
+            if next_call:
+                next_prompt, next_group_id, next_trigger_ts, next_end_idx = next_call
+                await self.broadcast_log(
+                    "info",
+                    (
+                        "Coach queued trigger resumed: "
+                        f"group={next_group_id}, trigger={queued.get('speaker_label', 'Speaker')}, "
+                        f"trigger_text={str(queued.get('en', '') or '').strip()}"
+                    ),
+                )
+                await self._run_coach(
+                    next_prompt,
+                    queued or {},
+                    next_group_id,
+                    next_trigger_ts,
+                    next_end_idx,
+                )
 
     def handle_speech_event(self, payload: dict[str, Any]) -> None:
         kind = payload.get("type")
@@ -402,10 +455,8 @@ class AppController:
 
         if kind == "final":
             trigger_coach = False
-            coach_prompt = ""
-            coach_group_id = ""
-            coach_trigger_ts = 0.0
-            quick_hint: dict[str, Any] | None = None
+            coach_call: tuple[str, str, float, int] | None = None
+            queued_while_busy = False
             item = {
                 "type": "final",
                 "en": str(payload.get("en", "") or ""),
@@ -429,42 +480,30 @@ class AppController:
                 self.en_live = ""
                 self.ar_live = ""
                 self.live_partials.pop(item["speaker"], None)
-                trigger_coach = self._should_trigger_coach_unlocked(item)
-                if trigger_coach:
-                    self.coach_pending = True
-                    self.coach_last_run_ts = time.time()
-                    coach_trigger_ts = self.coach_last_run_ts
-                    coach_group_id = self._next_coach_group_id_unlocked()
-                    coach_prompt = self._build_coach_prompt_unlocked(item)
-                    quick_hint = {
-                        "type": "coach",
-                        "hint_kind": "quick",
-                        "group_id": coach_group_id,
-                        "ts": time.time(),
-                        "speaker": str(item.get("speaker", "default") or "default"),
-                        "speaker_label": str(
-                            item.get("speaker_label", "Speaker") or "Speaker"
-                        ),
-                        "trigger_en": str(item.get("en", "") or ""),
-                        "suggestion": self._build_quick_hint_unlocked(item),
-                    }
-                    self.coach_hints.append(quick_hint)
-                    if len(self.coach_hints) > 120:
-                        self.coach_hints = self.coach_hints[-120:]
+                is_candidate = self._should_trigger_coach_unlocked(
+                    item,
+                    ignore_busy=True,
+                )
+                if is_candidate:
+                    if self.coach_pending:
+                        self.coach_queued_trigger = dict(item)
+                        queued_while_busy = True
+                    else:
+                        coach_call = self._prepare_coach_call_unlocked(item)
+                        trigger_coach = coach_call is not None
             self._broadcast_from_thread(item)
-            if quick_hint:
-                self._broadcast_from_thread(quick_hint)
+            if queued_while_busy:
                 self._broadcast_from_thread(
                     self._append_log(
-                        "info",
+                        "debug",
                         (
-                            "Coach quick hint trace: "
-                            f"group={coach_group_id}, trigger={item['speaker_label']}, "
-                            f"text_len={len(item['en'])}, prompt_chars={len(coach_prompt)}"
+                            "Coach trigger queued while busy: "
+                            f"trigger={item['speaker_label']}, text={item['en']}"
                         ),
                     )
                 )
-            if trigger_coach:
+            if trigger_coach and coach_call:
+                coach_prompt, coach_group_id, coach_trigger_ts, inflight_end_idx = coach_call
                 loop = self.loop
                 if loop and loop.is_running():
                     asyncio.run_coroutine_threadsafe(
@@ -473,6 +512,7 @@ class AppController:
                             item,
                             coach_group_id,
                             coach_trigger_ts,
+                            inflight_end_idx,
                         ),
                         loop,
                     )
@@ -486,10 +526,30 @@ class AppController:
             self._broadcast_from_thread(item)
 
     def start(self) -> bool:
-        return self.speech.start_recognition()
+        started = self.speech.start_recognition()
+        if not started:
+            return False
+        with self.lock:
+            self.session_started_ts = time.time()
+            self.coach_pending = False
+            self.coach_last_run_ts = 0.0
+            self.coach_last_sent_final_idx = len(self.finals)
+            self.coach_inflight_final_idx = 0
+            self.coach_queued_trigger = None
+        self.coach.clear_conversation()
+        return True
 
     def stop(self) -> bool:
-        return self.speech.stop_recognition()
+        stopped = self.speech.stop_recognition()
+        if not stopped:
+            return False
+        with self.lock:
+            self.coach_pending = False
+            self.coach_last_run_ts = 0.0
+            self.coach_inflight_final_idx = 0
+            self.coach_queued_trigger = None
+        self.coach.clear_conversation()
+        return True
 
     def clear_logs(self) -> None:
         with self.lock:
@@ -501,12 +561,19 @@ class AppController:
             self.en_live = ""
             self.ar_live = ""
             self.live_partials = {}
+            self.coach_last_sent_final_idx = 0
+            self.coach_inflight_final_idx = 0
+            self.coach_queued_trigger = None
+        self.coach.clear_conversation()
 
     def clear_coach(self) -> None:
         with self.lock:
             self.coach_hints = []
             self.coach_pending = False
             self.coach_last_run_ts = 0.0
+            self.coach_last_sent_final_idx = len(self.finals)
+            self.coach_inflight_final_idx = 0
+            self.coach_queued_trigger = None
         self.coach.clear_conversation()
 
     async def request_coach(self, prompt: str, speaker_label: str = "Manual") -> dict[str, Any]:

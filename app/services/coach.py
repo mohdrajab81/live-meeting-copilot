@@ -27,6 +27,7 @@ class CoachService:
         self._agent_ref = agent_ref.strip()
         self._agent_key = "id" if self._agent_ref.startswith("asst_") else "name"
         self._conversation_id: str | None = None
+        self._previous_response_id: str | None = None
         self._openai_client: Any = None
 
     @property
@@ -111,6 +112,8 @@ class CoachService:
         }
         if self._conversation_id:
             params["conversation"] = self._conversation_id
+        if self._previous_response_id:
+            params["previous_response_id"] = self._previous_response_id
 
         total_start = time.perf_counter()
         create_start = time.perf_counter()
@@ -119,6 +122,7 @@ class CoachService:
         response, rounds, approvals, approve_ms = self._auto_approve_mcp_if_needed(response)
         total_ms = int((time.perf_counter() - total_start) * 1000)
         self._conversation_id = getattr(response, "conversation_id", None)
+        self._previous_response_id = getattr(response, "id", None)
         text = getattr(response, "output_text", None) or "(No text output returned.)"
         return CoachResult(
             text=text,
@@ -132,6 +136,7 @@ class CoachService:
 
     def clear_conversation(self) -> None:
         self._conversation_id = None
+        self._previous_response_id = None
 
     def close(self) -> None:
         client = self._openai_client
