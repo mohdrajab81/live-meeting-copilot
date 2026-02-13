@@ -8,6 +8,9 @@ from typing import Any
 class CoachResult:
     text: str
     conversation_id: str | None
+    response_id: str | None
+    request_conversation_id: str | None
+    request_previous_response_id: str | None
     total_ms: int
     create_ms: int
     approve_ms: int
@@ -110,10 +113,12 @@ class CoachService:
                 }
             },
         }
-        if self._conversation_id:
-            params["conversation"] = self._conversation_id
-        if self._previous_response_id:
-            params["previous_response_id"] = self._previous_response_id
+        request_conversation_id = self._conversation_id
+        request_previous_response_id = self._previous_response_id
+        if request_conversation_id:
+            params["conversation"] = request_conversation_id
+        if request_previous_response_id:
+            params["previous_response_id"] = request_previous_response_id
 
         total_start = time.perf_counter()
         create_start = time.perf_counter()
@@ -121,18 +126,28 @@ class CoachService:
         create_ms = int((time.perf_counter() - create_start) * 1000)
         response, rounds, approvals, approve_ms = self._auto_approve_mcp_if_needed(response)
         total_ms = int((time.perf_counter() - total_start) * 1000)
+        response_id = getattr(response, "id", None)
         self._conversation_id = getattr(response, "conversation_id", None)
-        self._previous_response_id = getattr(response, "id", None)
+        self._previous_response_id = response_id
         text = getattr(response, "output_text", None) or "(No text output returned.)"
         return CoachResult(
             text=text,
             conversation_id=self._conversation_id,
+            response_id=response_id,
+            request_conversation_id=request_conversation_id,
+            request_previous_response_id=request_previous_response_id,
             total_ms=total_ms,
             create_ms=create_ms,
             approve_ms=approve_ms,
             approval_rounds=rounds,
             approval_count=approvals,
         )
+
+    def get_chain_state(self) -> dict[str, str | None]:
+        return {
+            "conversation_id": self._conversation_id,
+            "previous_response_id": self._previous_response_id,
+        }
 
     def clear_conversation(self) -> None:
         self._conversation_id = None

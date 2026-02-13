@@ -299,13 +299,16 @@ class AppController:
         try:
             run_start = time.time()
             send_ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(run_start))
+            chain = self.coach.get_chain_state()
             await self.broadcast_log(
                 "info",
                 (
                     "Coach deep send: "
                     f"group={group_id}, send_ts={send_ts}, "
                     f"trigger={trigger_item.get('speaker_label', 'Speaker')}, "
-                    f"trigger_text={str(trigger_item.get('en', '') or '').strip()}"
+                    f"trigger_text={str(trigger_item.get('en', '') or '').strip()}, "
+                    f"req_conversation_id={chain.get('conversation_id') or '-'}, "
+                    f"req_previous_response_id={chain.get('previous_response_id') or '-'}"
                 ),
             )
             result = await asyncio.to_thread(self.coach.ask, prompt)
@@ -332,6 +335,8 @@ class AppController:
                 (
                     "Coach deep reply: "
                     f"group={group_id}, recv_ts={recv_ts}, "
+                    f"response_id={result.response_id or '-'}, "
+                    f"conversation_id={result.conversation_id or '-'}, "
                     f"reply_text={result.text}"
                 ),
             )
@@ -571,9 +576,16 @@ class AppController:
 
     async def request_coach(self, prompt: str, speaker_label: str = "Manual") -> dict[str, Any]:
         send_ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time()))
+        chain = self.coach.get_chain_state()
         await self.broadcast_log(
             "info",
-            f"Coach manual send: send_ts={send_ts}, speaker_label={speaker_label}, prompt={prompt}",
+            (
+                "Coach manual send: "
+                f"send_ts={send_ts}, speaker_label={speaker_label}, "
+                f"req_conversation_id={chain.get('conversation_id') or '-'}, "
+                f"req_previous_response_id={chain.get('previous_response_id') or '-'}, "
+                f"prompt={prompt}"
+            ),
         )
         result = await asyncio.to_thread(self.coach.ask, prompt)
         hint = {
@@ -599,6 +611,7 @@ class AppController:
                 f"recv_ts={recv_ts}, total_ms={result.total_ms}, "
                 f"create_ms={result.create_ms}, approve_ms={result.approve_ms}, "
                 f"approval_rounds={result.approval_rounds}, approval_count={result.approval_count}, "
+                f"response_id={result.response_id or '-'}, conversation_id={result.conversation_id or '-'}, "
                 f"reply_text={result.text}"
             ),
         )
