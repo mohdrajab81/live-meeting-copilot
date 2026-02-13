@@ -602,11 +602,7 @@ class AppController:
     async def request_coach(self, prompt: str, speaker_label: str = "Manual") -> dict[str, Any]:
         manual_prompt = "\n".join(
             [
-                "[MANUAL_OVERRIDE]",
-                "This is a standalone manual question/instruction from the user.",
-                "Prioritize this request directly while keeping conversation continuity.",
-                "",
-                "Manual input:",
+                "Manual user message (same conversation):",
                 str(prompt or "").strip(),
             ]
         )
