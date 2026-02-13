@@ -187,18 +187,6 @@ class AppController:
         *,
         session_start: bool,
     ) -> str:
-        turns = self.finals[-self.config.coach_max_turns :]
-        lines: list[str] = []
-        for turn in turns:
-            label = str(turn.get("speaker_label", "Speaker") or "Speaker")
-            en = str(turn.get("en", "") or "").strip()
-            ar = str(turn.get("ar", "") or "").strip()
-            text = en or ar
-            if not text:
-                continue
-            ts = time.strftime("%H:%M:%S", time.localtime(float(turn.get("ts") or time.time())))
-            lines.append(f"[{ts}] {label}: {text}")
-
         delta_lines: list[str] = []
         for turn in delta_turns:
             label = str(turn.get("speaker_label", "Speaker") or "Speaker")
@@ -221,29 +209,35 @@ class AppController:
                 "Give a short suggested reply for me, tailored to my profile. "
                 "Use concise bullets and keep claims truthful to known background."
             )
+        if session_start:
+            return "\n".join(
+                [
+                    "You are my live interview copilot.",
+                    "Use my stored profile knowledge from the connected agent tools.",
+                    instruction,
+                    "",
+                    "Latest interviewer utterance:",
+                    f"{trigger_label}: {trigger_en}",
+                    "",
+                    "Session transcript update:",
+                    "This is the full transcript from session start.",
+                    "\n".join(delta_lines) if delta_lines else "(no new turns)",
+                    "",
+                    "Return format:",
+                    "1) Suggested reply (short)",
+                    "2) Exactly 2 bullet proof points from my background",
+                    "3) One follow-up question I can ask (optional)",
+                ]
+            )
 
         return "\n".join(
             [
-                "You are my live interview copilot.",
-                "Use my stored profile knowledge from the connected agent tools.",
-                instruction,
-                "",
                 "Latest interviewer utterance:",
                 f"{trigger_label}: {trigger_en}",
                 "",
                 "Session transcript update:",
-                "This is the full transcript from session start."
-                if session_start
-                else "This is only the new transcript delta since last update.",
+                "This is only the new transcript delta since last update.",
                 "\n".join(delta_lines) if delta_lines else "(no new turns)",
-                "",
-                "Recent conversation window:",
-                "\n".join(lines) if lines else "(no recent turns)",
-                "",
-                "Return format:",
-                "1) Suggested reply (short)",
-                "2) 2-4 bullet proof points from my background",
-                "3) One follow-up question I can ask (optional)",
             ]
         )
 
