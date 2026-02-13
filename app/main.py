@@ -528,29 +528,41 @@ class AppController:
             self._broadcast_from_thread(item)
 
     def start(self) -> bool:
+        if self.config.coach_enabled and not self.coach.supports_conversations_create():
+            self._broadcast_from_thread(
+                self._append_log(
+                    "error",
+                    (
+                        "Start blocked: coach requires conversations.create() support, "
+                        "but current client/runtime does not provide it."
+                    ),
+                )
+            )
+            return False
+
+        session_conversation_id: str | None = None
+        if self.config.coach_enabled:
+            try:
+                session_conversation_id = self.coach.start_session()
+            except Exception as ex:
+                self._broadcast_from_thread(
+                    self._append_log(
+                        "error",
+                        f"Start blocked: failed to initialize coach session via conversations.create(): {ex}",
+                    )
+                )
+                return False
+
         started = self.speech.start_recognition()
         if not started:
             return False
-        session_conversation_id: str | None = None
-        session_error: str | None = None
-        try:
-            session_conversation_id = self.coach.start_session()
-        except Exception as ex:
-            session_error = str(ex)
         with self.lock:
             self.session_started_ts = time.time()
             self.coach_pending = False
             self.coach_last_run_ts = 0.0
             self.coach_last_sent_final_idx = len(self.finals)
             self.coach_queued_trigger = None
-        if session_error:
-            self._broadcast_from_thread(
-                self._append_log(
-                    "warning",
-                    f"Coach session init failed; falling back to response chaining only: {session_error}",
-                )
-            )
-        else:
+        if self.config.coach_enabled:
             self._broadcast_from_thread(
                 self._append_log(
                     "info",

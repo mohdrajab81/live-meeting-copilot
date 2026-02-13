@@ -56,6 +56,17 @@ class CoachService:
         self._openai_client = project_client.get_openai_client()
         return self._openai_client
 
+    def _get_conversations_create_fn(self):
+        client = self._ensure_client()
+        conversations = getattr(client, "conversations", None)
+        create_fn = getattr(conversations, "create", None) if conversations is not None else None
+        if not callable(create_fn):
+            raise RuntimeError(
+                "OpenAI client does not support conversations.create(). "
+                "Upgrade the client/runtime used by Azure AI Projects."
+            )
+        return create_fn
+
     def _auto_approve_mcp_if_needed(
         self, response: Any, max_rounds: int = 5
     ) -> tuple[Any, int, int, int]:
@@ -157,23 +168,29 @@ class CoachService:
         if self._conversation_id:
             return self._conversation_id
 
-        client = self._ensure_client()
-        conversations = getattr(client, "conversations", None)
-        create_fn = getattr(conversations, "create", None) if conversations is not None else None
-        if not callable(create_fn):
-            return None
-
+        create_fn = self._get_conversations_create_fn()
         conversation = create_fn()
         conversation_id = (
             getattr(conversation, "id", None)
             or getattr(conversation, "conversation_id", None)
         )
+        if not conversation_id:
+            raise RuntimeError(
+                "conversations.create() returned no conversation id."
+            )
         self._conversation_id = conversation_id
         return self._conversation_id
 
     def start_session(self) -> str | None:
         self.clear_conversation()
         return self._ensure_conversation_id()
+
+    def supports_conversations_create(self) -> bool:
+        try:
+            self._get_conversations_create_fn()
+            return True
+        except Exception:
+            return False
 
     def close(self) -> None:
         client = self._openai_client
