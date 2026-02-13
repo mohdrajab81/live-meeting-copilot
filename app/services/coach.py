@@ -193,6 +193,9 @@ class CoachService:
         self.clear_conversation()
         return self._ensure_conversation_id()
 
+    def ensure_session(self) -> str | None:
+        return self._ensure_conversation_id()
+
     def supports_conversations_create(self) -> bool:
         try:
             self._get_conversations_create_fn()

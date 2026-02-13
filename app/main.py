@@ -537,7 +537,7 @@ class AppController:
         session_conversation_id: str | None = None
         if self.config.coach_enabled:
             try:
-                session_conversation_id = self.coach.start_session()
+                session_conversation_id = self.coach.ensure_session()
             except Exception as ex:
                 self._broadcast_from_thread(
                     self._append_log(
@@ -560,7 +560,7 @@ class AppController:
             self._broadcast_from_thread(
                 self._append_log(
                     "info",
-                    f"Coach session initialized: conversation_id={session_conversation_id or '-'}",
+                    f"Coach session active: conversation_id={session_conversation_id or '-'}",
                 )
             )
         return True
