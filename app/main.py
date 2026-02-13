@@ -600,6 +600,16 @@ class AppController:
         self.coach.clear_conversation()
 
     async def request_coach(self, prompt: str, speaker_label: str = "Manual") -> dict[str, Any]:
+        manual_prompt = "\n".join(
+            [
+                "[MANUAL_OVERRIDE]",
+                "This is a standalone manual question/instruction from the user.",
+                "Prioritize this request directly while keeping conversation continuity.",
+                "",
+                "Manual input:",
+                str(prompt or "").strip(),
+            ]
+        )
         send_ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time()))
         chain = self.coach.get_chain_state()
         await self.broadcast_log(
@@ -612,7 +622,7 @@ class AppController:
                 f"prompt={prompt}"
             ),
         )
-        result = await asyncio.to_thread(self.coach.ask, prompt)
+        result = await asyncio.to_thread(self.coach.ask, manual_prompt)
         hint = {
             "type": "coach",
             "hint_kind": "manual",
