@@ -44,7 +44,6 @@ class AppController:
         self.coach_last_run_ts = 0.0
         self.coach_group_seq = 0
         self.coach_last_sent_final_idx = 0
-        self.coach_inflight_final_idx = 0
         self.coach_queued_trigger: dict[str, Any] | None = None
 
         self.speech = SpeechService(
@@ -286,7 +285,6 @@ class AppController:
 
         self.coach_pending = True
         self.coach_last_run_ts = time.time()
-        self.coach_inflight_final_idx = end_idx
         coach_group_id = self._next_coach_group_id_unlocked()
         return coach_prompt, coach_group_id, self.coach_last_run_ts, end_idx
 
@@ -359,7 +357,6 @@ class AppController:
             next_call: tuple[str, str, float, int] | None = None
             with self.lock:
                 self.coach_pending = False
-                self.coach_inflight_final_idx = 0
                 queued = self.coach_queued_trigger
                 self.coach_queued_trigger = None
                 if queued:
@@ -534,7 +531,6 @@ class AppController:
             self.coach_pending = False
             self.coach_last_run_ts = 0.0
             self.coach_last_sent_final_idx = len(self.finals)
-            self.coach_inflight_final_idx = 0
             self.coach_queued_trigger = None
         self.coach.clear_conversation()
         return True
@@ -546,7 +542,6 @@ class AppController:
         with self.lock:
             self.coach_pending = False
             self.coach_last_run_ts = 0.0
-            self.coach_inflight_final_idx = 0
             self.coach_queued_trigger = None
         self.coach.clear_conversation()
         return True
@@ -562,7 +557,6 @@ class AppController:
             self.ar_live = ""
             self.live_partials = {}
             self.coach_last_sent_final_idx = 0
-            self.coach_inflight_final_idx = 0
             self.coach_queued_trigger = None
         self.coach.clear_conversation()
 
@@ -572,7 +566,6 @@ class AppController:
             self.coach_pending = False
             self.coach_last_run_ts = 0.0
             self.coach_last_sent_final_idx = len(self.finals)
-            self.coach_inflight_final_idx = 0
             self.coach_queued_trigger = None
         self.coach.clear_conversation()
 

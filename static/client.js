@@ -266,11 +266,7 @@
         mergedByGroup.set(gid, hint);
         return;
       }
-      const prevKind = prev.hint_kind || "";
-      const nextKind = hint.hint_kind || "";
-      if (prevKind === "quick" && nextKind === "deep") {
-        mergedByGroup.set(gid, hint);
-      } else if (prev.ts <= hint.ts) {
+      if (prev.ts <= hint.ts) {
         mergedByGroup.set(gid, hint);
       }
     });
@@ -282,7 +278,7 @@
       const meta = document.createElement("div");
       meta.className = "coach-meta";
       const kind = hint.hint_kind || "manual";
-      const kindLabel = kind === "quick" ? "Quick" : (kind === "deep" ? "Verified" : "Manual");
+      const kindLabel = kind === "deep" ? "Auto" : "Manual";
       meta.textContent = `${formatTime(hint.ts)} | ${kindLabel} | Trigger: ${hint.speaker_label || "Manual"}`;
 
       const text = document.createElement("div");
@@ -739,7 +735,7 @@
     if (msg.type === "coach") {
       state.coachHints.push(msg);
       while (state.coachHints.length > 120) state.coachHints.shift();
-      state.coachPending = (msg.hint_kind || "") === "quick";
+      state.coachPending = false;
       renderCoachHints();
       return;
     }
