@@ -126,10 +126,13 @@ class CoachService:
         }
         request_conversation_id = self._ensure_conversation_id()
         request_previous_response_id = self._previous_response_id
+        sent_previous_response_id: str | None = None
         if request_conversation_id:
             params["conversation"] = request_conversation_id
-        if request_previous_response_id:
+        elif request_previous_response_id:
+            # Azure Responses API rejects sending both conversation and previous_response_id together.
             params["previous_response_id"] = request_previous_response_id
+            sent_previous_response_id = request_previous_response_id
 
         total_start = time.perf_counter()
         create_start = time.perf_counter()
@@ -146,7 +149,7 @@ class CoachService:
             conversation_id=self._conversation_id,
             response_id=response_id,
             request_conversation_id=request_conversation_id,
-            request_previous_response_id=request_previous_response_id,
+            request_previous_response_id=sent_previous_response_id,
             total_ms=total_ms,
             create_ms=create_ms,
             approve_ms=approve_ms,
@@ -155,9 +158,12 @@ class CoachService:
         )
 
     def get_chain_state(self) -> dict[str, str | None]:
+        # Report only fields that would be sent on the next ask() call.
+        req_conversation_id = self._conversation_id
+        req_previous = None if req_conversation_id else self._previous_response_id
         return {
-            "conversation_id": self._conversation_id,
-            "previous_response_id": self._previous_response_id,
+            "conversation_id": req_conversation_id,
+            "previous_response_id": req_previous,
         }
 
     def clear_conversation(self) -> None:
