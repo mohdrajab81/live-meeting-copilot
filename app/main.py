@@ -531,13 +531,32 @@ class AppController:
         started = self.speech.start_recognition()
         if not started:
             return False
+        session_conversation_id: str | None = None
+        session_error: str | None = None
+        try:
+            session_conversation_id = self.coach.start_session()
+        except Exception as ex:
+            session_error = str(ex)
         with self.lock:
             self.session_started_ts = time.time()
             self.coach_pending = False
             self.coach_last_run_ts = 0.0
             self.coach_last_sent_final_idx = len(self.finals)
             self.coach_queued_trigger = None
-        self.coach.clear_conversation()
+        if session_error:
+            self._broadcast_from_thread(
+                self._append_log(
+                    "warning",
+                    f"Coach session init failed; falling back to response chaining only: {session_error}",
+                )
+            )
+        else:
+            self._broadcast_from_thread(
+                self._append_log(
+                    "info",
+                    f"Coach session initialized: conversation_id={session_conversation_id or '-'}",
+                )
+            )
         return True
 
     def stop(self) -> bool:

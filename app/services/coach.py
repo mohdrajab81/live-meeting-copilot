@@ -113,7 +113,7 @@ class CoachService:
                 }
             },
         }
-        request_conversation_id = self._conversation_id
+        request_conversation_id = self._ensure_conversation_id()
         request_previous_response_id = self._previous_response_id
         if request_conversation_id:
             params["conversation"] = request_conversation_id
@@ -152,6 +152,28 @@ class CoachService:
     def clear_conversation(self) -> None:
         self._conversation_id = None
         self._previous_response_id = None
+
+    def _ensure_conversation_id(self) -> str | None:
+        if self._conversation_id:
+            return self._conversation_id
+
+        client = self._ensure_client()
+        conversations = getattr(client, "conversations", None)
+        create_fn = getattr(conversations, "create", None) if conversations is not None else None
+        if not callable(create_fn):
+            return None
+
+        conversation = create_fn()
+        conversation_id = (
+            getattr(conversation, "id", None)
+            or getattr(conversation, "conversation_id", None)
+        )
+        self._conversation_id = conversation_id
+        return self._conversation_id
+
+    def start_session(self) -> str | None:
+        self.clear_conversation()
+        return self._ensure_conversation_id()
 
     def close(self) -> None:
         client = self._openai_client
