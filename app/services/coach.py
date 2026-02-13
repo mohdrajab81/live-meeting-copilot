@@ -141,7 +141,9 @@ class CoachService:
         response, rounds, approvals, approve_ms = self._auto_approve_mcp_if_needed(response)
         total_ms = int((time.perf_counter() - total_start) * 1000)
         response_id = getattr(response, "id", None)
-        self._conversation_id = getattr(response, "conversation_id", None)
+        response_conversation_id = getattr(response, "conversation_id", None)
+        if response_conversation_id:
+            self._conversation_id = response_conversation_id
         self._previous_response_id = response_id
         text = getattr(response, "output_text", None) or "(No text output returned.)"
         return CoachResult(
