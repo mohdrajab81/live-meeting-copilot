@@ -2,6 +2,7 @@
   const MAX_ROWS = 300;
   const STICKY_THRESHOLD = 80;
   const UI_PREFS_KEY = "translator_ui_prefs_v1";
+  const BOOKMARKS_KEY = "translator_bookmarks_v1";
   const THEMES = ["dark", "light", "graphite", "sand"];
 
   const FONT_STACKS = {
@@ -92,6 +93,17 @@
   const exportLogsBtn = document.getElementById("exportLogsBtn");
   const exportTranscriptJsonBtn = document.getElementById("exportTranscriptJsonBtn");
   const exportTranscriptCsvBtn = document.getElementById("exportTranscriptCsvBtn");
+  const exportBookmarksJsonBtn = document.getElementById("exportBookmarksJsonBtn");
+  const exportBookmarksCsvBtn = document.getElementById("exportBookmarksCsvBtn");
+  const bookmarksOnlyBtn = document.getElementById("bookmarksOnlyBtn");
+  const bookmarkMenu = document.getElementById("bookmarkMenu");
+  const bookmarkMenuEditBtn = document.getElementById("bookmarkMenuEditBtn");
+  const bookmarkMenuRemoveBtn = document.getElementById("bookmarkMenuRemoveBtn");
+  const bookmarkModal = document.getElementById("bookmarkModal");
+  const bookmarkModalTitle = document.getElementById("bookmarkModalTitle");
+  const bookmarkNoteInput = document.getElementById("bookmarkNoteInput");
+  const bookmarkModalSaveBtn = document.getElementById("bookmarkModalSaveBtn");
+  const bookmarkModalCancelBtn = document.getElementById("bookmarkModalCancelBtn");
 
   const coachPrompt = document.getElementById("coachPrompt");
   const askCoachBtn = document.getElementById("askCoachBtn");
@@ -134,6 +146,7 @@
     filters: {
       transcript: "",
       logs: "",
+      bookmarksOnly: false,
     },
     audioDevices: [],
     currentConfig: {},
@@ -146,6 +159,12 @@
       latestMs: null,
       p50Ms: null,
       estimatedCostUsd: null,
+    },
+    bookmarks: {},
+    bookmarkUi: {
+      menuKey: "",
+      modalKey: "",
+      modalMode: "add",
     },
   };
 
@@ -180,6 +199,19 @@
 
   function normalizeText(text) {
     return String(text || "").toLocaleLowerCase();
+  }
+
+  function finalKey(item) {
+    const segmentId = String(item.segment_id || "").trim();
+    const revision = Number(item.revision || 0);
+    const tsMs = Math.round(Number(item.ts || 0) * 1000);
+    const speaker = String(item.speaker || "default");
+    const en = String(item.en || "");
+    const ar = String(item.ar || "");
+    if (segmentId) {
+      return `${segmentId}:${revision}:${tsMs}:${speaker}:${en.length}:${ar.length}`;
+    }
+    return `${speaker}:${tsMs}:${en}:${ar}`;
   }
 
   function isNearBottom(el) {
@@ -322,18 +354,33 @@
   function makeTimelineRow(item) {
     const row = document.createElement("div");
     row.className = "row";
+    const key = finalKey(item);
+    row.dataset.key = key;
+    const bookmark = state.bookmarks[key] || null;
 
     const enCell = document.createElement("div");
     enCell.className = "entry-card";
+    if (bookmark) enCell.classList.add("is-bookmarked");
     const enMeta = document.createElement("div");
     enMeta.className = "meta";
     const enTag = document.createElement("span");
     enTag.className = "speaker-tag";
     enTag.textContent = item.speaker_label || "Speaker";
+    const bmBtn = document.createElement("button");
+    bmBtn.type = "button";
+    bmBtn.className = "bookmark-btn";
+    if (bookmark) bmBtn.classList.add("active");
+    if (bookmark && bookmark.note) bmBtn.classList.add("has-note");
+    bmBtn.textContent = "★";
+    bmBtn.dataset.key = key;
+    bmBtn.title = bookmark
+      ? `Bookmarked${bookmark.note ? `: ${bookmark.note}` : ""}. Click to remove.`
+      : "Bookmark this row (optional note)";
     const ts1 = document.createElement("div");
     ts1.className = "ts";
     ts1.textContent = formatTime(item.ts);
     enMeta.appendChild(enTag);
+    enMeta.appendChild(bmBtn);
     enMeta.appendChild(ts1);
     const enLine = document.createElement("div");
     enLine.className = "line en";
@@ -343,6 +390,7 @@
 
     const arCell = document.createElement("div");
     arCell.className = "entry-card";
+    if (bookmark) arCell.classList.add("is-bookmarked");
     const arMeta = document.createElement("div");
     arMeta.className = "meta";
     const arTag = document.createElement("span");
@@ -366,10 +414,13 @@
 
   function filteredFinals() {
     const query = normalizeText(state.filters.transcript).trim();
-    if (!query) return [...state.finals];
     return state.finals.filter((item) => {
+      const key = finalKey(item);
+      if (state.filters.bookmarksOnly && !state.bookmarks[key]) return false;
+      if (!query) return true;
       const line = `${item.speaker_label || ""} ${item.en || ""} ${item.ar || ""} ${formatTime(item.ts)}`;
-      return normalizeText(line).includes(query);
+      const note = state.bookmarks[key]?.note || "";
+      return normalizeText(`${line} ${note}`).includes(query);
     });
   }
 
@@ -495,6 +546,8 @@
     state.finals = [];
     state.livePartials = {};
     state.liveHeldFinal = null;
+    state.bookmarks = {};
+    saveBookmarks();
     timeline.innerHTML = "";
     renderLivePartials();
   }
@@ -827,6 +880,95 @@
     localStorage.setItem(UI_PREFS_KEY, JSON.stringify(state.ui));
   }
 
+  function loadBookmarks() {
+    try {
+      const raw = localStorage.getItem(BOOKMARKS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        state.bookmarks = parsed;
+      }
+    } catch (_err) {
+      state.bookmarks = {};
+    }
+  }
+
+  function saveBookmarks() {
+    localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(state.bookmarks));
+  }
+
+  function pruneBookmarksToFinals() {
+    const valid = new Set(state.finals.map((x) => finalKey(x)));
+    const next = {};
+    Object.entries(state.bookmarks || {}).forEach(([key, val]) => {
+      if (valid.has(key)) next[key] = val;
+    });
+    state.bookmarks = next;
+    saveBookmarks();
+  }
+
+  function closeBookmarkMenu() {
+    state.bookmarkUi.menuKey = "";
+    if (bookmarkMenu) bookmarkMenu.classList.add("hidden");
+  }
+
+  function openBookmarkMenuFor(key, anchorEl) {
+    if (!bookmarkMenu || !anchorEl) return;
+    state.bookmarkUi.menuKey = key;
+    bookmarkMenu.classList.remove("hidden");
+    const rect = anchorEl.getBoundingClientRect();
+    const menuRect = bookmarkMenu.getBoundingClientRect();
+    const top = Math.min(window.innerHeight - menuRect.height - 10, rect.bottom + 6);
+    const left = Math.min(window.innerWidth - menuRect.width - 10, rect.left);
+    bookmarkMenu.style.top = `${Math.max(10, top)}px`;
+    bookmarkMenu.style.left = `${Math.max(10, left)}px`;
+  }
+
+  function closeBookmarkModal() {
+    state.bookmarkUi.modalKey = "";
+    if (bookmarkModal) bookmarkModal.classList.add("hidden");
+    if (bookmarkNoteInput) bookmarkNoteInput.value = "";
+  }
+
+  function openBookmarkModal(mode, key) {
+    if (!bookmarkModal || !bookmarkNoteInput || !bookmarkModalTitle) return;
+    state.bookmarkUi.modalMode = mode;
+    state.bookmarkUi.modalKey = key;
+    const existing = state.bookmarks[key] || null;
+    bookmarkModalTitle.textContent = mode === "edit" ? "Edit bookmark note" : "Add bookmark note";
+    bookmarkNoteInput.value = existing?.note || "";
+    bookmarkModal.classList.remove("hidden");
+    setTimeout(() => bookmarkNoteInput.focus(), 0);
+  }
+
+  function toggleBookmarkForKey(key, options) {
+    const opts = options || {};
+    const existing = state.bookmarks[key];
+    if (existing) {
+      if (opts.forceRemove) {
+        delete state.bookmarks[key];
+        saveBookmarks();
+        renderFinals(true);
+        showToast("Bookmark removed.", "info");
+        return;
+      }
+      if (opts.anchorEl) openBookmarkMenuFor(key, opts.anchorEl);
+      return;
+    }
+    if (!Object.prototype.hasOwnProperty.call(opts, "note")) {
+      openBookmarkModal("add", key);
+      return;
+    }
+    const note = String(opts.note || "");
+    state.bookmarks[key] = {
+      note: note.trim(),
+      created_ts: Date.now() / 1000,
+    };
+    saveBookmarks();
+    renderFinals(true);
+    showToast("Bookmark added.", "success");
+  }
+
   function applySettingsAccordionPrefs() {
     if (!settingsAccordions.length) return;
     settingsAccordions.forEach((el) => {
@@ -977,6 +1119,7 @@
       revision: Number(f.revision || 0),
       ts: f.ts || Date.now() / 1000,
     }));
+    pruneBookmarksToFinals();
 
     state.livePartials = {};
     (msg.live_partials || []).forEach((p) => {
@@ -1143,10 +1286,10 @@
   }
 
   function exportTranscriptJson() {
-    const data = {
-      exported_at: new Date().toISOString(),
-      total_entries: state.finals.length,
-      transcript: state.finals.map((item, idx) => ({
+    const rows = state.finals.map((item, idx) => {
+      const key = finalKey(item);
+      const bm = state.bookmarks[key] || null;
+      return {
         index: idx + 1,
         speaker: item.speaker || "default",
         speaker_label: item.speaker_label || "Speaker",
@@ -1154,7 +1297,16 @@
         time_unix_sec: item.ts,
         english: item.en,
         arabic: item.ar,
-      })),
+        bookmarked: !!bm,
+        bookmark_note: bm?.note || "",
+      };
+    });
+    const bookmarks = rows.filter((x) => x.bookmarked);
+    const data = {
+      exported_at: new Date().toISOString(),
+      total_entries: rows.length,
+      transcript: rows,
+      bookmarks,
       coach_hints: state.coachHints,
     };
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -1166,8 +1318,10 @@
   }
 
   function exportTranscriptCsv() {
-    const lines = ["index,speaker,speaker_label,time_local,time_unix_sec,english,arabic"];
+    const lines = ["index,speaker,speaker_label,time_local,time_unix_sec,bookmarked,bookmark_note,english,arabic"];
     state.finals.forEach((item, idx) => {
+      const key = finalKey(item);
+      const bm = state.bookmarks[key] || null;
       lines.push(
         [
           idx + 1,
@@ -1175,6 +1329,8 @@
           escapeCsv(item.speaker_label || "Speaker"),
           formatTime(item.ts),
           item.ts,
+          bm ? "1" : "0",
+          escapeCsv(bm?.note || ""),
           escapeCsv(item.en),
           escapeCsv(item.ar),
         ].join(",")
@@ -1183,6 +1339,61 @@
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     downloadFile(
       `transcript-translation-${stamp}.csv`,
+      `\ufeff${lines.join("\r\n")}\r\n`,
+      "text/csv;charset=utf-8"
+    );
+  }
+
+  function collectBookmarksForExport() {
+    return state.finals
+      .map((item, idx) => {
+        const key = finalKey(item);
+        const bm = state.bookmarks[key] || null;
+        if (!bm) return null;
+        return {
+          index: idx + 1,
+          speaker: item.speaker || "default",
+          speaker_label: item.speaker_label || "Speaker",
+          time_local: formatTime(item.ts),
+          time_unix_sec: item.ts,
+          note: bm.note || "",
+          english: item.en || "",
+          arabic: item.ar || "",
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function exportBookmarksJson() {
+    const bookmarks = collectBookmarksForExport();
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    downloadFile(
+      `bookmarks-${stamp}.json`,
+      `${JSON.stringify({ exported_at: new Date().toISOString(), count: bookmarks.length, bookmarks }, null, 2)}\n`,
+      "application/json;charset=utf-8"
+    );
+  }
+
+  function exportBookmarksCsv() {
+    const rows = collectBookmarksForExport();
+    const lines = ["index,speaker,speaker_label,time_local,time_unix_sec,note,english,arabic"];
+    rows.forEach((r) => {
+      lines.push(
+        [
+          r.index,
+          escapeCsv(r.speaker),
+          escapeCsv(r.speaker_label),
+          r.time_local,
+          r.time_unix_sec,
+          escapeCsv(r.note),
+          escapeCsv(r.english),
+          escapeCsv(r.arabic),
+        ].join(",")
+      );
+    });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    downloadFile(
+      `bookmarks-${stamp}.csv`,
       `\ufeff${lines.join("\r\n")}\r\n`,
       "text/csv;charset=utf-8"
     );
@@ -1625,6 +1836,86 @@
       showToast("Transcript CSV exported.", "success");
     });
   }
+  if (exportBookmarksJsonBtn) {
+    exportBookmarksJsonBtn.addEventListener("click", () => {
+      exportBookmarksJson();
+      showToast("Bookmarks JSON exported.", "success");
+    });
+  }
+  if (exportBookmarksCsvBtn) {
+    exportBookmarksCsvBtn.addEventListener("click", () => {
+      exportBookmarksCsv();
+      showToast("Bookmarks CSV exported.", "success");
+    });
+  }
+  if (bookmarksOnlyBtn) {
+    bookmarksOnlyBtn.addEventListener("click", () => {
+      state.filters.bookmarksOnly = !state.filters.bookmarksOnly;
+      bookmarksOnlyBtn.classList.toggle("active", state.filters.bookmarksOnly);
+      bookmarksOnlyBtn.setAttribute("aria-pressed", state.filters.bookmarksOnly ? "true" : "false");
+      renderFinals();
+    });
+  }
+  timeline.addEventListener("click", (ev) => {
+    const target = ev.target;
+    if (!(target instanceof Element)) return;
+    const btn = target.closest(".bookmark-btn");
+    if (!btn) return;
+    closeBookmarkMenu();
+    const key = String(btn.getAttribute("data-key") || "").trim();
+    if (!key) return;
+    toggleBookmarkForKey(key, { forceRemove: !!ev.shiftKey, anchorEl: btn });
+  });
+  if (bookmarkMenuEditBtn) {
+    bookmarkMenuEditBtn.addEventListener("click", () => {
+      const key = state.bookmarkUi.menuKey;
+      if (!key) return;
+      closeBookmarkMenu();
+      openBookmarkModal("edit", key);
+    });
+  }
+  if (bookmarkMenuRemoveBtn) {
+    bookmarkMenuRemoveBtn.addEventListener("click", () => {
+      const key = state.bookmarkUi.menuKey;
+      if (!key) return;
+      delete state.bookmarks[key];
+      saveBookmarks();
+      renderFinals(true);
+      closeBookmarkMenu();
+      showToast("Bookmark removed.", "info");
+    });
+  }
+  if (bookmarkModalCancelBtn) {
+    bookmarkModalCancelBtn.addEventListener("click", () => closeBookmarkModal());
+  }
+  if (bookmarkModalSaveBtn) {
+    bookmarkModalSaveBtn.addEventListener("click", () => {
+      const key = state.bookmarkUi.modalKey;
+      if (!key) return;
+      const note = String(bookmarkNoteInput?.value || "").trim();
+      if (state.bookmarkUi.modalMode === "edit" && state.bookmarks[key]) {
+        state.bookmarks[key] = { ...state.bookmarks[key], note };
+        saveBookmarks();
+        renderFinals(true);
+        showToast("Bookmark updated.", "success");
+      } else {
+        toggleBookmarkForKey(key, { note });
+      }
+      closeBookmarkModal();
+    });
+  }
+  document.addEventListener("click", (ev) => {
+    const target = ev.target;
+    if (!(target instanceof Element)) return;
+    if (bookmarkMenu && !bookmarkMenu.classList.contains("hidden")) {
+      if (!target.closest("#bookmarkMenu") && !target.closest(".bookmark-btn")) {
+        closeBookmarkMenu();
+      }
+    }
+    if (bookmarkModal && !bookmarkModal.classList.contains("hidden")) {
+      if (target === bookmarkModal) closeBookmarkModal();
+    }
+  });
   document.addEventListener("keydown", (ev) => {
     if (ev.defaultPrevented) return;
     const tag = (ev.target && ev.target.tagName ? ev.target.tagName.toLowerCase() : "");
@@ -1635,12 +1926,23 @@
       return;
     }
     if (ev.key === "Escape" && !typing) {
+      if (bookmarkModal && !bookmarkModal.classList.contains("hidden")) {
+        ev.preventDefault();
+        closeBookmarkModal();
+        return;
+      }
+      if (bookmarkMenu && !bookmarkMenu.classList.contains("hidden")) {
+        ev.preventDefault();
+        closeBookmarkMenu();
+        return;
+      }
       ev.preventDefault();
       stopBtn.click();
     }
   });
 
   loadUiPrefs();
+  loadBookmarks();
   applyTheme();
   applyTimestampVisibility();
   applyFontSettings();

@@ -81,13 +81,42 @@
                 </svg>
                 <span>Clear</span>
               </button>
+              <button
+                id="exportBookmarksJsonBtn"
+                class="btn icon-btn icon-btn-soft"
+                type="button"
+                title="Export bookmarks as JSON"
+                aria-label="Export bookmarks as JSON"
+              >
+                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"></path>
+                </svg>
+                <span>BM JSON</span>
+              </button>
+              <button
+                id="exportBookmarksCsvBtn"
+                class="btn icon-btn icon-btn-soft"
+                type="button"
+                title="Export bookmarks as CSV"
+                aria-label="Export bookmarks as CSV"
+              >
+                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"></path>
+                  <path d="M8 8h8"></path>
+                  <path d="M8 12h8"></path>
+                </svg>
+                <span>BM CSV</span>
+              </button>
             </div>
           </div>
           <div class="timeline-cols">
             <span>English</span>
             <span>Arabic</span>
           </div>
-          <input id="transcriptSearch" class="search-input" type="text" placeholder="Search transcript text..." />
+          <div class="timeline-search-row">
+            <input id="transcriptSearch" class="search-input" type="text" placeholder="Search transcript text..." />
+            <button id="bookmarksOnlyBtn" class="btn bookmarks-filter-btn" type="button" aria-pressed="false">Bookmarks only</button>
+          </div>
         </div>
         <div id="timeline" class="timeline show-ts"></div>
         <div id="timelineDivider" class="timeline-divider" title="Drag to resize live area"></div>
@@ -368,6 +397,21 @@
 
       </aside>
     </main>
+  </div>
+  <div id="bookmarkMenu" class="bookmark-menu hidden" role="menu" aria-label="Bookmark options">
+    <button id="bookmarkMenuEditBtn" class="btn bookmark-menu-btn" type="button">Edit note</button>
+    <button id="bookmarkMenuRemoveBtn" class="btn bookmark-menu-btn" type="button">Remove</button>
+  </div>
+  <div id="bookmarkModal" class="bookmark-modal hidden" role="dialog" aria-modal="true" aria-labelledby="bookmarkModalTitle">
+    <div class="bookmark-modal-card">
+      <h4 id="bookmarkModalTitle">Bookmark note</h4>
+      <label for="bookmarkNoteInput">Note (optional)</label>
+      <textarea id="bookmarkNoteInput" rows="4" placeholder="Add a short note for this moment..."></textarea>
+      <div class="bookmark-modal-actions">
+        <button id="bookmarkModalCancelBtn" class="btn" type="button">Cancel</button>
+        <button id="bookmarkModalSaveBtn" class="btn action-btn action-btn-primary" type="button">Save</button>
+      </div>
+    </div>
   </div>
   <div id="toastHost" class="toast-host" aria-live="polite" aria-atomic="true"></div>
   <script src="/client.js"></script>
