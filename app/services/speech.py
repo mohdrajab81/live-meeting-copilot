@@ -6,6 +6,7 @@ from typing import Any, Callable
 import azure.cognitiveservices.speech as speech_sdk
 
 from app.config import RuntimeConfig, Settings
+from app.utils.audio_devices import list_capture_devices
 
 
 EventCallback = Callable[[dict[str, Any]], None]
@@ -24,9 +25,11 @@ class SpeechService:
         self._get_runtime_config = get_runtime_config
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
-        self._recognizers: list[speech_sdk.translation.TranslationRecognizer] = []
+        self._recognizers: list[speech_sdk.SpeechRecognizer] = []
         self._lock = threading.RLock()
         self._running = False
+        self._device_labels_by_id: dict[str, str] = {}
+        self._last_partial_debug_ts: dict[str, float] = {}
 
     @property
     def running(self) -> bool:
@@ -60,24 +63,23 @@ class SpeechService:
     def _emit(self, payload: dict[str, Any]) -> None:
         self._on_event(payload)
 
-    def _make_translation_config(self, cfg: RuntimeConfig):
+    def _make_speech_config(self, cfg: RuntimeConfig):
         for kwargs in (
             {"speech_key": self._settings.speech_key, "region": self._settings.speech_region},
             {"subscription": self._settings.speech_key, "region": self._settings.speech_region},
         ):
             try:
-                config = speech_sdk.translation.SpeechTranslationConfig(**kwargs)
+                config = speech_sdk.SpeechConfig(**kwargs)
                 break
             except TypeError:
                 continue
         else:
-            config = speech_sdk.translation.SpeechTranslationConfig(
+            config = speech_sdk.SpeechConfig(
                 self._settings.speech_key,
                 self._settings.speech_region,
             )
 
         config.speech_recognition_language = cfg.recognition_language
-        config.add_target_language("ar")
         config.set_property(
             speech_sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs,
             str(cfg.end_silence_ms),
@@ -88,16 +90,15 @@ class SpeechService:
         )
         return config
 
-    def _make_translation_recognizer(self, config, audio):
+    def _make_recognizer(self, config, audio):
         for kwargs in (
-            {"translation_config": config, "audio_config": audio},
             {"speech_config": config, "audio_config": audio},
         ):
             try:
-                return speech_sdk.translation.TranslationRecognizer(**kwargs)
+                return speech_sdk.SpeechRecognizer(**kwargs)
             except TypeError:
                 continue
-        return speech_sdk.translation.TranslationRecognizer(config, audio)
+        return speech_sdk.SpeechRecognizer(config, audio)
 
     def _make_audio_config_single(self, cfg: RuntimeConfig):
         if cfg.audio_source == "device_id" and (cfg.input_device_id or "").strip():
@@ -110,34 +111,72 @@ class SpeechService:
             raise ValueError("Device ID is required in dual mode")
         return speech_sdk.audio.AudioConfig(device_name=cleaned)
 
+    def _refresh_device_labels(self) -> None:
+        try:
+            devices = list_capture_devices()
+        except Exception:
+            devices = []
+        self._device_labels_by_id = {
+            str(d.get("id", "") or "").strip(): str(d.get("label", "") or "").strip()
+            for d in devices
+            if str(d.get("id", "") or "").strip()
+        }
+
+    def _device_display_name(self, device_id: str) -> str:
+        cleaned = str(device_id or "").strip()
+        if not cleaned:
+            return "unknown"
+        label = self._device_labels_by_id.get(cleaned, "")
+        if label:
+            return label
+        return "configured device"
+
     def _wire_handlers(
         self,
-        recognizer: speech_sdk.translation.TranslationRecognizer,
+        recognizer: speech_sdk.SpeechRecognizer,
         cfg: RuntimeConfig,
         speaker_key: str,
         speaker_label: str,
     ) -> None:
         def on_recognizing(evt: Any) -> None:
             result = evt.result
-            if not result or result.reason != speech_sdk.ResultReason.TranslatingSpeech:
+            if not result or result.reason != speech_sdk.ResultReason.RecognizingSpeech:
                 return
+            en_text = (result.text or "").strip()
+            if not en_text:
+                return
+            if cfg.debug:
+                now = time.time()
+                last = self._last_partial_debug_ts.get(speaker_key, 0.0)
+                if now - last >= 1.0:
+                    self._last_partial_debug_ts[speaker_key] = now
+                    preview = en_text if len(en_text) <= 80 else f"{en_text[:77]}..."
+                    self._emit(
+                        {
+                            "type": "log",
+                            "level": "debug",
+                            "message": (
+                                f"[{speaker_label}] STT partial emitted: "
+                                f"len={len(en_text)}, preview='{preview}'"
+                            ),
+                        }
+                    )
             self._emit(
                 {
                     "type": "partial",
                     "speaker": speaker_key,
                     "speaker_label": speaker_label,
-                    "en": (result.text or "").strip(),
-                    "ar": (result.translations.get("ar", "") or "").strip(),
+                    "en": en_text,
+                    "ar": "",
                 }
             )
 
         def on_recognized(evt: Any) -> None:
             result = evt.result
-            if not result or result.reason != speech_sdk.ResultReason.TranslatedSpeech:
+            if not result or result.reason != speech_sdk.ResultReason.RecognizedSpeech:
                 return
             en_text = (result.text or "").strip()
-            ar_text = (result.translations.get("ar", "") or "").strip()
-            if not en_text and not ar_text:
+            if not en_text:
                 return
             self._emit(
                 {
@@ -145,7 +184,7 @@ class SpeechService:
                     "speaker": speaker_key,
                     "speaker_label": speaker_label,
                     "en": en_text,
-                    "ar": ar_text,
+                    "ar": "",
                     "ts": time.time(),
                 }
             )
@@ -154,7 +193,7 @@ class SpeechService:
                     {
                         "type": "log",
                         "level": "debug",
-                        "message": f"[{speaker_label}] Final translated: EN='{en_text}'",
+                        "message": f"[{speaker_label}] Final recognized: EN='{en_text}'",
                     }
                 )
 
@@ -175,8 +214,8 @@ class SpeechService:
         recognizer.recognized.connect(on_recognized)
         recognizer.canceled.connect(on_canceled)
 
-    def _start_single_mode(self, cfg: RuntimeConfig) -> list[speech_sdk.translation.TranslationRecognizer]:
-        config = self._make_translation_config(cfg)
+    def _start_single_mode(self, cfg: RuntimeConfig) -> list[speech_sdk.SpeechRecognizer]:
+        config = self._make_speech_config(cfg)
         device_id = (cfg.input_device_id or "").strip()
         audio = self._make_audio_config_single(cfg)
 
@@ -185,7 +224,10 @@ class SpeechService:
                 {
                     "type": "log",
                     "level": "info",
-                    "message": f"Using explicit input device: {device_id}",
+                    "message": (
+                        "Using explicit input device: "
+                        f"{self._device_display_name(device_id)}"
+                    ),
                 }
             )
         elif cfg.audio_source == "device_id" and not device_id:
@@ -205,20 +247,28 @@ class SpeechService:
                 }
             )
 
-        recognizer = self._make_translation_recognizer(config, audio)
+        recognizer = self._make_recognizer(config, audio)
         self._wire_handlers(recognizer, cfg, "default", "Speaker")
         recognizer.start_continuous_recognition_async().get()
         return [recognizer]
 
-    def _start_dual_mode(self, cfg: RuntimeConfig) -> list[speech_sdk.translation.TranslationRecognizer]:
+    def _start_dual_mode(self, cfg: RuntimeConfig) -> list[speech_sdk.SpeechRecognizer]:
         local_label = (cfg.local_speaker_label or "You").strip() or "You"
         remote_label = (cfg.remote_speaker_label or "Remote").strip() or "Remote"
 
         local_device = (cfg.local_input_device_id or "").strip()
         remote_device = (cfg.remote_input_device_id or "").strip()
         if not local_device or not remote_device:
+            missing = []
+            if not local_device:
+                missing.append("local_input_device_id")
+            if not remote_device:
+                missing.append("remote_input_device_id")
             raise ValueError(
-                "Dual mode requires both local_input_device_id and remote_input_device_id"
+                (
+                    "Dual mode requires both local_input_device_id and remote_input_device_id. "
+                    f"Missing: {', '.join(missing)}"
+                )
             )
 
         self._emit(
@@ -232,25 +282,31 @@ class SpeechService:
             {
                 "type": "log",
                 "level": "info",
-                "message": f"[{local_label}] device: {local_device}",
+                "message": (
+                    f"[{local_label}] device: "
+                    f"{self._device_display_name(local_device)}"
+                ),
             }
         )
         self._emit(
             {
                 "type": "log",
                 "level": "info",
-                "message": f"[{remote_label}] device: {remote_device}",
+                "message": (
+                    f"[{remote_label}] device: "
+                    f"{self._device_display_name(remote_device)}"
+                ),
             }
         )
 
-        local_cfg = self._make_translation_config(cfg)
-        remote_cfg = self._make_translation_config(cfg)
+        local_cfg = self._make_speech_config(cfg)
+        remote_cfg = self._make_speech_config(cfg)
 
-        local_recognizer = self._make_translation_recognizer(
+        local_recognizer = self._make_recognizer(
             local_cfg,
             self._make_audio_config_device(local_device),
         )
-        remote_recognizer = self._make_translation_recognizer(
+        remote_recognizer = self._make_recognizer(
             remote_cfg,
             self._make_audio_config_device(remote_device),
         )
@@ -264,13 +320,13 @@ class SpeechService:
 
     def _worker(self) -> None:
         cfg = self._get_runtime_config()
-        recognizers: list[speech_sdk.translation.TranslationRecognizer] = []
+        recognizers: list[speech_sdk.SpeechRecognizer] = []
         self._emit(
             {
                 "type": "log",
                 "level": "info",
                 "message": (
-                    "Initializing Azure speech recognizer "
+                    "Initializing Azure speech recognizer (STT mode) "
                     f"(sdk={getattr(speech_sdk, '__version__', 'unknown')})"
                 ),
             }
@@ -278,6 +334,7 @@ class SpeechService:
         self._emit({"type": "status", "status": "starting", "running": True})
 
         try:
+            self._refresh_device_labels()
             if cfg.capture_mode == "dual":
                 recognizers = self._start_dual_mode(cfg)
             else:

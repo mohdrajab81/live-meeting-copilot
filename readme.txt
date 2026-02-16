@@ -51,6 +51,11 @@ Create or update `.env` in project root:
 SPEECH_KEY="your-speech-key"
 SPEECH_REGION="eastus2"
 
+# Optional explicit Translator config (falls back to SPEECH_KEY/SPEECH_REGION)
+TRANSLATOR_KEY="your-translator-or-multiservice-key"
+TRANSLATOR_REGION="eastus2"
+TRANSLATOR_ENDPOINT="https://api.cognitive.microsofttranslator.com"
+
 # Optional (coach)
 PROJECT_ENDPOINT="https://<resource>.services.ai.azure.com/api/projects/<project>"
 MODEL_DEPLOYMENT_NAME="gpt-4.1-mini"
@@ -112,10 +117,17 @@ Key fields accepted by `PUT /api/config`:
 - `coach_enabled`: enable/disable auto coach
 - `coach_trigger_speaker`: `remote` | `local` | `default` | `any`
 - `coach_cooldown_sec`, `coach_max_turns`, `coach_instruction`
+- `partial_translate_min_interval_sec`: throttle AR partial update frequency per speaker
+- `auto_stop_silence_sec`: auto-stop app after N seconds without recognized speech (`0` disables)
+- `max_session_sec`: hard session duration limit in seconds (`0` disables)
 - `end_silence_ms`, `initial_silence_ms`, `max_finals`, `debug`
 
 Coach Runtime Behavior
 ----------------------
+- Speech recognition runs in STT mode and sends English partial/final text.
+- Arabic translation is done asynchronously via Translator API with:
+  - throttled partial updates per speaker
+  - always-on final translation (final overrides partial for same segment)
 - On `POST /api/start`, if coach is enabled, the app initializes one conversation session and reuses it for manual and auto coach asks until stop/reset.
 - Auto coach sends transcript updates incrementally (delta since last sent point), not full history every turn.
 - If a new coach trigger arrives while a coach call is running, latest trigger is queued and resumed after current call completes.

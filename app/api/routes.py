@@ -1,10 +1,40 @@
+import threading
+import time
+from collections import deque
+
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.config import RuntimeConfig
 from app.utils.audio_devices import list_capture_devices
 
 router = APIRouter()
+_coach_rate_lock = threading.Lock()
+_coach_rate_window_sec = 60
+_coach_rate_limit = 6
+_coach_rate_buckets: dict[str, deque[float]] = {}
+
+
+def _enforce_coach_rate_limit(request: Request) -> None:
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    cutoff = now - _coach_rate_window_sec
+
+    with _coach_rate_lock:
+        bucket = _coach_rate_buckets.get(client_ip)
+        if bucket is None:
+            bucket = deque()
+            _coach_rate_buckets[client_ip] = bucket
+
+        while bucket and bucket[0] <= cutoff:
+            bucket.popleft()
+
+        if len(bucket) >= _coach_rate_limit:
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded for /coach/ask. Try again in about a minute.",
+            )
+        bucket.append(now)
 
 
 @router.get("/state")
@@ -53,6 +83,16 @@ async def reload_config(request: Request) -> dict:
     return {"ok": True, "config": config}
 
 
+@router.post("/config/reset-defaults")
+async def reset_config_defaults(request: Request) -> dict:
+    controller = request.app.state.controller
+    if controller.running:
+        raise HTTPException(status_code=409, detail="Stop app before restoring defaults")
+    config = controller.reset_config_to_defaults()
+    await controller.broadcast_log("info", "Configuration restored to system defaults")
+    return {"ok": True, "config": config}
+
+
 @router.post("/start")
 async def start(request: Request) -> dict:
     controller = request.app.state.controller
@@ -94,12 +134,17 @@ async def clear_coach(request: Request) -> dict:
 
 
 class CoachAskRequest(BaseModel):
-    prompt: str
-    speaker_label: str = "Manual"
+    prompt: str = Field(max_length=2000)
+    speaker_label: str = Field(default="Manual", max_length=64)
 
 
 @router.post("/coach/ask")
 async def ask_coach(payload: CoachAskRequest, request: Request) -> dict:
+    _enforce_coach_rate_limit(request)
+    prompt = payload.prompt.strip()
+    if not prompt:
+        raise HTTPException(status_code=422, detail="prompt must not be empty")
+
     controller = request.app.state.controller
     if not controller.coach.is_configured:
         raise HTTPException(
@@ -108,7 +153,7 @@ async def ask_coach(payload: CoachAskRequest, request: Request) -> dict:
         )
     try:
         hint = await controller.request_coach(
-            prompt=payload.prompt.strip(),
+            prompt=prompt,
             speaker_label=payload.speaker_label.strip() or "Manual",
         )
     except Exception as ex:

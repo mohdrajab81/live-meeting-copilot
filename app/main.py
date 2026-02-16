@@ -1,7 +1,9 @@
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from collections import deque
 from pathlib import Path
+import os
 import threading
 import time
 from typing import Any
@@ -15,6 +17,7 @@ from app.api.websocket import websocket_endpoint
 from app.config import RuntimeConfig, Settings
 from app.services.coach import CoachService
 from app.services.speech import SpeechService
+from app.services.translation_pipeline import TranslationPipeline
 
 load_dotenv()
 
@@ -45,6 +48,19 @@ class AppController:
         self.coach_group_seq = 0
         self.coach_last_sent_final_idx = 0
         self.coach_queued_trigger: dict[str, Any] | None = None
+        self.last_speech_activity_ts = time.time()
+        self.watchdog_task: asyncio.Task[None] | None = None
+        self.translation = TranslationPipeline(
+            settings=settings,
+            lock=self.lock,
+            apply_translation_result=self._apply_translation_result,
+            log=self.broadcast_log,
+        )
+        self.translation_latency_ms: deque[int] = deque(maxlen=240)
+        self.translation_latest_ms: int | None = None
+        self.translation_chars: int = 0
+        self.translation_events: int = 0
+        self.translation_cost_per_million_usd: float | None = self._load_translation_cost_rate()
 
         self.speech = SpeechService(
             settings=settings,
@@ -52,11 +68,147 @@ class AppController:
             get_runtime_config=self.get_runtime_config,
         )
 
+    def _load_translation_cost_rate(self) -> float | None:
+        raw = (os.getenv("TRANSLATION_COST_PER_MILLION_USD", "") or "").strip()
+        if not raw:
+            return None
+        try:
+            value = float(raw)
+        except Exception:
+            return None
+        return value if value > 0 else None
+
+    def _median_ms_unlocked(self) -> int | None:
+        if not self.translation_latency_ms:
+            return None
+        values = sorted(self.translation_latency_ms)
+        n = len(values)
+        mid = n // 2
+        if n % 2 == 1:
+            return int(values[mid])
+        return int((values[mid - 1] + values[mid]) / 2)
+
+    def _build_telemetry_unlocked(self) -> dict[str, Any]:
+        estimated_cost_usd: float | None = None
+        if self.translation_cost_per_million_usd is not None:
+            estimated_cost_usd = round(
+                (self.translation_chars / 1_000_000.0) * self.translation_cost_per_million_usd,
+                4,
+            )
+        return {
+            "type": "telemetry",
+            "ws_connections": len(self.connections),
+            "recognition_status": self.status,
+            "recognition_running": self.running,
+            "translation_latest_ms": self.translation_latest_ms,
+            "translation_p50_ms": self._median_ms_unlocked(),
+            "translation_samples": len(self.translation_latency_ms),
+            "translation_chars": self.translation_chars,
+            "estimated_cost_usd": estimated_cost_usd,
+        }
+
+    def _record_translation_metrics_unlocked(self, req: dict[str, Any], now_ts: float) -> dict[str, Any]:
+        trigger_ts = float(req.get("trigger_ts", 0.0) or 0.0)
+        if trigger_ts > 0.0:
+            total_ms = max(0, int((now_ts - trigger_ts) * 1000))
+            self.translation_latest_ms = total_ms
+            self.translation_latency_ms.append(total_ms)
+        text = str(req.get("text", "") or "")
+        self.translation_chars += len(text)
+        self.translation_events += 1
+        return self._build_telemetry_unlocked()
+
     def _record_total_ms_unlocked(self) -> int:
         total_ms = self.record_accumulated_ms
         if self.record_started_ts is not None:
             total_ms += int((time.time() - self.record_started_ts) * 1000)
         return int(total_ms)
+
+    async def _apply_translation_result(self, req: dict[str, Any], ar_text: str) -> None:
+        kind = str(req.get("kind", "partial") or "partial")
+        speaker = str(req.get("speaker", "default") or "default")
+        segment_id = str(req.get("segment_id", "") or "")
+        revision = int(req.get("revision", 0) or 0)
+        translated = (ar_text or "").strip()
+        telemetry: dict[str, Any] | None = None
+
+        if kind == "partial":
+            with self.lock:
+                if not self.translation.is_current_partial_unlocked(req, self.live_partials):
+                    return
+                now_ts = time.time()
+                partial = self.live_partials[speaker]
+                prev_ar_revision = int(partial.get("ar_revision", 0) or 0)
+                if revision < prev_ar_revision:
+                    return
+                partial["ar"] = translated
+                partial["ar_revision"] = revision
+                partial["ts"] = now_ts
+                out = {
+                    "type": "partial",
+                    "speaker": speaker,
+                    "speaker_label": partial.get("speaker_label", "Speaker"),
+                    "segment_id": segment_id,
+                    "revision": int(partial.get("revision", revision) or revision),
+                    "en": partial.get("en", ""),
+                    "ar": translated,
+                }
+                if translated:
+                    self.ar_live = translated
+                telemetry = self._record_translation_metrics_unlocked(req, now_ts)
+            await self.broadcast(out)
+            await self._emit_trace_async(out, channel="translation_partial")
+            if telemetry:
+                await self.broadcast(telemetry)
+            return
+
+        with self.lock:
+            now_ts = time.time()
+            target_idx = -1
+            for idx in range(len(self.finals) - 1, -1, -1):
+                item = self.finals[idx]
+                if str(item.get("segment_id", "")) != segment_id:
+                    continue
+                if int(item.get("revision", 0)) != revision:
+                    continue
+                target_idx = idx
+                break
+            if target_idx < 0:
+                return
+            if translated:
+                self.finals[target_idx]["ar"] = translated
+            updated = dict(self.finals[target_idx])
+            telemetry = self._record_translation_metrics_unlocked(req, now_ts)
+        payload = {"type": "final_patch", **updated}
+        await self.broadcast(payload)
+        await self._emit_trace_async(payload, channel="translation_final_patch")
+        if telemetry:
+            await self.broadcast(telemetry)
+
+    async def watchdog_loop(self) -> None:
+        while True:
+            await asyncio.sleep(1.0)
+            reason: str | None = None
+            with self.lock:
+                if not self.running:
+                    continue
+                now = time.time()
+                silence_limit = int(self.config.auto_stop_silence_sec)
+                max_session = int(self.config.max_session_sec)
+                idle_for = now - self.last_speech_activity_ts
+                run_for = now - self.session_started_ts
+                if silence_limit > 0 and idle_for >= silence_limit:
+                    reason = (
+                        f"Auto-stopping after {silence_limit}s of inactivity to control costs."
+                    )
+                elif max_session > 0 and run_for >= max_session:
+                    reason = (
+                        f"Auto-stopping after {max_session}s max session duration to control costs."
+                    )
+            if not reason:
+                continue
+            if self.stop():
+                await self.broadcast_log("warning", reason)
 
     def get_runtime_config(self) -> RuntimeConfig:
         with self.lock:
@@ -69,6 +221,12 @@ class AppController:
     def set_config(self, config: RuntimeConfig) -> None:
         with self.lock:
             self.config = config
+
+    def reset_config_to_defaults(self) -> dict[str, Any]:
+        cfg = RuntimeConfig()
+        with self.lock:
+            self.config = cfg
+        return cfg.model_dump()
 
     def save_config_to_disk(self) -> str:
         with self.lock:
@@ -115,6 +273,7 @@ class AppController:
                     "last_sent_final_idx": self.coach_last_sent_final_idx,
                     "hints": list(self.coach_hints),
                 },
+                "telemetry": self._build_telemetry_unlocked(),
             }
 
     def _append_log(self, level: str, message: str) -> dict[str, Any]:
@@ -129,6 +288,48 @@ class AppController:
             if len(self.logs) > 1000:
                 self.logs = self.logs[-1000:]
         return item
+
+    def _emit_trace_from_thread(self, payload: dict[str, Any], *, channel: str) -> None:
+        with self.lock:
+            if not bool(self.config.debug):
+                return
+            conn_count = len(self.connections)
+        self._broadcast_from_thread(self._make_emit_trace_log(payload, channel, conn_count))
+
+    async def _emit_trace_async(self, payload: dict[str, Any], *, channel: str) -> None:
+        with self.lock:
+            if not bool(self.config.debug):
+                return
+            conn_count = len(self.connections)
+        await self.broadcast(self._make_emit_trace_log(payload, channel, conn_count))
+
+    def _make_emit_trace_log(
+        self,
+        payload: dict[str, Any],
+        channel: str,
+        conn_count: int,
+    ) -> dict[str, Any]:
+        msg_type = str(payload.get("type", ""))
+        speaker = str(payload.get("speaker", "") or "")
+        segment_id = str(payload.get("segment_id", "") or "")
+        revision = int(payload.get("revision", 0) or 0)
+        en_len = len(str(payload.get("en", "") or ""))
+        ar_len = len(str(payload.get("ar", "") or ""))
+        return self._append_log(
+            "debug",
+            (
+                "UI emit: "
+                f"channel={channel}, type={msg_type}, speaker={speaker or '-'}, "
+                f"segment_id={segment_id or '-'}, revision={revision}, "
+                f"en_len={en_len}, ar_len={ar_len}, connections={conn_count}"
+            ),
+        )
+
+    def _preview_text(self, value: str, max_len: int = 220) -> str:
+        cleaned = " ".join(str(value or "").split())
+        if len(cleaned) <= max_len:
+            return cleaned
+        return f"{cleaned[: max_len - 3]}..."
 
     async def broadcast(self, payload: dict[str, Any]) -> None:
         dead: list[WebSocket] = []
@@ -269,6 +470,9 @@ class AppController:
         delta_turns = self.finals[start_idx:end_idx]
         if not delta_turns:
             return None
+        max_turns = max(2, int(self.config.coach_max_turns))
+        if len(delta_turns) > max_turns:
+            delta_turns = delta_turns[-max_turns:]
 
         session_start = start_idx == 0
         coach_prompt = self._build_coach_prompt_unlocked(
@@ -300,7 +504,7 @@ class AppController:
                     "Coach deep send: "
                     f"group={group_id}, send_ts={send_ts}, "
                     f"trigger={trigger_item.get('speaker_label', 'Speaker')}, "
-                    f"trigger_text={str(trigger_item.get('en', '') or '').strip()}, "
+                    f"trigger_text={self._preview_text(str(trigger_item.get('en', '') or '').strip())}, "
                     f"req_conversation_id={chain.get('conversation_id') or '-'}, "
                     f"req_previous_response_id={chain.get('previous_response_id') or '-'}"
                 ),
@@ -331,7 +535,7 @@ class AppController:
                     f"group={group_id}, recv_ts={recv_ts}, "
                     f"response_id={result.response_id or '-'}, "
                     f"conversation_id={result.conversation_id or '-'}, "
-                    f"reply_text={result.text}"
+                    f"reply_preview={self._preview_text(result.text)}"
                 ),
             )
             queue_ms = int((run_start - trigger_ts) * 1000)
@@ -388,27 +592,194 @@ class AppController:
                     next_end_idx,
                 )
 
+    def _append_coach_hint_unlocked(self, hint: dict[str, Any]) -> None:
+        self.coach_hints.append(hint)
+        if len(self.coach_hints) > 120:
+            self.coach_hints = self.coach_hints[-120:]
+
+    def _apply_status_event_unlocked(self, payload: dict[str, Any]) -> dict[str, Any]:
+        was_running = self.running
+        self.status = str(payload.get("status", self.status))
+        now_running = bool(payload.get("running", False))
+        self.running = now_running
+        now_ts = time.time()
+        if now_running and not was_running and self.record_started_ts is None:
+            self.record_started_ts = now_ts
+        if not now_running and was_running and self.record_started_ts is not None:
+            self.record_accumulated_ms += int((now_ts - self.record_started_ts) * 1000)
+            self.record_started_ts = None
+        return {
+            "started_ts": self.record_started_ts,
+            "accumulated_ms": self.record_accumulated_ms,
+            "total_ms": self._record_total_ms_unlocked(),
+        }
+
+    def _handle_partial_event(self, payload: dict[str, Any]) -> None:
+        with self.lock:
+            en = str(payload.get("en", "") or "")
+            speaker = str(payload.get("speaker", "default") or "default")
+            speaker_label = str(payload.get("speaker_label", "Speaker") or "Speaker")
+            if not en:
+                return
+            prev = self.live_partials.get(speaker, {})
+            now_ts = time.time()
+            self.last_speech_activity_ts = now_ts
+            merged_en = en or str(prev.get("en", "") or "")
+            merged_ar = str(prev.get("ar", "") or "")
+            out, req = self.translation.prepare_partial_unlocked(
+                speaker=speaker,
+                speaker_label=speaker_label,
+                en=merged_en,
+                prev_ar=merged_ar,
+                now_ts=now_ts,
+                cfg=self.config,
+            )
+            self.en_live = merged_en
+            self.live_partials[speaker] = dict(out)
+        self._broadcast_from_thread(out)
+        self._emit_trace_from_thread(out, channel="speech_partial")
+        if req:
+            self.translation.enqueue_from_thread(req)
+
+    def _create_final_item(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "type": "final",
+            "en": str(payload.get("en", "") or ""),
+            "ar": "",
+            "speaker": str(payload.get("speaker", "default") or "default"),
+            "speaker_label": str(payload.get("speaker_label", "Speaker") or "Speaker"),
+            "ts": payload.get("ts") or time.time(),
+        }
+
+    def _append_final_unlocked(self, item: dict[str, Any]) -> None:
+        self.finals.append(
+            {
+                "en": item["en"],
+                "ar": item["ar"],
+                "speaker": item["speaker"],
+                "speaker_label": item["speaker_label"],
+                "segment_id": item["segment_id"],
+                "revision": item["revision"],
+                "ts": item["ts"],
+            }
+        )
+        if len(self.finals) > self.config.max_finals:
+            self.finals = self.finals[-self.config.max_finals :]
+        self.en_live = ""
+        self.ar_live = ""
+        self.live_partials.pop(item["speaker"], None)
+        if item["en"] or item["ar"]:
+            self.last_speech_activity_ts = time.time()
+
+    def _schedule_coach_from_thread(
+        self,
+        item: dict[str, Any],
+        coach_call: tuple[str, str, float, int] | None,
+        queued_while_busy: bool,
+    ) -> None:
+        if queued_while_busy:
+            self._broadcast_from_thread(
+                self._append_log(
+                    "debug",
+                    (
+                        "Coach trigger queued while busy: "
+                        f"trigger={item['speaker_label']}, text={item['en']}"
+                    ),
+                )
+            )
+        if not coach_call:
+            return
+        coach_prompt, coach_group_id, coach_trigger_ts, inflight_end_idx = coach_call
+        loop = self.loop
+        if loop and loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                self._run_coach(
+                    coach_prompt,
+                    item,
+                    coach_group_id,
+                    coach_trigger_ts,
+                    inflight_end_idx,
+                ),
+                loop,
+            )
+
+    def _handle_final_event(self, payload: dict[str, Any]) -> None:
+        coach_call: tuple[str, str, float, int] | None = None
+        queued_while_busy = False
+        item = self._create_final_item(payload)
+        with self.lock:
+            item, req = self.translation.prepare_final_unlocked(
+                speaker=item["speaker"],
+                speaker_label=item["speaker_label"],
+                en=item["en"],
+                ts=float(item["ts"]),
+                debug=bool(self.config.debug),
+            )
+            self._append_final_unlocked(item)
+            is_candidate = self._should_trigger_coach_unlocked(
+                item,
+                ignore_busy=True,
+            )
+            if is_candidate:
+                if self.coach_pending:
+                    self.coach_queued_trigger = dict(item)
+                    queued_while_busy = True
+                else:
+                    coach_call = self._prepare_coach_call_unlocked(item)
+        self._broadcast_from_thread(item)
+        self._emit_trace_from_thread(item, channel="speech_final")
+        if req:
+            self.translation.enqueue_from_thread(req)
+        self._schedule_coach_from_thread(item, coach_call, queued_while_busy)
+
+    def _can_start_unlocked(self) -> tuple[bool, str]:
+        if self.config.capture_mode == "dual":
+            local_device = (self.config.local_input_device_id or "").strip()
+            remote_device = (self.config.remote_input_device_id or "").strip()
+            missing: list[str] = []
+            if not local_device:
+                missing.append("local_input_device_id")
+            if not remote_device:
+                missing.append("remote_input_device_id")
+            if missing:
+                return (
+                    False,
+                    (
+                        "Start blocked: Dual Input mode requires both Local and Remote input devices. "
+                        f"Missing: {', '.join(missing)}"
+                    ),
+                )
+        if self.config.coach_enabled and not self.coach.is_configured:
+            return (
+                False,
+                (
+                    "Start blocked: coach is enabled but not configured. "
+                    "Set PROJECT_ENDPOINT, MODEL_DEPLOYMENT_NAME, and AGENT_ID/AGENT_NAME."
+                ),
+            )
+        if self.config.coach_enabled and not self.coach.supports_conversations_create():
+            return (
+                False,
+                (
+                    "Start blocked: coach requires conversations.create() support, "
+                    "but current client/runtime does not provide it."
+                ),
+            )
+        return True, ""
+
+    def _reset_coach_runtime_unlocked(self, *, keep_history: bool) -> None:
+        if not keep_history:
+            self.coach_hints = []
+        self.coach_pending = False
+        self.coach_last_run_ts = 0.0
+        self.coach_last_sent_final_idx = len(self.finals)
+        self.coach_queued_trigger = None
+
     def handle_speech_event(self, payload: dict[str, Any]) -> None:
         kind = payload.get("type")
         if kind == "status":
             with self.lock:
-                was_running = self.running
-                self.status = str(payload.get("status", self.status))
-                now_running = bool(payload.get("running", False))
-                self.running = now_running
-                now_ts = time.time()
-                if now_running and not was_running and self.record_started_ts is None:
-                    self.record_started_ts = now_ts
-                if not now_running and was_running and self.record_started_ts is not None:
-                    self.record_accumulated_ms += int(
-                        (now_ts - self.record_started_ts) * 1000
-                    )
-                    self.record_started_ts = None
-                recording = {
-                    "started_ts": self.record_started_ts,
-                    "accumulated_ms": self.record_accumulated_ms,
-                    "total_ms": self._record_total_ms_unlocked(),
-                }
+                recording = self._apply_status_event_unlocked(payload)
             self._broadcast_from_thread(
                 {
                     "type": "status",
@@ -420,98 +791,11 @@ class AppController:
             return
 
         if kind == "partial":
-            with self.lock:
-                en = str(payload.get("en", "") or "")
-                ar = str(payload.get("ar", "") or "")
-                speaker = str(payload.get("speaker", "default") or "default")
-                speaker_label = str(payload.get("speaker_label", "Speaker") or "Speaker")
-                prev = self.live_partials.get(speaker, {})
-                merged_en = en or str(prev.get("en", "") or "")
-                merged_ar = ar or str(prev.get("ar", "") or "")
-                if en:
-                    self.en_live = en
-                if ar:
-                    self.ar_live = ar
-                self.live_partials[speaker] = {
-                    "speaker": speaker,
-                    "speaker_label": speaker_label,
-                    "en": merged_en,
-                    "ar": merged_ar,
-                    "ts": time.time(),
-                }
-                out = {
-                    "type": "partial",
-                    "speaker": speaker,
-                    "speaker_label": speaker_label,
-                    "en": merged_en,
-                    "ar": merged_ar,
-                }
-            self._broadcast_from_thread(out)
+            self._handle_partial_event(payload)
             return
 
         if kind == "final":
-            trigger_coach = False
-            coach_call: tuple[str, str, float, int] | None = None
-            queued_while_busy = False
-            item = {
-                "type": "final",
-                "en": str(payload.get("en", "") or ""),
-                "ar": str(payload.get("ar", "") or ""),
-                "speaker": str(payload.get("speaker", "default") or "default"),
-                "speaker_label": str(payload.get("speaker_label", "Speaker") or "Speaker"),
-                "ts": payload.get("ts") or time.time(),
-            }
-            with self.lock:
-                self.finals.append(
-                    {
-                        "en": item["en"],
-                        "ar": item["ar"],
-                        "speaker": item["speaker"],
-                        "speaker_label": item["speaker_label"],
-                        "ts": item["ts"],
-                    }
-                )
-                if len(self.finals) > self.config.max_finals:
-                    self.finals = self.finals[-self.config.max_finals :]
-                self.en_live = ""
-                self.ar_live = ""
-                self.live_partials.pop(item["speaker"], None)
-                is_candidate = self._should_trigger_coach_unlocked(
-                    item,
-                    ignore_busy=True,
-                )
-                if is_candidate:
-                    if self.coach_pending:
-                        self.coach_queued_trigger = dict(item)
-                        queued_while_busy = True
-                    else:
-                        coach_call = self._prepare_coach_call_unlocked(item)
-                        trigger_coach = coach_call is not None
-            self._broadcast_from_thread(item)
-            if queued_while_busy:
-                self._broadcast_from_thread(
-                    self._append_log(
-                        "debug",
-                        (
-                            "Coach trigger queued while busy: "
-                            f"trigger={item['speaker_label']}, text={item['en']}"
-                        ),
-                    )
-                )
-            if trigger_coach and coach_call:
-                coach_prompt, coach_group_id, coach_trigger_ts, inflight_end_idx = coach_call
-                loop = self.loop
-                if loop and loop.is_running():
-                    asyncio.run_coroutine_threadsafe(
-                        self._run_coach(
-                            coach_prompt,
-                            item,
-                            coach_group_id,
-                            coach_trigger_ts,
-                            inflight_end_idx,
-                        ),
-                        loop,
-                    )
+            self._handle_final_event(payload)
             return
 
         if kind == "log":
@@ -522,16 +806,9 @@ class AppController:
             self._broadcast_from_thread(item)
 
     def start(self) -> bool:
-        if self.config.coach_enabled and not self.coach.supports_conversations_create():
-            self._broadcast_from_thread(
-                self._append_log(
-                    "error",
-                    (
-                        "Start blocked: coach requires conversations.create() support, "
-                        "but current client/runtime does not provide it."
-                    ),
-                )
-            )
+        can_start, message = self._can_start_unlocked()
+        if not can_start:
+            self._broadcast_from_thread(self._append_log("error", message))
             return False
 
         session_conversation_id: str | None = None
@@ -552,10 +829,9 @@ class AppController:
             return False
         with self.lock:
             self.session_started_ts = time.time()
-            self.coach_pending = False
-            self.coach_last_run_ts = 0.0
-            self.coach_last_sent_final_idx = len(self.finals)
-            self.coach_queued_trigger = None
+            self.last_speech_activity_ts = self.session_started_ts
+            self.translation.reset_unlocked()
+            self._reset_coach_runtime_unlocked(keep_history=True)
         if self.config.coach_enabled:
             self._broadcast_from_thread(
                 self._append_log(
@@ -570,9 +846,8 @@ class AppController:
         if not stopped:
             return False
         with self.lock:
-            self.coach_pending = False
-            self.coach_last_run_ts = 0.0
-            self.coach_queued_trigger = None
+            self._reset_coach_runtime_unlocked(keep_history=True)
+            self.translation.reset_unlocked()
         self.coach.clear_conversation()
         return True
 
@@ -586,17 +861,14 @@ class AppController:
             self.en_live = ""
             self.ar_live = ""
             self.live_partials = {}
+            self.translation.reset_unlocked()
             self.coach_last_sent_final_idx = 0
             self.coach_queued_trigger = None
         self.coach.clear_conversation()
 
     def clear_coach(self) -> None:
         with self.lock:
-            self.coach_hints = []
-            self.coach_pending = False
-            self.coach_last_run_ts = 0.0
-            self.coach_last_sent_final_idx = len(self.finals)
-            self.coach_queued_trigger = None
+            self._reset_coach_runtime_unlocked(keep_history=False)
         self.coach.clear_conversation()
 
     async def request_coach(self, prompt: str, speaker_label: str = "Manual") -> dict[str, Any]:
@@ -615,7 +887,7 @@ class AppController:
                 f"send_ts={send_ts}, speaker_label={speaker_label}, "
                 f"req_conversation_id={chain.get('conversation_id') or '-'}, "
                 f"req_previous_response_id={chain.get('previous_response_id') or '-'}, "
-                f"prompt={prompt}"
+                f"prompt={self._preview_text(prompt)}"
             ),
         )
         result = await asyncio.to_thread(self.coach.ask, manual_prompt)
@@ -630,9 +902,7 @@ class AppController:
             "suggestion": result.text,
         }
         with self.lock:
-            self.coach_hints.append(hint)
-            if len(self.coach_hints) > 120:
-                self.coach_hints = self.coach_hints[-120:]
+            self._append_coach_hint_unlocked(hint)
         await self.broadcast(hint)
         recv_ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time()))
         await self.broadcast_log(
@@ -643,7 +913,7 @@ class AppController:
                 f"create_ms={result.create_ms}, approve_ms={result.approve_ms}, "
                 f"approval_rounds={result.approval_rounds}, approval_count={result.approval_count}, "
                 f"response_id={result.response_id or '-'}, conversation_id={result.conversation_id or '-'}, "
-                f"reply_text={result.text}"
+                f"reply_preview={self._preview_text(result.text)}"
             ),
         )
         return hint
@@ -663,6 +933,8 @@ controller = AppController(settings=settings)
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     controller.loop = asyncio.get_running_loop()
+    controller.translation.start(controller.loop)
+    controller.watchdog_task = asyncio.create_task(controller.watchdog_loop())
     controller._append_log("info", "App started")
     try:
         controller.reload_config_from_disk()
@@ -676,6 +948,13 @@ async def lifespan(_app: FastAPI):
     except Exception as ex:
         controller._append_log("error", f"Failed to load settings file: {ex}")
     yield
+    await controller.translation.stop()
+    if controller.watchdog_task:
+        controller.watchdog_task.cancel()
+        try:
+            await controller.watchdog_task
+        except asyncio.CancelledError:
+            pass
     try:
         controller.coach.close()
     except Exception:
