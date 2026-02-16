@@ -110,6 +110,18 @@
   const clearCoachBtn = document.getElementById("clearCoachBtn");
   const coachHintsEl = document.getElementById("coachHints");
   const coachStatusEl = document.getElementById("coachStatus");
+  const topicsAgendaInput = document.getElementById("topicsAgendaInput");
+  const topicsEnableAuto = document.getElementById("topicsEnableAuto");
+  const topicsAllowNew = document.getElementById("topicsAllowNew");
+  const topicsIntervalSec = document.getElementById("topicsIntervalSec");
+  const topicsWindowSec = document.getElementById("topicsWindowSec");
+  const topicsSaveBtn = document.getElementById("topicsSaveBtn");
+  const topicsAnalyzeBtn = document.getElementById("topicsAnalyzeBtn");
+  const topicsClearBtn = document.getElementById("topicsClearBtn");
+  const topicsStatusEl = document.getElementById("topicsStatus");
+  const topicsListEl = document.getElementById("topicsList");
+  const exportTopicsJsonBtn = document.getElementById("exportTopicsJsonBtn");
+  const exportTopicsCsvBtn = document.getElementById("exportTopicsCsvBtn");
 
   const tabButtons = Array.from(document.querySelectorAll(".tab-btn"));
   const tabPanes = Array.from(document.querySelectorAll(".tab-pane"));
@@ -127,6 +139,18 @@
     coachHints: [],
     coachPending: false,
     coachConfigured: false,
+    topics: {
+      configured: false,
+      enabled: false,
+      allow_new_topics: true,
+      interval_sec: 60,
+      window_sec: 90,
+      pending: false,
+      last_run_ts: 0,
+      last_error: "",
+      agenda: [],
+      items: [],
+    },
     sessionStartedTs: null,
     recording: {
       started_ts: null,
@@ -539,6 +563,95 @@
       statusParts.push("No suggestions yet");
     }
     coachStatusEl.textContent = statusParts.join(" | ");
+  }
+
+  function agendaLinesFromInput() {
+    if (!topicsAgendaInput) return [];
+    const lines = String(topicsAgendaInput.value || "")
+      .split(/\r?\n/g)
+      .map((x) => x.trim())
+      .filter(Boolean);
+    const uniq = [];
+    const seen = new Set();
+    lines.forEach((line) => {
+      const key = normalizeText(line);
+      if (seen.has(key)) return;
+      seen.add(key);
+      uniq.push(line);
+    });
+    return uniq.slice(0, 20);
+  }
+
+  function setTopicsUIFromState() {
+    const t = state.topics || {};
+    if (topicsEnableAuto) topicsEnableAuto.checked = !!t.enabled;
+    if (topicsAllowNew) topicsAllowNew.checked = !!t.allow_new_topics;
+    if (topicsIntervalSec) topicsIntervalSec.value = clampNumber(t.interval_sec, 30, 300, 60);
+    if (topicsWindowSec) topicsWindowSec.value = clampNumber(t.window_sec, 60, 300, 90);
+    if (topicsAgendaInput && document.activeElement !== topicsAgendaInput) {
+      topicsAgendaInput.value = Array.isArray(t.agenda) ? t.agenda.join("\n") : "";
+    }
+  }
+
+  function formatTopicSeconds(sec) {
+    const total = Math.max(0, Number(sec || 0));
+    if (total < 60) return `${Math.round(total)}s`;
+    const mins = Math.floor(total / 60);
+    const rem = Math.round(total % 60);
+    return rem ? `${mins}m ${rem}s` : `${mins}m`;
+  }
+
+  function renderTopics() {
+    const t = state.topics || {};
+    if (!topicsListEl || !topicsStatusEl) return;
+    topicsListEl.innerHTML = "";
+    const items = Array.isArray(t.items) ? t.items : [];
+    const statusParts = [];
+    statusParts.push(t.configured ? "Model ready" : "Model unavailable");
+    if (t.pending) statusParts.push("Updating...");
+    if (t.last_error) statusParts.push(`Error: ${t.last_error}`);
+    if (!t.pending && !t.last_error) {
+      statusParts.push(`Topics: ${items.length}`);
+      if (t.last_run_ts) statusParts.push(`Last run ${formatTime(t.last_run_ts)}`);
+    }
+    topicsStatusEl.textContent = statusParts.join(" | ");
+
+    items.forEach((item) => {
+      const card = document.createElement("div");
+      card.className = "topic-item";
+      const head = document.createElement("div");
+      head.className = "topic-item-head";
+      const status = document.createElement("span");
+      const rawStatus = String(item.status || "not_started");
+      status.className = `topic-status status-${rawStatus}`;
+      status.textContent = rawStatus.replace("_", " ");
+      const name = document.createElement("div");
+      name.className = "topic-item-name";
+      name.textContent = item.name || "Untitled";
+      const time = document.createElement("div");
+      time.className = "topic-item-time";
+      time.textContent = formatTopicSeconds(item.time_seconds || 0);
+      head.appendChild(status);
+      head.appendChild(name);
+      head.appendChild(time);
+      card.appendChild(head);
+
+      const rows = Array.isArray(item.key_statements) ? item.key_statements : [];
+      if (rows.length) {
+        const ul = document.createElement("ul");
+        ul.className = "topic-statements";
+        rows.slice(0, 4).forEach((row) => {
+          const li = document.createElement("li");
+          const ts = row.ts ? formatTime(row.ts) : "";
+          const speaker = (row.speaker || "Speaker").trim();
+          const text = (row.text || "").trim();
+          li.textContent = ts ? `[${ts}] ${speaker}: ${text}` : `${speaker}: ${text}`;
+          ul.appendChild(li);
+        });
+        card.appendChild(ul);
+      }
+      topicsListEl.appendChild(card);
+    });
   }
 
   async function clearTranscript() {
@@ -1161,6 +1274,20 @@
     state.coachConfigured = !!coach.configured;
     state.coachPending = !!coach.pending;
     state.coachHints = Array.isArray(coach.hints) ? coach.hints : [];
+    const topics = msg.topics || {};
+    state.topics = {
+      ...state.topics,
+      configured: !!topics.configured,
+      enabled: !!topics.enabled,
+      allow_new_topics: !!topics.allow_new_topics,
+      interval_sec: clampNumber(topics.interval_sec, 30, 300, 60),
+      window_sec: clampNumber(topics.window_sec, 60, 300, 90),
+      pending: !!topics.pending,
+      last_run_ts: Number(topics.last_run_ts || 0),
+      last_error: String(topics.last_error || ""),
+      agenda: Array.isArray(topics.agenda) ? topics.agenda : [],
+      items: Array.isArray(topics.items) ? topics.items : [],
+    };
 
     state.sessionStartedTs = msg.session_started_ts || null;
     state.running = !!msg.running;
@@ -1175,6 +1302,8 @@
     renderLogs();
     renderLivePartials();
     renderCoachHints();
+    setTopicsUIFromState();
+    renderTopics();
     setStatus(msg.status || "idle", msg.running ? "listening" : "connected");
     applyTimestampVisibility();
     renderSilenceGuardChip();
@@ -1399,6 +1528,68 @@
     );
   }
 
+  function exportTopicsJson() {
+    const t = state.topics || {};
+    const data = {
+      exported_at: new Date().toISOString(),
+      configured: !!t.configured,
+      enabled: !!t.enabled,
+      allow_new_topics: !!t.allow_new_topics,
+      interval_sec: Number(t.interval_sec || 60),
+      window_sec: Number(t.window_sec || 90),
+      agenda: Array.isArray(t.agenda) ? t.agenda : [],
+      items: Array.isArray(t.items) ? t.items : [],
+    };
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    downloadFile(
+      `topics-${stamp}.json`,
+      `${JSON.stringify(data, null, 2)}\n`,
+      "application/json;charset=utf-8"
+    );
+  }
+
+  function exportTopicsCsv() {
+    const t = state.topics || {};
+    const lines = ["topic,status,time_seconds,time_human,statement_time,statement_speaker,statement_text"];
+    const items = Array.isArray(t.items) ? t.items : [];
+    items.forEach((item) => {
+      const statements = Array.isArray(item.key_statements) ? item.key_statements : [];
+      if (!statements.length) {
+        lines.push(
+          [
+            escapeCsv(item.name || ""),
+            escapeCsv(item.status || ""),
+            Number(item.time_seconds || 0),
+            escapeCsv(formatTopicSeconds(item.time_seconds || 0)),
+            "",
+            "",
+            "",
+          ].join(",")
+        );
+        return;
+      }
+      statements.forEach((row) => {
+        lines.push(
+          [
+            escapeCsv(item.name || ""),
+            escapeCsv(item.status || ""),
+            Number(item.time_seconds || 0),
+            escapeCsv(formatTopicSeconds(item.time_seconds || 0)),
+            escapeCsv(row.ts ? formatTime(row.ts) : ""),
+            escapeCsv(row.speaker || ""),
+            escapeCsv(row.text || ""),
+          ].join(",")
+        );
+      });
+    });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    downloadFile(
+      `topics-${stamp}.csv`,
+      `\ufeff${lines.join("\r\n")}\r\n`,
+      "text/csv;charset=utf-8"
+    );
+  }
+
   async function copyLogs() {
     const text = state.logs.map((log) => logLineText(log)).join("\n");
     if (!text.trim()) return;
@@ -1426,6 +1617,40 @@
     state.coachHints = [];
     renderCoachHints();
     showToast("Coach history cleared.", "info");
+  }
+
+  async function saveTopicsSetup() {
+    const agenda = agendaLinesFromInput();
+    const payload = {
+      agenda,
+      enabled: !!topicsEnableAuto?.checked,
+      allow_new_topics: !!topicsAllowNew?.checked,
+      interval_sec: clampNumber(topicsIntervalSec?.value, 30, 300, 60),
+      window_sec: clampNumber(topicsWindowSec?.value, 60, 300, 90),
+    };
+    const out = await request("/api/topics/configure", "POST", payload);
+    if (out?.topics) {
+      state.topics = { ...state.topics, ...out.topics };
+      setTopicsUIFromState();
+      renderTopics();
+    }
+  }
+
+  async function analyzeTopicsNow() {
+    const out = await request("/api/topics/analyze-now", "POST");
+    if (out?.topics) {
+      state.topics = { ...state.topics, ...out.topics };
+      renderTopics();
+    }
+  }
+
+  async function clearTopics() {
+    const out = await request("/api/topics/clear", "POST");
+    if (out?.topics) {
+      state.topics = { ...state.topics, ...out.topics };
+      setTopicsUIFromState();
+      renderTopics();
+    }
   }
 
   function handleMessage(msg) {
@@ -1523,6 +1748,26 @@
       while (state.coachHints.length > 120) state.coachHints.shift();
       state.coachPending = false;
       renderCoachHints();
+      return;
+    }
+
+    if (msg.type === "topics_update") {
+      const topics = msg.topics || {};
+      state.topics = {
+        ...state.topics,
+        configured: !!topics.configured,
+        enabled: !!topics.enabled,
+        allow_new_topics: !!topics.allow_new_topics,
+        interval_sec: clampNumber(topics.interval_sec, 30, 300, 60),
+        window_sec: clampNumber(topics.window_sec, 60, 300, 90),
+        pending: !!topics.pending,
+        last_run_ts: Number(topics.last_run_ts || 0),
+        last_error: String(topics.last_error || ""),
+        agenda: Array.isArray(topics.agenda) ? topics.agenda : [],
+        items: Array.isArray(topics.items) ? topics.items : [],
+      };
+      setTopicsUIFromState();
+      renderTopics();
       return;
     }
 
@@ -1814,6 +2059,24 @@
 
   askCoachBtn.addEventListener("click", () => askCoach().catch(notifyError));
   clearCoachBtn.addEventListener("click", () => clearCoach().catch(notifyError));
+  if (topicsSaveBtn) {
+    topicsSaveBtn.addEventListener("click", () => withBusy(topicsSaveBtn, "Saving", async () => {
+      await saveTopicsSetup();
+      showToast("Topics setup saved.", "success");
+    }).catch(notifyError));
+  }
+  if (topicsAnalyzeBtn) {
+    topicsAnalyzeBtn.addEventListener("click", () => withBusy(topicsAnalyzeBtn, "Analyzing", async () => {
+      await analyzeTopicsNow();
+      showToast("Topics analyzed.", "success");
+    }).catch(notifyError));
+  }
+  if (topicsClearBtn) {
+    topicsClearBtn.addEventListener("click", () => withBusy(topicsClearBtn, "Clearing", async () => {
+      await clearTopics();
+      showToast("Topics cleared.", "info");
+    }).catch(notifyError));
+  }
 
   copyLogsBtn.addEventListener("click", () => copyLogs().then(() => showToast("Logs copied.", "success")).catch(notifyError));
   clearLogsBtn.addEventListener("click", () => withBusy(clearLogsBtn, "Clearing", async () => {
@@ -1846,6 +2109,18 @@
     exportBookmarksCsvBtn.addEventListener("click", () => {
       exportBookmarksCsv();
       showToast("Bookmarks CSV exported.", "success");
+    });
+  }
+  if (exportTopicsJsonBtn) {
+    exportTopicsJsonBtn.addEventListener("click", () => {
+      exportTopicsJson();
+      showToast("Topics JSON exported.", "success");
+    });
+  }
+  if (exportTopicsCsvBtn) {
+    exportTopicsCsvBtn.addEventListener("click", () => {
+      exportTopicsCsv();
+      showToast("Topics CSV exported.", "success");
     });
   }
   if (bookmarksOnlyBtn) {
@@ -1954,6 +2229,8 @@
   renderAutoStopPresetState();
   renderSilenceGuardChip();
   renderTelemetryHud();
+  setTopicsUIFromState();
+  renderTopics();
   setupTimelineDivider();
 
   request("/api/state")

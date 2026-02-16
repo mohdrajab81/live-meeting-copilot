@@ -17,6 +17,7 @@ from app.api.websocket import websocket_endpoint
 from app.config import RuntimeConfig, Settings
 from app.services.coach import CoachService
 from app.services.speech import SpeechService
+from app.services.topic_tracker import TopicTrackerService
 from app.services.translation_pipeline import TranslationPipeline
 
 load_dotenv()
@@ -48,6 +49,22 @@ class AppController:
         self.coach_group_seq = 0
         self.coach_last_sent_final_idx = 0
         self.coach_queued_trigger: dict[str, Any] | None = None
+        self.topic_tracker = TopicTrackerService.from_environment()
+        self.topics_enabled = False
+        self.topics_allow_new = True
+        self.topics_interval_sec = 60
+        self.topics_window_sec = 90
+        self.topics_pending = False
+        self.topics_last_run_ts = 0.0
+        self.topics_last_error = ""
+        self.topics_agenda: list[str] = []
+        self.topics_items: list[dict[str, Any]] = []
+        self._speaker_last_activity_ts: dict[str, float] = {
+            "local": 0.0,
+            "remote": 0.0,
+            "default": 0.0,
+        }
+        self._bleed_suppress_window_sec = 1.6
         self.last_speech_activity_ts = time.time()
         self.watchdog_task: asyncio.Task[None] | None = None
         self.translation = TranslationPipeline(
@@ -189,6 +206,7 @@ class AppController:
         while True:
             await asyncio.sleep(1.0)
             reason: str | None = None
+            topic_call: dict[str, Any] | None = None
             with self.lock:
                 if not self.running:
                     continue
@@ -197,6 +215,14 @@ class AppController:
                 max_session = int(self.config.max_session_sec)
                 idle_for = now - self.last_speech_activity_ts
                 run_for = now - self.session_started_ts
+                if (
+                    self.topics_enabled
+                    and self.topics_agenda
+                    and not self.topics_pending
+                    and self.topic_tracker.is_configured
+                    and (now - self.topics_last_run_ts) >= float(self.topics_interval_sec)
+                ):
+                    topic_call = self._prepare_topic_call_unlocked(now)
                 if silence_limit > 0 and idle_for >= silence_limit:
                     reason = (
                         f"Auto-stopping after {silence_limit}s of inactivity to control costs."
@@ -206,6 +232,8 @@ class AppController:
                         f"Auto-stopping after {max_session}s max session duration to control costs."
                     )
             if not reason:
+                if topic_call:
+                    await self._run_topic_update(topic_call)
                 continue
             if self.stop():
                 await self.broadcast_log("warning", reason)
@@ -273,6 +301,18 @@ class AppController:
                     "last_sent_final_idx": self.coach_last_sent_final_idx,
                     "hints": list(self.coach_hints),
                 },
+                "topics": {
+                    "configured": self.topic_tracker.is_configured,
+                    "enabled": self.topics_enabled,
+                    "allow_new_topics": self.topics_allow_new,
+                    "interval_sec": self.topics_interval_sec,
+                    "window_sec": self.topics_window_sec,
+                    "pending": self.topics_pending,
+                    "last_run_ts": self.topics_last_run_ts,
+                    "last_error": self.topics_last_error,
+                    "agenda": list(self.topics_agenda),
+                    "items": list(self.topics_items),
+                },
                 "telemetry": self._build_telemetry_unlocked(),
             }
 
@@ -330,6 +370,24 @@ class AppController:
         if len(cleaned) <= max_len:
             return cleaned
         return f"{cleaned[: max_len - 3]}..."
+
+    def _topic_trace_summary(self, topic_call: dict[str, Any]) -> str:
+        turns = list(topic_call.get("window_turns", []) or [])
+        latest = turns[-1] if turns else {}
+        latest_text = (
+            str(latest.get("en", "") or "").strip()
+            or str(latest.get("ar", "") or "").strip()
+        )
+        latest_speaker = str(latest.get("speaker", "-") or "-")
+        return (
+            f"agenda={len(list(topic_call.get('agenda', []) or []))}, "
+            f"current_topics={len(list(topic_call.get('current_topics', []) or []))}, "
+            f"window_turns={len(turns)}, "
+            f"window_seconds={int(topic_call.get('window_seconds', 0) or 0)}, "
+            f"allow_new={bool(topic_call.get('allow_new_topics', True))}, "
+            f"latest_speaker={latest_speaker}, "
+            f"latest_preview={self._preview_text(latest_text, max_len=120) if latest_text else '-'}"
+        )
 
     async def broadcast(self, payload: dict[str, Any]) -> None:
         dead: list[WebSocket] = []
@@ -597,6 +655,295 @@ class AppController:
         if len(self.coach_hints) > 120:
             self.coach_hints = self.coach_hints[-120:]
 
+    def _normalize_topic_name(self, value: str) -> str:
+        return " ".join(str(value or "").strip().split()).lower()
+
+    def _normalize_topic_item(self, item: dict[str, Any], now_ts: float) -> dict[str, Any] | None:
+        name = " ".join(str(item.get("name", "") or "").split()).strip()
+        if not name:
+            return None
+        status = str(item.get("status", "not_started") or "not_started").strip().lower()
+        if status not in {"not_started", "active", "covered"}:
+            status = "active"
+        try:
+            time_seconds = max(0, int(item.get("time_seconds", 0) or 0))
+        except Exception:
+            time_seconds = 0
+        statements: list[dict[str, Any]] = []
+        for row in list(item.get("key_statements", []) or [])[:6]:
+            if not isinstance(row, dict):
+                continue
+            text = " ".join(str(row.get("text", "") or "").split()).strip()
+            if not text:
+                continue
+            try:
+                ts = float(row.get("ts", now_ts) or now_ts)
+            except Exception:
+                ts = now_ts
+            speaker = " ".join(str(row.get("speaker", "Speaker") or "Speaker").split()).strip() or "Speaker"
+            statements.append({"ts": ts, "speaker": speaker, "text": text})
+        return {
+            "name": name,
+            "status": status,
+            "time_seconds": time_seconds,
+            "key_statements": statements,
+            "updated_ts": now_ts,
+        }
+
+    def _prepare_topic_call_unlocked(self, now_ts: float) -> dict[str, Any] | None:
+        if not self.topic_tracker.is_configured:
+            return None
+        if not self.topics_enabled:
+            return None
+        if not self.topics_agenda:
+            return None
+        since_ts = now_ts - float(self.topics_window_sec)
+        window_turns = [
+            {
+                "ts": float(turn.get("ts") or now_ts),
+                "speaker": str(turn.get("speaker_label", "Speaker") or "Speaker"),
+                "en": str(turn.get("en", "") or ""),
+            }
+            for turn in self.finals
+            if float(turn.get("ts") or 0.0) >= since_ts
+        ]
+        if not window_turns:
+            return None
+        self.topics_pending = True
+        self.topics_last_run_ts = now_ts
+        return {
+            "agenda": list(self.topics_agenda),
+            "allow_new_topics": self.topics_allow_new,
+            "current_topics": list(self.topics_items),
+            "window_turns": window_turns,
+            "window_seconds": int(self.topics_window_sec),
+            "now_ts": now_ts,
+        }
+
+    async def _run_topic_update(self, topic_call: dict[str, Any]) -> None:
+        try:
+            send_ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time()))
+            await self.broadcast_log(
+                "info",
+                (
+                    "Topics agent send: "
+                    f"send_ts={send_ts}, {self._topic_trace_summary(topic_call)}"
+                ),
+            )
+            result = await asyncio.to_thread(self.topic_tracker.ask_update, topic_call)
+            payload = result.payload if isinstance(result.payload, dict) else {}
+            items_raw = list(payload.get("topics", []) or [])
+            now_ts = time.time()
+            normalized: list[dict[str, Any]] = []
+            for raw in items_raw[:30]:
+                if not isinstance(raw, dict):
+                    continue
+                item = self._normalize_topic_item(raw, now_ts)
+                if item:
+                    normalized.append(item)
+
+            with self.lock:
+                if normalized:
+                    by_name = {self._normalize_topic_name(x["name"]): x for x in normalized}
+                    ordered: list[dict[str, Any]] = []
+                    used: set[str] = set()
+                    for agenda_name in self.topics_agenda:
+                        key = self._normalize_topic_name(agenda_name)
+                        entry = by_name.get(key)
+                        if entry is None:
+                            # Preserve agenda visibility even when not discussed yet.
+                            ordered.append(
+                                {
+                                    "name": agenda_name,
+                                    "status": "not_started",
+                                    "time_seconds": 0,
+                                    "key_statements": [],
+                                    "updated_ts": now_ts,
+                                }
+                            )
+                            continue
+                        ordered.append(entry)
+                        used.add(key)
+                    for entry in normalized:
+                        key = self._normalize_topic_name(entry["name"])
+                        if key in used:
+                            continue
+                        if not self.topics_allow_new:
+                            continue
+                        ordered.append(entry)
+                    self.topics_items = ordered[:40]
+                self.topics_last_error = ""
+                self.topics_pending = False
+                out = {
+                    "type": "topics_update",
+                    "topics": {
+                        "configured": self.topic_tracker.is_configured,
+                        "enabled": self.topics_enabled,
+                        "allow_new_topics": self.topics_allow_new,
+                        "interval_sec": self.topics_interval_sec,
+                        "window_sec": self.topics_window_sec,
+                        "pending": self.topics_pending,
+                        "last_run_ts": self.topics_last_run_ts,
+                        "last_error": self.topics_last_error,
+                        "agenda": list(self.topics_agenda),
+                        "items": list(self.topics_items),
+                    },
+                }
+            await self.broadcast(out)
+            recv_ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time()))
+            await self.broadcast_log(
+                "info",
+                (
+                    "Topics agent reply: "
+                    f"recv_ts={recv_ts}, total_ms={result.total_ms}, "
+                    f"response_id={result.response_id or '-'}, "
+                    f"conversation_id={result.conversation_id or '-'}, "
+                    f"returned_topics={len(items_raw)}, normalized_topics={len(normalized)}, "
+                    f"stored_topics={len(out['topics']['items'])}"
+                ),
+            )
+            await self.broadcast_log(
+                "debug",
+                (
+                    "Topics updated: "
+                    f"items={len(out['topics']['items'])}, "
+                    f"window_turns={len(topic_call.get('window_turns', []))}, "
+                    f"total_ms={result.total_ms}"
+                ),
+            )
+        except Exception as ex:
+            with self.lock:
+                self.topics_pending = False
+                self.topics_last_error = str(ex)
+                out = {
+                    "type": "topics_update",
+                    "topics": {
+                        "configured": self.topic_tracker.is_configured,
+                        "enabled": self.topics_enabled,
+                        "allow_new_topics": self.topics_allow_new,
+                        "interval_sec": self.topics_interval_sec,
+                        "window_sec": self.topics_window_sec,
+                        "pending": self.topics_pending,
+                        "last_run_ts": self.topics_last_run_ts,
+                        "last_error": self.topics_last_error,
+                        "agenda": list(self.topics_agenda),
+                        "items": list(self.topics_items),
+                    },
+                }
+            await self.broadcast(out)
+            await self.broadcast_log("error", f"Topics update failed: {ex}")
+
+    def configure_topics(
+        self,
+        *,
+        agenda: list[str],
+        enabled: bool,
+        allow_new_topics: bool,
+        interval_sec: int,
+        window_sec: int,
+    ) -> dict[str, Any]:
+        cleaned_agenda: list[str] = []
+        seen: set[str] = set()
+        for raw in agenda:
+            name = " ".join(str(raw or "").split()).strip()
+            if not name:
+                continue
+            key = self._normalize_topic_name(name)
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned_agenda.append(name)
+        with self.lock:
+            prev_by_name = {
+                self._normalize_topic_name(str(item.get("name", ""))): item
+                for item in self.topics_items
+                if isinstance(item, dict)
+            }
+            self.topics_enabled = bool(enabled)
+            self.topics_allow_new = bool(allow_new_topics)
+            self.topics_interval_sec = max(30, min(300, int(interval_sec)))
+            self.topics_window_sec = max(60, min(300, int(window_sec)))
+            self.topics_agenda = cleaned_agenda[:20]
+            self.topics_last_error = ""
+            self.topics_pending = False
+            now_ts = time.time()
+            rebuilt: list[dict[str, Any]] = []
+            for name in self.topics_agenda:
+                existing = prev_by_name.get(self._normalize_topic_name(name))
+                if existing:
+                    rebuilt.append(
+                        {
+                            "name": name,
+                            "status": str(existing.get("status", "not_started") or "not_started"),
+                            "time_seconds": int(existing.get("time_seconds", 0) or 0),
+                            "key_statements": list(existing.get("key_statements", []) or [])[:6],
+                            "updated_ts": now_ts,
+                        }
+                    )
+                else:
+                    rebuilt.append(
+                        {
+                            "name": name,
+                            "status": "not_started",
+                            "time_seconds": 0,
+                            "key_statements": [],
+                            "updated_ts": now_ts,
+                        }
+                    )
+            if self.topics_allow_new:
+                agenda_keys = {self._normalize_topic_name(name) for name in self.topics_agenda}
+                for key, existing in prev_by_name.items():
+                    if key in agenda_keys:
+                        continue
+                    rebuilt.append(
+                        {
+                            "name": str(existing.get("name", "Topic") or "Topic"),
+                            "status": str(existing.get("status", "active") or "active"),
+                            "time_seconds": int(existing.get("time_seconds", 0) or 0),
+                            "key_statements": list(existing.get("key_statements", []) or [])[:6],
+                            "updated_ts": now_ts,
+                        }
+                    )
+            self.topics_items = rebuilt[:40]
+        self.topic_tracker.clear_conversation()
+        return self.snapshot().get("topics", {})
+
+    async def analyze_topics_now(self) -> dict[str, Any]:
+        with self.lock:
+            topic_call = self._prepare_topic_call_unlocked(time.time())
+        if not topic_call:
+            raise RuntimeError(
+                "No recent transcript available for topic analysis. Speak first, then retry."
+            )
+        await self._run_topic_update(topic_call)
+        with self.lock:
+            return {
+                "configured": self.topic_tracker.is_configured,
+                "enabled": self.topics_enabled,
+                "allow_new_topics": self.topics_allow_new,
+                "interval_sec": self.topics_interval_sec,
+                "window_sec": self.topics_window_sec,
+                "pending": self.topics_pending,
+                "last_run_ts": self.topics_last_run_ts,
+                "last_error": self.topics_last_error,
+                "agenda": list(self.topics_agenda),
+                "items": list(self.topics_items),
+            }
+
+    def clear_topics(self) -> None:
+        with self.lock:
+            self.topics_pending = False
+            self.topics_last_error = ""
+            self.topics_items = []
+        self.topic_tracker.clear_conversation()
+
+    def _finalize_topics_on_stop_unlocked(self) -> None:
+        now_ts = time.time()
+        for item in self.topics_items:
+            if str(item.get("status", "")).strip().lower() == "active":
+                item["status"] = "covered"
+                item["updated_ts"] = now_ts
+
     def _apply_status_event_unlocked(self, payload: dict[str, Any]) -> dict[str, Any]:
         was_running = self.running
         self.status = str(payload.get("status", self.status))
@@ -619,10 +966,11 @@ class AppController:
             en = str(payload.get("en", "") or "")
             speaker = str(payload.get("speaker", "default") or "default")
             speaker_label = str(payload.get("speaker_label", "Speaker") or "Speaker")
+            now_ts = time.time()
+            self._speaker_last_activity_ts[speaker] = now_ts
             if not en:
                 return
             prev = self.live_partials.get(speaker, {})
-            now_ts = time.time()
             self.last_speech_activity_ts = now_ts
             merged_en = en or str(prev.get("en", "") or "")
             merged_ar = str(prev.get("ar", "") or "")
@@ -650,6 +998,23 @@ class AppController:
             "speaker_label": str(payload.get("speaker_label", "Speaker") or "Speaker"),
             "ts": payload.get("ts") or time.time(),
         }
+
+    def _should_suppress_dual_local_unlocked(self, payload: dict[str, Any]) -> bool:
+        if self.config.capture_mode != "dual":
+            return False
+        speaker = str(payload.get("speaker", "default") or "default")
+        if speaker != "local":
+            return False
+        # If a remote partial is still active (not yet finalized), treat local
+        # recognitions as bleed and suppress them.
+        remote_live = self.live_partials.get("remote")
+        if remote_live and str(remote_live.get("en", "") or "").strip():
+            return True
+        now_ts = time.time()
+        remote_ts = float(self._speaker_last_activity_ts.get("remote", 0.0) or 0.0)
+        if remote_ts <= 0:
+            return False
+        return (now_ts - remote_ts) <= float(self._bleed_suppress_window_sec)
 
     def _append_final_unlocked(self, item: dict[str, Any]) -> None:
         self.finals.append(
@@ -791,10 +1156,34 @@ class AppController:
             return
 
         if kind == "partial":
+            with self.lock:
+                if not self.running:
+                    return
+                if self._should_suppress_dual_local_unlocked(payload):
+                    if bool(self.config.debug):
+                        self._broadcast_from_thread(
+                            self._append_log(
+                                "debug",
+                                "Suppressed local partial while remote active (dual-mode bleed guard).",
+                            )
+                        )
+                    return
             self._handle_partial_event(payload)
             return
 
         if kind == "final":
+            with self.lock:
+                if not self.running:
+                    return
+                if self._should_suppress_dual_local_unlocked(payload):
+                    if bool(self.config.debug):
+                        self._broadcast_from_thread(
+                            self._append_log(
+                                "debug",
+                                "Suppressed local final while remote active (dual-mode bleed guard).",
+                            )
+                        )
+                    return
             self._handle_final_event(payload)
             return
 
@@ -832,12 +1221,19 @@ class AppController:
             self.last_speech_activity_ts = self.session_started_ts
             self.translation.reset_unlocked()
             self._reset_coach_runtime_unlocked(keep_history=True)
+            self.topics_pending = False
+            self.topics_last_error = ""
         if self.config.coach_enabled:
             self._broadcast_from_thread(
                 self._append_log(
                     "info",
                     f"Coach session active: conversation_id={session_conversation_id or '-'}",
                 )
+            )
+        if self.topics_enabled and self.topics_agenda:
+            self.topic_tracker.clear_conversation()
+            self._broadcast_from_thread(
+                self._append_log("info", "Topics tracker session prepared.")
             )
         return True
 
@@ -848,7 +1244,26 @@ class AppController:
         with self.lock:
             self._reset_coach_runtime_unlocked(keep_history=True)
             self.translation.reset_unlocked()
+            self.topics_pending = False
+            self._finalize_topics_on_stop_unlocked()
+            topics_payload = {
+                "type": "topics_update",
+                "topics": {
+                    "configured": self.topic_tracker.is_configured,
+                    "enabled": self.topics_enabled,
+                    "allow_new_topics": self.topics_allow_new,
+                    "interval_sec": self.topics_interval_sec,
+                    "window_sec": self.topics_window_sec,
+                    "pending": self.topics_pending,
+                    "last_run_ts": self.topics_last_run_ts,
+                    "last_error": self.topics_last_error,
+                    "agenda": list(self.topics_agenda),
+                    "items": list(self.topics_items),
+                },
+            }
         self.coach.clear_conversation()
+        self.topic_tracker.clear_conversation()
+        self._broadcast_from_thread(topics_payload)
         return True
 
     def clear_logs(self) -> None:
@@ -864,7 +1279,20 @@ class AppController:
             self.translation.reset_unlocked()
             self.coach_last_sent_final_idx = 0
             self.coach_queued_trigger = None
+            self.topics_pending = False
+            self.topics_last_run_ts = 0.0
+            self.topics_items = [
+                {
+                    "name": name,
+                    "status": "not_started",
+                    "time_seconds": 0,
+                    "key_statements": [],
+                    "updated_ts": time.time(),
+                }
+                for name in self.topics_agenda
+            ]
         self.coach.clear_conversation()
+        self.topic_tracker.clear_conversation()
 
     def clear_coach(self) -> None:
         with self.lock:
@@ -957,6 +1385,10 @@ async def lifespan(_app: FastAPI):
             pass
     try:
         controller.coach.close()
+    except Exception:
+        pass
+    try:
+        controller.topic_tracker.close()
     except Exception:
         pass
 

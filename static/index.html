@@ -142,6 +142,7 @@
       <aside class="side-panel">
         <div class="tabs">
           <button class="tab-btn active" type="button" data-tab="coachTab">Coach</button>
+          <button class="tab-btn" type="button" data-tab="topicsTab">Topics</button>
           <button class="tab-btn" type="button" data-tab="settingsTab">Settings</button>
           <button class="tab-btn" type="button" data-tab="logsTab">Logs</button>
         </div>
@@ -173,6 +174,61 @@
           </div>
           <div id="coachStatus" class="muted">Coach suggestions appear here.</div>
           <div id="coachHints" class="coach-hints"></div>
+        </section>
+
+        <section id="topicsTab" class="tab-pane panel">
+          <div class="panel-head">
+            <h3>Key Topics</h3>
+            <div class="actions compact">
+              <button id="topicsClearBtn" class="btn btn-soft-danger topics-clear-btn" type="button">Clear Topics</button>
+            </div>
+          </div>
+          <div id="topicsStatus" class="muted topics-status">Configure topics, then start your meeting.</div>
+
+          <div class="topics-section">
+            <label class="topics-section-title">Meeting Agenda</label>
+            <textarea id="topicsAgendaInput" rows="5" placeholder="One topic per line (example: Project status, Risks, Decisions, Next actions)"></textarea>
+          </div>
+
+          <div class="topics-section">
+            <label class="topics-section-title">Update Cadence</label>
+            <div class="field-inline topics-cadence">
+              <div>
+                <label>Interval (sec)</label>
+                <input id="topicsIntervalSec" type="number" min="30" max="300" step="5" value="60" />
+              </div>
+              <div>
+                <label>Window (sec)</label>
+                <input id="topicsWindowSec" type="number" min="60" max="300" step="10" value="90" />
+              </div>
+            </div>
+          </div>
+
+          <div class="topics-section">
+            <label class="topics-section-title">Options</label>
+            <div class="topics-checks">
+              <label class="check check-row">
+                <input id="topicsEnableAuto" type="checkbox" checked />
+                <span>Enable live topic tracking</span>
+              </label>
+              <label class="check check-row">
+                <input id="topicsAllowNew" type="checkbox" checked />
+                <span>Allow adding new topics automatically</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="topics-section">
+            <label class="topics-section-title">Actions</label>
+            <div class="actions compact topics-actions-main">
+              <button id="topicsSaveBtn" class="btn" type="button">Save Setup</button>
+              <button id="topicsAnalyzeBtn" class="btn" type="button">Analyze Now</button>
+              <button id="exportTopicsJsonBtn" class="btn" type="button">Export JSON</button>
+              <button id="exportTopicsCsvBtn" class="btn" type="button">Export CSV</button>
+            </div>
+          </div>
+
+          <div id="topicsList" class="topics-list"></div>
         </section>
 
         <section id="settingsTab" class="tab-pane panel">

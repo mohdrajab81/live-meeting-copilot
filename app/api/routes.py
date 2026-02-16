@@ -138,6 +138,14 @@ class CoachAskRequest(BaseModel):
     speaker_label: str = Field(default="Manual", max_length=64)
 
 
+class TopicsConfigureRequest(BaseModel):
+    agenda: list[str] = Field(default_factory=list, max_length=20)
+    enabled: bool = True
+    allow_new_topics: bool = True
+    interval_sec: int = Field(default=60, ge=30, le=300)
+    window_sec: int = Field(default=90, ge=60, le=300)
+
+
 @router.post("/coach/ask")
 async def ask_coach(payload: CoachAskRequest, request: Request) -> dict:
     _enforce_coach_rate_limit(request)
@@ -167,3 +175,46 @@ async def ask_coach(payload: CoachAskRequest, request: Request) -> dict:
             )
         raise HTTPException(status_code=502, detail=msg)
     return {"ok": True, "hint": hint}
+
+
+@router.post("/topics/configure")
+async def configure_topics(payload: TopicsConfigureRequest, request: Request) -> dict:
+    controller = request.app.state.controller
+    topics = controller.configure_topics(
+        agenda=payload.agenda,
+        enabled=payload.enabled,
+        allow_new_topics=payload.allow_new_topics,
+        interval_sec=payload.interval_sec,
+        window_sec=payload.window_sec,
+    )
+    await controller.broadcast({"type": "topics_update", "topics": topics})
+    await controller.broadcast_log(
+        "info",
+        (
+            "Topics configured: "
+            f"enabled={topics.get('enabled')}, agenda={len(topics.get('agenda', []))}, "
+            f"allow_new={topics.get('allow_new_topics')}, "
+            f"interval={topics.get('interval_sec')}s, window={topics.get('window_sec')}s"
+        ),
+    )
+    return {"ok": True, "topics": topics}
+
+
+@router.post("/topics/analyze-now")
+async def analyze_topics_now(request: Request) -> dict:
+    controller = request.app.state.controller
+    try:
+        topics = await controller.analyze_topics_now()
+    except Exception as ex:
+        raise HTTPException(status_code=409, detail=str(ex))
+    return {"ok": True, "topics": topics}
+
+
+@router.post("/topics/clear")
+async def clear_topics(request: Request) -> dict:
+    controller = request.app.state.controller
+    controller.clear_topics()
+    topics = controller.snapshot().get("topics", {})
+    await controller.broadcast({"type": "topics_update", "topics": topics})
+    await controller.broadcast_log("info", "Topics cleared from web")
+    return {"ok": True, "topics": topics}
