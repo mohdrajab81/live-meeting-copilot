@@ -267,6 +267,7 @@
         sortBy: "duration_desc",
         search: "",
         density: "comfortable",
+        expandedStatements: {},
       },
       topicsDefinitionsView: {
         editingId: "",
@@ -1216,6 +1217,9 @@
       const origin = ["agenda", "custom"].includes(originRaw)
         ? originRaw
         : (agendaSet.has(key) ? "agenda" : "custom");
+      const expandKey = definition?.id
+        ? `def:${String(definition.id)}`
+        : `${origin}:${key}`;
       return {
         ...item,
         name,
@@ -1232,6 +1236,7 @@
         comments: String(definition?.comments || item.comments || ""),
         definition_id: String(definition?.id || item.definition_id || ""),
         definition_order: Number(definition?.order ?? item.definition_order ?? 0),
+        ui_expand_key: expandKey,
       };
     });
   }
@@ -1475,7 +1480,10 @@
           const ul = document.createElement("ul");
           ul.className = "topic-statements";
           const visibleLimit = state.ui.topicsView.density === "compact" ? 4 : 6;
-          rows.slice(0, visibleLimit).forEach((row) => {
+          const expandedMap = state.ui.topicsView.expandedStatements || {};
+          const isExpanded = !!expandedMap[item.ui_expand_key];
+          const visibleCount = isExpanded ? rows.length : visibleLimit;
+          rows.slice(0, visibleCount).forEach((row) => {
             const li = document.createElement("li");
             const ts = row.ts ? formatTime(row.ts) : "";
             const speaker = (row.speaker || "Speaker").trim();
@@ -1486,7 +1494,21 @@
           if (rows.length > visibleLimit) {
             const more = document.createElement("li");
             more.className = "topic-statements-more";
-            more.textContent = `+${rows.length - visibleLimit} more`;
+            const toggle = document.createElement("button");
+            toggle.type = "button";
+            toggle.className = "topic-statements-more-toggle";
+            toggle.textContent = isExpanded
+              ? "Show less"
+              : `+${rows.length - visibleLimit} more`;
+            toggle.addEventListener("click", () => {
+              const next = { ...(state.ui.topicsView.expandedStatements || {}) };
+              if (isExpanded) delete next[item.ui_expand_key];
+              else next[item.ui_expand_key] = true;
+              state.ui.topicsView.expandedStatements = next;
+              saveUiPrefs();
+              renderTopics();
+            });
+            more.appendChild(toggle);
             ul.appendChild(more);
           }
           card.appendChild(ul);
@@ -2049,6 +2071,16 @@
         if (["duration_desc", "name_asc", "latest_activity"].includes(sortBy)) state.ui.topicsView.sortBy = sortBy;
         state.ui.topicsView.search = search;
         if (["comfortable", "compact"].includes(density)) state.ui.topicsView.density = density;
+        if (parsed.topicsView.expandedStatements && typeof parsed.topicsView.expandedStatements === "object") {
+          const rawExpanded = parsed.topicsView.expandedStatements;
+          const safeExpanded = {};
+          Object.entries(rawExpanded).forEach(([k, v]) => {
+            const key = String(k || "").trim();
+            if (!key) return;
+            safeExpanded[key] = !!v;
+          });
+          state.ui.topicsView.expandedStatements = safeExpanded;
+        }
       }
       if (parsed.topicsDefinitionsView && typeof parsed.topicsDefinitionsView === "object") {
         const editingId = String(parsed.topicsDefinitionsView.editingId || "");

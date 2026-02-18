@@ -1111,7 +1111,22 @@ body[data-theme="sand"] select {
 
 .topic-statements-more {
   color: var(--text-muted) !important;
+  list-style: none;
+  margin-left: -2px;
+}
+
+.topic-statements-more-toggle {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
   font-style: italic;
+  cursor: pointer;
+  padding: 0;
+}
+
+.topic-statements-more-toggle:hover {
+  color: var(--text-strong);
+  text-decoration: underline;
 }
 
 .topics-list.compact .topic-item {

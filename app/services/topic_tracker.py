@@ -140,6 +140,96 @@ class TopicTrackerService:
         except Exception as ex:
             raise RuntimeError("Topic tracker response JSON parse failed.") from ex
 
+    @staticmethod
+    def _topic_output_schema() -> dict[str, Any]:
+        # Keep schema strict enough to force shape, but compatible with current merge logic.
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["topics"],
+            "properties": {
+                "topics": {
+                    "type": "array",
+                    "maxItems": 30,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": [
+                            "name",
+                            "status",
+                            "topic_presence",
+                            "match_confidence",
+                            "key_statements",
+                        ],
+                        "properties": {
+                            "name": {"type": "string", "minLength": 1, "maxLength": 120},
+                            "suggested_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120,
+                            },
+                            "short_description": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 240,
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": ["not_started", "active", "covered"],
+                            },
+                            "topic_presence": {"type": "boolean"},
+                            "match_confidence": {
+                                "type": "number",
+                                "minimum": 0.0,
+                                "maximum": 1.0,
+                            },
+                            "key_statements": {
+                                "type": "array",
+                                "maxItems": 20,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": False,
+                                    "required": ["ts", "speaker", "text"],
+                                    "properties": {
+                                        "ts": {"type": "number"},
+                                        "speaker": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 80,
+                                        },
+                                        "text": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 160,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                }
+            },
+        }
+
+    @staticmethod
+    def _is_schema_unsupported_error(ex: Exception) -> bool:
+        text = str(ex or "").strip().lower()
+        if not text:
+            return False
+        markers = (
+            "json_schema",
+            "json schema",
+            "json_object",
+            "response_format",
+            "response format",
+            "unknown parameter",
+            "unsupported parameter",
+            "invalid parameter",
+            "text.format",
+            "does not support",
+        )
+        return any(marker in text for marker in markers)
+
     def _is_retryable_error(self, ex: Exception) -> bool:
         text = str(ex or "").strip().lower()
         if not text:
@@ -184,20 +274,54 @@ class TopicTrackerService:
             if conversation_id:
                 params["conversation"] = conversation_id
 
+            variants: list[tuple[str, dict[str, Any]]] = []
+            uses_agent_reference = bool(
+                isinstance(params.get("extra_body"), dict)
+                and isinstance(params["extra_body"].get("agent"), dict)
+            )
+            # Azure agent-routed Responses rejects "text" payload fields.
+            # Keep plain mode whenever an agent is specified.
+            if not uses_agent_reference:
+                schema_params = dict(params)
+                schema_params["text"] = {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "meeting_topic_tracker_output",
+                        "strict": True,
+                        "schema": self._topic_output_schema(),
+                    }
+                }
+                variants.append(("json_schema", schema_params))
+
+                json_mode_params = dict(params)
+                json_mode_params["text"] = {"format": {"type": "json_object"}}
+                variants.append(("json_object", json_mode_params))
+            variants.append(("plain", dict(params)))
+
             t0 = time.perf_counter()
             response = None
+            last_error: Exception | None = None
             max_attempts = 3
-            for attempt in range(1, max_attempts + 1):
-                try:
-                    response = client.responses.create(**params)
+            for mode, call_params in variants:
+                for attempt in range(1, max_attempts + 1):
+                    try:
+                        response = client.responses.create(**call_params)
+                        break
+                    except Exception as ex:
+                        last_error = ex
+                        if mode in {"json_schema", "json_object"} and self._is_schema_unsupported_error(ex):
+                            # Backend/runtime does not accept structured format args; fall back.
+                            break
+                        if attempt >= max_attempts or (not self._is_retryable_error(ex)):
+                            raise
+                        # Backoff to smooth over transient upstream errors.
+                        time.sleep(2.0 * attempt)
+                if response is not None:
                     break
-                except Exception as ex:
-                    if attempt >= max_attempts or (not self._is_retryable_error(ex)):
-                        raise
-                    # Backoff to smooth over transient upstream errors.
-                    time.sleep(2.0 * attempt)
             total_ms = int((time.perf_counter() - t0) * 1000)
             if response is None:
+                if last_error is not None:
+                    raise last_error
                 raise RuntimeError("Topic tracker call failed without response.")
             payload = self._extract_json(getattr(response, "output_text", None) or "")
             response_id = getattr(response, "id", None)
