@@ -19,12 +19,11 @@ class TranslationPipeline:
     def __init__(
         self,
         settings: Settings,
-        lock: threading.RLock,
         apply_translation_result: ApplyTranslationCallback,
         log: LogCallback | None = None,
     ) -> None:
         self._settings = settings
-        self._lock = lock
+        self._state_lock = threading.RLock()
         self._apply_translation_result = apply_translation_result
         self._log = log
 
@@ -43,11 +42,12 @@ class TranslationPipeline:
         self._worker_task: asyncio.Task[None] | None = None
 
     def reset_unlocked(self) -> None:
-        self._generation += 1
-        self.partial_translate_last_emit_ts = {}
-        self.active_segments = {}
-        self.partial_inflight = {}
-        self.partial_backlog = {}
+        with self._state_lock:
+            self._generation += 1
+            self.partial_translate_last_emit_ts = {}
+            self.active_segments = {}
+            self.partial_inflight = {}
+            self.partial_backlog = {}
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -63,10 +63,6 @@ class TranslationPipeline:
                 pass
         self._worker_task = None
         self._queue = None
-
-    def _next_segment_id_unlocked(self, speaker: str) -> str:
-        self.segment_seq += 1
-        return f"{speaker}-{int(time.time())}-{self.segment_seq}"
 
     def _translator_headers(self) -> dict[str, str]:
         key = (self._settings.translator_key or self._settings.speech_key or "").strip()
@@ -153,23 +149,27 @@ class TranslationPipeline:
         debug = bool(req.get("debug", False))
 
         if kind == "partial":
-            with self._lock:
+            backlog_replaced = False
+            with self._state_lock:
                 if self.partial_inflight.get(speaker, False):
                     self.partial_backlog[speaker] = req
-                    if debug and self._log:
-                        await self._log(
-                            "debug",
-                            (
-                                "Translation perf backlog replaced: "
-                                f"kind={kind}, speaker={speaker}, "
-                                f"segment_id={req.get('segment_id', '')}, "
-                                f"revision={req.get('revision', 0)}"
-                            ),
-                        )
-                    return
-                self.partial_inflight[speaker] = True
+                    backlog_replaced = True
+                else:
+                    self.partial_inflight[speaker] = True
+            if backlog_replaced:
+                if debug and self._log:
+                    await self._log(
+                        "debug",
+                        (
+                            "Translation perf backlog replaced: "
+                            f"kind={kind}, speaker={speaker}, "
+                            f"segment_id={req.get('segment_id', '')}, "
+                            f"revision={req.get('revision', 0)}"
+                        ),
+                    )
+                return
             if queue.full():
-                with self._lock:
+                with self._state_lock:
                     self.partial_inflight[speaker] = False
                 await self._log_throttled(
                     "warning",
@@ -178,7 +178,7 @@ class TranslationPipeline:
                 )
                 return
 
-        with self._lock:
+        with self._state_lock:
             self.translate_seq += 1
             seq = self.translate_seq
         req["queue_seq"] = seq
@@ -195,7 +195,23 @@ class TranslationPipeline:
                     f"qsize_before={queue.qsize()}"
                 ),
             )
-        await queue.put((priority, seq, req))
+        try:
+            queue.put_nowait((priority, seq, req))
+        except asyncio.QueueFull:
+            if kind == "partial":
+                with self._state_lock:
+                    self.partial_inflight[speaker] = False
+                await self._log_throttled(
+                    "warning",
+                    f"Translation queue is full; dropping partial for speaker '{speaker}'.",
+                    bucket="queue_full",
+                )
+                return
+            await self._log_throttled(
+                "warning",
+                "Translation queue is full; dropping final translation request.",
+                bucket="queue_full",
+            )
 
     def enqueue_from_thread(self, req: dict[str, Any]) -> None:
         loop = self._loop
@@ -211,7 +227,7 @@ class TranslationPipeline:
             _priority, _seq, req = await queue.get()
             try:
                 req_generation = int(req.get("generation", -1) or -1)
-                with self._lock:
+                with self._state_lock:
                     current_generation = self._generation
                 if req_generation != current_generation:
                     continue
@@ -266,7 +282,7 @@ class TranslationPipeline:
                 queue.task_done()
                 if kind == "partial":
                     backlog: dict[str, Any] | None = None
-                    with self._lock:
+                    with self._state_lock:
                         self.partial_inflight[speaker] = False
                         backlog = self.partial_backlog.pop(speaker, None)
                     if backlog:
@@ -292,46 +308,55 @@ class TranslationPipeline:
         now_ts: float,
         cfg: RuntimeConfig,
     ) -> tuple[dict[str, Any], dict[str, Any] | None]:
-        seg = self.active_segments.get(speaker)
-        if not seg:
-            seg = {
-                "segment_id": self._next_segment_id_unlocked(speaker),
-                "revision": 0,
-            }
-            self.active_segments[speaker] = seg
-        seg["revision"] = int(seg.get("revision", 0)) + 1
-        segment_id = str(seg.get("segment_id", ""))
-        revision = int(seg.get("revision", 0))
+        with self._state_lock:
+            seg = self.active_segments.get(speaker)
+            if not seg:
+                self.segment_seq += 1
+                seg = {
+                    "segment_id": f"{speaker}-{int(time.time())}-{self.segment_seq}",
+                    "revision": 0,
+                    "start_ts": now_ts,
+                }
+                self.active_segments[speaker] = seg
+            else:
+                try:
+                    prev_start = float(seg.get("start_ts", now_ts) or now_ts)
+                except Exception:
+                    prev_start = now_ts
+                seg["start_ts"] = min(prev_start, now_ts)
+            seg["revision"] = int(seg.get("revision", 0)) + 1
+            segment_id = str(seg.get("segment_id", ""))
+            revision = int(seg.get("revision", 0))
 
-        out = {
-            "type": "partial",
-            "speaker": speaker,
-            "speaker_label": speaker_label,
-            "segment_id": segment_id,
-            "revision": revision,
-            "en": en,
-            "ar": prev_ar,
-            "ts": now_ts,
-        }
-
-        req: dict[str, Any] | None = None
-        throttle_sec = float(cfg.partial_translate_min_interval_sec)
-        elapsed = now_ts - self.partial_translate_last_emit_ts.get(speaker, 0.0)
-        # Send first partial for this segment immediately; throttle only follow-up updates.
-        should_emit_now = not str(prev_ar or "").strip() or (elapsed >= throttle_sec)
-        if should_emit_now:
-            self.partial_translate_last_emit_ts[speaker] = now_ts
-            req = {
-                "kind": "partial",
+            out = {
+                "type": "partial",
                 "speaker": speaker,
+                "speaker_label": speaker_label,
                 "segment_id": segment_id,
                 "revision": revision,
-                "generation": self._generation,
-                "text": en,
-                "trigger_ts": now_ts,
-                "debug": bool(cfg.debug),
+                "en": en,
+                "ar": prev_ar,
+                "ts": now_ts,
             }
-        return out, req
+
+            req: dict[str, Any] | None = None
+            throttle_sec = float(cfg.partial_translate_min_interval_sec)
+            elapsed = now_ts - self.partial_translate_last_emit_ts.get(speaker, 0.0)
+            # Send first partial for this segment immediately; throttle only follow-up updates.
+            should_emit_now = not str(prev_ar or "").strip() or (elapsed >= throttle_sec)
+            if should_emit_now:
+                self.partial_translate_last_emit_ts[speaker] = now_ts
+                req = {
+                    "kind": "partial",
+                    "speaker": speaker,
+                    "segment_id": segment_id,
+                    "revision": revision,
+                    "generation": self._generation,
+                    "text": en,
+                    "trigger_ts": now_ts,
+                    "debug": bool(cfg.debug),
+                }
+            return out, req
 
     def prepare_final_unlocked(
         self,
@@ -342,63 +367,72 @@ class TranslationPipeline:
         ts: float,
         debug: bool = False,
     ) -> tuple[dict[str, Any], dict[str, Any] | None]:
-        seg = self.active_segments.pop(speaker, None)
-        if seg:
-            segment_id = str(seg.get("segment_id", ""))
-            revision = int(seg.get("revision", 0)) + 1
-        else:
-            segment_id = self._next_segment_id_unlocked(speaker)
-            revision = 1
+        with self._state_lock:
+            seg = self.active_segments.pop(speaker, None)
+            if seg:
+                segment_id = str(seg.get("segment_id", ""))
+                revision = int(seg.get("revision", 0)) + 1
+                try:
+                    start_ts = float(seg.get("start_ts", ts) or ts)
+                except Exception:
+                    start_ts = float(ts)
+            else:
+                self.segment_seq += 1
+                segment_id = f"{speaker}-{int(time.time())}-{self.segment_seq}"
+                revision = 1
+                start_ts = float(ts)
 
-        self.partial_translate_last_emit_ts.pop(speaker, None)
-        item = {
-            "type": "final",
-            "speaker": speaker,
-            "speaker_label": speaker_label,
-            "segment_id": segment_id,
-            "revision": revision,
-            "en": en,
-            "ar": "",
-            "ts": ts,
-        }
-        req = (
-            {
-                "kind": "final",
+            self.partial_translate_last_emit_ts.pop(speaker, None)
+            item = {
+                "type": "final",
                 "speaker": speaker,
+                "speaker_label": speaker_label,
                 "segment_id": segment_id,
                 "revision": revision,
-                "generation": self._generation,
-                "text": en,
-                "trigger_ts": ts,
-                "debug": bool(debug),
+                "en": en,
+                "ar": "",
+                "ts": ts,
+                "start_ts": start_ts,
             }
-            if en
-            else None
-        )
-        return item, req
+            req = (
+                {
+                    "kind": "final",
+                    "speaker": speaker,
+                    "segment_id": segment_id,
+                    "revision": revision,
+                    "generation": self._generation,
+                    "text": en,
+                    "trigger_ts": ts,
+                    "debug": bool(debug),
+                }
+                if en
+                else None
+            )
+            return item, req
 
     def is_current_partial_unlocked(
         self,
         req: dict[str, Any],
         live_partials: dict[str, dict[str, Any]],
     ) -> bool:
-        speaker = str(req.get("speaker", "default") or "default")
-        segment_id = str(req.get("segment_id", "") or "")
-        revision = int(req.get("revision", 0) or 0)
+        with self._state_lock:
+            speaker = str(req.get("speaker", "default") or "default")
+            segment_id = str(req.get("segment_id", "") or "")
+            revision = int(req.get("revision", 0) or 0)
 
-        seg = self.active_segments.get(speaker)
-        if not seg:
-            return False
-        if str(seg.get("segment_id", "")) != segment_id:
-            return False
-        if int(seg.get("revision", 0)) < revision:
-            return False
+            seg = self.active_segments.get(speaker)
+            if not seg:
+                return False
+            if str(seg.get("segment_id", "")) != segment_id:
+                return False
+            if int(seg.get("revision", 0)) < revision:
+                return False
 
-        partial = live_partials.get(speaker)
-        if not partial:
-            return False
-        if str(partial.get("segment_id", "")) != segment_id:
-            return False
-        if int(partial.get("revision", 0)) < revision:
-            return False
-        return True
+            partial = live_partials.get(speaker)
+            if not partial:
+                return False
+            if str(partial.get("segment_id", "")) != segment_id:
+                return False
+            if int(partial.get("revision", 0)) < revision:
+                return False
+            return True

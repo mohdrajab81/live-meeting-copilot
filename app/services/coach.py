@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -31,30 +32,34 @@ class CoachService:
         self._agent_key = "id" if self._agent_ref.startswith("asst_") else "name"
         self._conversation_id: str | None = None
         self._previous_response_id: str | None = None
+        self._project_client: Any = None
         self._openai_client: Any = None
+        self._state_lock = threading.RLock()
 
     @property
     def is_configured(self) -> bool:
         return bool(self._project_endpoint and self._model_deployment and self._agent_ref)
 
     def _ensure_client(self) -> Any:
-        if self._openai_client is not None:
-            return self._openai_client
-        try:
-            from azure.ai.projects import AIProjectClient
-            from azure.identity import DefaultAzureCredential
-        except Exception as ex:
-            raise RuntimeError(
-                "Missing coach dependencies. Install azure-ai-projects and azure-identity."
-            ) from ex
+        with self._state_lock:
+            if self._openai_client is not None:
+                return self._openai_client
+            try:
+                from azure.ai.projects import AIProjectClient
+                from azure.identity import DefaultAzureCredential
+            except Exception as ex:
+                raise RuntimeError(
+                    "Missing coach dependencies. Install azure-ai-projects and azure-identity."
+                ) from ex
 
-        credential = DefaultAzureCredential()
-        project_client = AIProjectClient(
-            endpoint=self._project_endpoint,
-            credential=credential,
-        )
-        self._openai_client = project_client.get_openai_client()
-        return self._openai_client
+            credential = DefaultAzureCredential()
+            project_client = AIProjectClient(
+                endpoint=self._project_endpoint,
+                credential=credential,
+            )
+            self._project_client = project_client
+            self._openai_client = project_client.get_openai_client()
+            return self._openai_client
 
     def _get_conversations_create_fn(self):
         client = self._ensure_client()
@@ -112,82 +117,86 @@ class CoachService:
             raise RuntimeError(
                 "Coach is not configured. Set PROJECT_ENDPOINT, MODEL_DEPLOYMENT_NAME, and AGENT_ID/AGENT_NAME."
             )
-        client = self._ensure_client()
+        with self._state_lock:
+            client = self._ensure_client()
 
-        params: dict[str, Any] = {
-            "model": self._model_deployment,
-            "input": prompt,
-            "extra_body": {
-                "agent": {
-                    self._agent_key: self._agent_ref,
-                    "type": "agent_reference",
-                }
-            },
-        }
-        request_conversation_id = self._ensure_conversation_id()
-        request_previous_response_id = self._previous_response_id
-        sent_previous_response_id: str | None = None
-        if request_conversation_id:
-            params["conversation"] = request_conversation_id
-        elif request_previous_response_id:
-            # Azure Responses API rejects sending both conversation and previous_response_id together.
-            params["previous_response_id"] = request_previous_response_id
-            sent_previous_response_id = request_previous_response_id
+            params: dict[str, Any] = {
+                "model": self._model_deployment,
+                "input": prompt,
+                "extra_body": {
+                    "agent": {
+                        self._agent_key: self._agent_ref,
+                        "type": "agent_reference",
+                    }
+                },
+            }
+            request_conversation_id = self._ensure_conversation_id()
+            request_previous_response_id = self._previous_response_id
+            sent_previous_response_id: str | None = None
+            if request_conversation_id:
+                params["conversation"] = request_conversation_id
+            elif request_previous_response_id:
+                # Azure Responses API rejects sending both conversation and previous_response_id together.
+                params["previous_response_id"] = request_previous_response_id
+                sent_previous_response_id = request_previous_response_id
 
-        total_start = time.perf_counter()
-        create_start = time.perf_counter()
-        response = client.responses.create(**params)
-        create_ms = int((time.perf_counter() - create_start) * 1000)
-        response, rounds, approvals, approve_ms = self._auto_approve_mcp_if_needed(response)
-        total_ms = int((time.perf_counter() - total_start) * 1000)
-        response_id = getattr(response, "id", None)
-        response_conversation_id = getattr(response, "conversation_id", None)
-        if response_conversation_id:
-            self._conversation_id = response_conversation_id
-        self._previous_response_id = response_id
-        text = getattr(response, "output_text", None) or "(No text output returned.)"
-        return CoachResult(
-            text=text,
-            conversation_id=self._conversation_id,
-            response_id=response_id,
-            request_conversation_id=request_conversation_id,
-            request_previous_response_id=sent_previous_response_id,
-            total_ms=total_ms,
-            create_ms=create_ms,
-            approve_ms=approve_ms,
-            approval_rounds=rounds,
-            approval_count=approvals,
-        )
+            total_start = time.perf_counter()
+            create_start = time.perf_counter()
+            response = client.responses.create(**params)
+            create_ms = int((time.perf_counter() - create_start) * 1000)
+            response, rounds, approvals, approve_ms = self._auto_approve_mcp_if_needed(response)
+            total_ms = int((time.perf_counter() - total_start) * 1000)
+            response_id = getattr(response, "id", None)
+            response_conversation_id = getattr(response, "conversation_id", None)
+            if response_conversation_id:
+                self._conversation_id = response_conversation_id
+            self._previous_response_id = response_id
+            text = getattr(response, "output_text", None) or "(No text output returned.)"
+            return CoachResult(
+                text=text,
+                conversation_id=self._conversation_id,
+                response_id=response_id,
+                request_conversation_id=request_conversation_id,
+                request_previous_response_id=sent_previous_response_id,
+                total_ms=total_ms,
+                create_ms=create_ms,
+                approve_ms=approve_ms,
+                approval_rounds=rounds,
+                approval_count=approvals,
+            )
 
     def get_chain_state(self) -> dict[str, str | None]:
         # Report only fields that would be sent on the next ask() call.
-        req_conversation_id = self._conversation_id
-        req_previous = None if req_conversation_id else self._previous_response_id
-        return {
-            "conversation_id": req_conversation_id,
-            "previous_response_id": req_previous,
-        }
+        with self._state_lock:
+            req_conversation_id = self._conversation_id
+            req_previous = None if req_conversation_id else self._previous_response_id
+            return {
+                "conversation_id": req_conversation_id,
+                "previous_response_id": req_previous,
+            }
 
     def clear_conversation(self) -> None:
-        self._conversation_id = None
-        self._previous_response_id = None
+        with self._state_lock:
+            self._conversation_id = None
+            self._previous_response_id = None
 
     def _ensure_conversation_id(self) -> str | None:
-        if self._conversation_id:
-            return self._conversation_id
+        with self._state_lock:
+            if self._conversation_id:
+                return self._conversation_id
 
-        create_fn = self._get_conversations_create_fn()
-        conversation = create_fn()
-        conversation_id = (
-            getattr(conversation, "id", None)
-            or getattr(conversation, "conversation_id", None)
-        )
-        if not conversation_id:
-            raise RuntimeError(
-                "conversations.create() returned no conversation id."
+            create_fn = self._get_conversations_create_fn()
+            conversation = create_fn()
+            conversation_id = (
+                getattr(conversation, "id", None)
+                or getattr(conversation, "conversation_id", None)
             )
-        self._conversation_id = conversation_id
-        return self._conversation_id
+            if not conversation_id:
+                raise RuntimeError(
+                    "conversations.create() returned no conversation id."
+                )
+            self._conversation_id = conversation_id
+            return self._conversation_id
 
     def start_session(self) -> str | None:
         self.clear_conversation()
@@ -197,23 +206,35 @@ class CoachService:
         return self._ensure_conversation_id()
 
     def supports_conversations_create(self) -> bool:
-        try:
-            self._get_conversations_create_fn()
-            return True
-        except Exception:
-            return False
+        with self._state_lock:
+            try:
+                self._get_conversations_create_fn()
+                return True
+            except Exception:
+                return False
 
     def close(self) -> None:
-        client = self._openai_client
-        if client is None:
-            return
-        close_fn = getattr(client, "close", None)
-        if callable(close_fn):
-            try:
-                close_fn()
-            except Exception:
-                pass
-        self._openai_client = None
+        with self._state_lock:
+            client = self._openai_client
+            project_client = self._project_client
+            self._openai_client = None
+            self._project_client = None
+
+        if client is not None:
+            close_fn = getattr(client, "close", None)
+            if callable(close_fn):
+                try:
+                    close_fn()
+                except Exception:
+                    pass
+
+        if project_client is not None:
+            close_fn = getattr(project_client, "close", None)
+            if callable(close_fn):
+                try:
+                    close_fn()
+                except Exception:
+                    pass
 
     @classmethod
     def from_environment(cls) -> "CoachService":

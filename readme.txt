@@ -1,67 +1,88 @@
 Live Interview Translator
 =========================
 
-Real-time speech translation web app built with FastAPI.
-It streams live English speech recognition and Arabic translation, supports single/dual microphone capture modes, and includes an optional interview coach powered by Azure AI Foundry agent integration.
+Real-time interview assistant built with FastAPI.
+It captures live speech, streams EN transcript + AR translation, supports optional AI coach hints, and tracks meeting topics with a dedicated topic-tracker agent.
 
 Features
 --------
-- Real-time speech recognition and EN->AR translation
-- Single input mode (default microphone or selected device)
-- Dual input mode (local + remote microphones with separate labels)
-- Live transcript stream over WebSocket (`/ws`)
-- Runtime configuration API (`/api/config`)
-- Optional AI coach hints (manual + auto deep suggestions)
-- Session-scoped coach conversation continuity using Azure OpenAI Conversations API
+- Real-time speech recognition and EN->AR translation.
+- Single and dual microphone capture modes.
+- WebSocket live updates for transcript, translation patches, telemetry, coach hints, and topics.
+- Config API with in-memory update + save/reload/reset.
+- Optional coach agent (manual ask + auto-trigger on final turns).
+- Optional topic tracker agent (manual and scheduled analysis).
 
-Tech Stack
-----------
-- FastAPI + Uvicorn
-- Azure Cognitive Services Speech SDK
-- Pydantic / pydantic-settings
-- Azure AI Projects + Azure Identity (for coach)
-
-Project Structure
------------------
-- `app/main.py`: app bootstrap, controller, state management, routing
-- `app/services/speech.py`: speech recognizer lifecycle and event wiring
-- `app/services/coach.py`: Azure AI coach client integration
-- `app/api/routes.py`: REST API endpoints
-- `app/api/websocket.py`: WebSocket endpoint
-- `static/`: frontend UI assets
-- `.env`: environment variables
-- `web_translator_settings.json`: persisted runtime config (created/saved by API)
+Current Architecture (at a glance)
+----------------------------------
+- `app/main.py`: app bootstrap/lifespan, router + websocket mounting.
+- `app/controller/__init__.py` (`AppController`): wiring layer only.
+- `app/controller/session_manager.py`: session lifecycle, speech event handling, watchdog.
+- `app/controller/coach_orchestrator.py`: coach trigger/prompt scheduling and async runs.
+- `app/controller/topic_orchestrator.py`: topic configuration/state, agent calls, merge logic.
+- `app/controller/transcript_store.py`: transcript state + translation telemetry aggregation.
+- `app/controller/config_store.py`: runtime config load/save/reset/reload.
+- `app/controller/broadcast_service.py`: websocket connections + logs + debug traces.
+- `app/services/speech.py`: Azure Speech SDK recognizers.
+- `app/services/translation_pipeline.py`: async translation queue + segment/revision guards.
+- `app/services/coach.py`: Azure AI Foundry coach client.
+- `app/services/topic_tracker.py`: Azure AI Foundry topic tracker client.
 
 Prerequisites
 -------------
-- Windows (audio device listing endpoint is Windows-specific)
-- Python 3.10+ (3.12 recommended)
-- Azure Speech resource key + region
-- Optional for coach:
-  - Azure AI Foundry Project endpoint
-  - Model deployment name
-  - Agent name/id
-  - Azure CLI login (`az login`) to the correct tenant
+- Windows recommended (audio device listing endpoint is Windows-oriented).
+- Python 3.10+ (3.12 recommended).
+- Azure Speech key + region.
+- Optional for coach/topics:
+  - Azure AI Foundry project endpoint.
+  - Model deployment.
+  - Agent ID or name.
+  - Azure login (`az login`) for `DefaultAzureCredential`.
 
 Environment Variables
 ---------------------
-Create or update `.env` in project root:
+Required:
 
 ```
-SPEECH_KEY="your-speech-key"
-SPEECH_REGION="eastus2"
+SPEECH_KEY="..."
+SPEECH_REGION="eastus"
+```
 
-# Optional explicit Translator config (falls back to SPEECH_KEY/SPEECH_REGION)
-TRANSLATOR_KEY="your-translator-or-multiservice-key"
-TRANSLATOR_REGION="eastus2"
+Optional translator override:
+
+```
+TRANSLATOR_KEY="..."
+TRANSLATOR_REGION="eastus"
 TRANSLATOR_ENDPOINT="https://api.cognitive.microsofttranslator.com"
+TRANSLATION_COST_PER_MILLION_USD="10.0"
+```
 
-# Optional (coach)
+Optional coach agent:
+
+```
 PROJECT_ENDPOINT="https://<resource>.services.ai.azure.com/api/projects/<project>"
 MODEL_DEPLOYMENT_NAME="gpt-4.1-mini"
-AGENT_ID="my-profile-agent"
-# or use AGENT_NAME instead of AGENT_ID
+AGENT_ID="asst_..."
+# or AGENT_NAME="..."
 ```
+
+Optional topic agent (can reuse model/agent vars above if dedicated vars are not set):
+
+```
+TOPIC_MODEL_DEPLOYMENT_NAME="gpt-4.1-mini"
+TOPIC_AGENT_ID="asst_..."
+# or TOPIC_AGENT_NAME="..."
+```
+
+Optional API auth token:
+
+```
+API_AUTH_TOKEN="strong-random-token"
+```
+
+Auth behavior:
+- If `API_AUTH_TOKEN` is set: required for all `/api/*` and `/ws`.
+- If unset: access is restricted to loopback clients only.
 
 Install
 -------
@@ -83,77 +104,95 @@ uvicorn app.main:app --reload
 
 Open:
 - App UI: `http://127.0.0.1:8000/`
-- Swagger docs: `http://127.0.0.1:8000/docs`
+- Swagger: `http://127.0.0.1:8000/docs`
 
-API Endpoints
--------------
-- `GET /api/state`: full app snapshot (status, transcript, logs, coach state)
-- `GET /api/config`: current runtime config
-- `PUT /api/config`: update runtime config (only when not running)
-- `POST /api/config/save`: persist config to `web_translator_settings.json`
-- `POST /api/config/reload`: reload config from `web_translator_settings.json`
-- `GET /api/audio/devices`: list available capture devices (Windows)
-- `POST /api/start`: start recognition
-- `POST /api/stop`: stop recognition
-- `POST /api/logs/clear`: clear logs
-- `POST /api/transcript/clear`: clear transcript
-- `POST /api/coach/clear`: clear coach history
-- `POST /api/coach/ask`: manually request coach suggestion
+REST API
+--------
+- `GET /api/state`
+- `GET /api/config`
+- `PUT /api/config`
+- `POST /api/config/save`
+- `POST /api/config/reload`
+- `POST /api/config/reset-defaults`
+- `GET /api/audio/devices`
+- `POST /api/start`
+- `POST /api/stop`
+- `POST /api/logs/clear`
+- `POST /api/transcript/clear`
+- `POST /api/coach/clear`
+- `POST /api/coach/ask`
+- `POST /api/topics/configure`
+- `POST /api/topics/analyze-now`
+- `POST /api/topics/clear`
+
+Rate limits:
+- `/api/coach/ask`: 6 requests/minute per client IP.
+- `/api/topics/analyze-now`: 4 requests/minute per client IP.
 
 WebSocket
 ---------
-- `ws://127.0.0.1:8000/ws`
-- Sends snapshot on connect, then streams `status`, `partial`, `final`, `log`, and `coach` events.
+- Endpoint: `ws://127.0.0.1:8000/ws`
+- Sends snapshot immediately on connect, then incremental events:
+  - `status`
+  - `partial`
+  - `final`
+  - `final_patch`
+  - `telemetry`
+  - `coach`
+  - `topics_update`
+  - `log`
 
-Runtime Config Notes
---------------------
-Key fields accepted by `PUT /api/config`:
-- `capture_mode`: `single` | `dual`
-- `recognition_language`: default `en-US`
-- `audio_source`: `default` | `device_id` (single mode)
-- `input_device_id`: device id for single mode with `audio_source=device_id`
-- `local_input_device_id`, `remote_input_device_id`: required in dual mode
+Runtime Config (`PUT /api/config`)
+----------------------------------
+Key fields:
+- `capture_mode`: `single|dual`
+- `recognition_language`
+- `audio_source`: `default|device_id`
+- `input_device_id`
+- `local_input_device_id`, `remote_input_device_id`
 - `local_speaker_label`, `remote_speaker_label`
-- `coach_enabled`: enable/disable auto coach
-- `coach_trigger_speaker`: `remote` | `local` | `default` | `any`
-- `coach_cooldown_sec`, `coach_max_turns`, `coach_instruction`
-- `partial_translate_min_interval_sec`: throttle AR partial update frequency per speaker
-- `auto_stop_silence_sec`: auto-stop app after N seconds without recognized speech (`0` disables)
-- `max_session_sec`: hard session duration limit in seconds (`0` disables)
+- `coach_enabled`, `coach_trigger_speaker`, `coach_cooldown_sec`, `coach_max_turns`, `coach_instruction`
+- `partial_translate_min_interval_sec`
+- `auto_stop_silence_sec`
+- `max_session_sec`
 - `end_silence_ms`, `initial_silence_ms`, `max_finals`, `debug`
 
-Coach Runtime Behavior
-----------------------
-- Speech recognition runs in STT mode and sends English partial/final text.
-- Arabic translation is done asynchronously via Translator API with:
-  - throttled partial updates per speaker
-  - always-on final translation (final overrides partial for same segment)
-- On `POST /api/start`, if coach is enabled, the app initializes one conversation session and reuses it for manual and auto coach asks until stop/reset.
-- Auto coach sends transcript updates incrementally (delta since last sent point), not full history every turn.
-- If a new coach trigger arrives while a coach call is running, latest trigger is queued and resumed after current call completes.
-- Manual coach asks continue in the same active conversation session.
+Topics Config (`POST /api/topics/configure`)
+--------------------------------------------
+Settings are separate from `RuntimeConfig` and include:
+- `enabled`
+- `allow_new_topics`
+- `chunk_mode`: `since_last|window`
+- `interval_sec`, `window_sec`
+- `agenda` (up to 20)
+- `definitions` (up to 80)
+
+Topic Runtime Notes
+-------------------
+- Auto topic analysis is scheduled by watchdog only when:
+  - session is running,
+  - topics are enabled,
+  - tracker is configured,
+  - interval elapsed,
+  - no topic run is currently pending.
+- Manual analysis uses `/api/topics/analyze-now`.
+- Topic tracker payload sent to the agent is intentionally minimal and scoped to agent-needed fields.
 
 Troubleshooting
 ---------------
-- PowerShell execution policy issue:
+- PowerShell script policy:
   - `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
-- Mic/device issue (common error "5"):
-  - Check Windows microphone permissions
-  - Ensure device is not exclusively locked by another app
-  - Switch to default mic first, then test explicit device ids
-- Coach auth failure:
-  - Login with Azure CLI to the correct tenant and scope:
+- Audio device errors:
+  - verify Windows microphone permissions
+  - test default input first, then explicit device IDs
+- Azure auth issues (coach/topics):
   - `az logout`
   - `az login --tenant "<tenant-id>" --scope "https://ai.azure.com/.default"`
-- Start blocked with conversations support error:
-  - Current runtime/client must support `openai_client.conversations.create()`.
-  - Update dependencies and retry:
+- `conversations.create()` unsupported:
+  - update dependencies:
   - `python -m pip install -U azure-ai-projects openai`
-  - Verify you are using the intended Python environment (`.venv`).
-- After project folder rename:
-  - If `.venv` breaks, recreate it and reinstall requirements
 
 Security
 --------
-- Do not commit real secrets in `.env`.
-- Rotate keys immediately if they were exposed.
+- Never commit real secrets to source control.
+- Rotate keys/tokens immediately if exposed.

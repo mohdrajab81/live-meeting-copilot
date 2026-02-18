@@ -1,17 +1,20 @@
+
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Live Speech Translator</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=IBM+Plex+Sans+Arabic:wght@300;500;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@300;500;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/style.css?v=20260217s" />
 </head>
 <body>
   <div class="app">
     <header class="topbar">
+      <button id="navToggleBtn" class="btn nav-toggle-btn" type="button" aria-label="Open navigation" aria-controls="leftRail" aria-expanded="false">Menu</button>
       <div class="brand">Live Speech Translator</div>
       <div class="status-wrap">
         <span id="statusDot" class="status-dot"></span>
@@ -20,107 +23,605 @@
       <button id="startBtn" class="btn btn-start" type="button">Start</button>
       <button id="stopBtn" class="btn btn-stop" type="button">Stop</button>
       <span id="reconnectBadge" class="badge hidden">Reconnecting...</span>
+      <span id="buildTag" class="chip build-tag hidden">UI 20260217s</span>
+
       <div class="time-strip">
         <span id="clockNow" class="chip">Now --:--:--</span>
         <span id="sessionStart" class="chip">Session --:--:--</span>
         <span id="recordTimer" class="chip chip-strong">Record 00:00:00</span>
         <span id="silenceGuardChip" class="chip">Auto-stop --</span>
       </div>
-      <div class="telemetry-ticker-wrap" aria-live="polite">
-        <div class="telemetry-hud">
-          <span id="telemetryWs" class="telemetry-pill">WS --</span>
-          <span id="telemetryTr" class="telemetry-pill">Tr --</span>
-        </div>
-      </div>
+
     </header>
 
     <main class="stage">
-      <section class="timeline-wrap">
-        <div class="timeline-head">
-          <div class="timeline-title-row">
-            <div class="timeline-title">Transcript Timeline</div>
-            <div class="timeline-head-actions">
-              <button
-                id="exportTranscriptJsonBtn"
-                class="btn icon-btn icon-btn-soft"
-                type="button"
-                title="Export transcript as JSON"
-                aria-label="Export transcript as JSON"
-              >
-                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"></path>
-                  <path d="M14 2v5h5"></path>
-                  <path d="M8 13h8"></path>
-                  <path d="M8 17h6"></path>
-                </svg>
-                <span>JSON</span>
-              </button>
-              <button
-                id="exportTranscriptCsvBtn"
-                class="btn icon-btn icon-btn-soft"
-                type="button"
-                title="Export transcript as CSV"
-                aria-label="Export transcript as CSV"
-              >
-                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"></path>
-                  <path d="M14 2v5h5"></path>
-                  <path d="M8 13h8"></path>
-                  <path d="M8 17h8"></path>
-                  <path d="M8 9h3"></path>
-                </svg>
-                <span>CSV</span>
-              </button>
-              <button id="clearBtn" class="btn icon-btn icon-btn-danger" type="button" title="Clear transcript">
-                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M3 6h18"></path>
-                  <path d="M8 6V4h8v2"></path>
-                  <path d="M19 6l-1 14H6L5 6"></path>
-                  <path d="M10 10v7"></path>
-                  <path d="M14 10v7"></path>
-                </svg>
-                <span>Clear</span>
-              </button>
-              <button
-                id="exportBookmarksJsonBtn"
-                class="btn icon-btn icon-btn-soft"
-                type="button"
-                title="Export bookmarks as JSON"
-                aria-label="Export bookmarks as JSON"
-              >
-                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"></path>
-                </svg>
-                <span>BM JSON</span>
-              </button>
-              <button
-                id="exportBookmarksCsvBtn"
-                class="btn icon-btn icon-btn-soft"
-                type="button"
-                title="Export bookmarks as CSV"
-                aria-label="Export bookmarks as CSV"
-              >
-                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"></path>
-                  <path d="M8 8h8"></path>
-                  <path d="M8 12h8"></path>
-                </svg>
-                <span>BM CSV</span>
-              </button>
-            </div>
-          </div>
-          <div class="timeline-cols">
-            <span>English</span>
-            <span>Arabic</span>
-          </div>
-          <div class="timeline-search-row">
-            <input id="transcriptSearch" class="search-input" type="text" placeholder="Search transcript text..." />
-            <button id="bookmarksOnlyBtn" class="btn bookmarks-filter-btn" type="button" aria-pressed="false">Bookmarks only</button>
-          </div>
-        </div>
-        <div id="timeline" class="timeline show-ts"></div>
-        <div id="timelineDivider" class="timeline-divider" title="Drag to resize live area"></div>
+      <div id="navBackdrop" class="nav-backdrop" aria-hidden="true"></div>
 
+      <aside id="leftRail" class="left-rail" aria-label="Workspace navigation">
+        <div class="rail-head">
+          <div class="rail-title">Workspace</div>
+          <button id="navCollapseBtn" class="btn rail-collapse-btn" type="button" aria-label="Collapse navigation">Collapse</button>
+        </div>
+
+        <nav class="rail-nav" aria-label="Sections">
+          <button class="tab-btn rail-tab active" type="button" data-tab="transcriptTab" aria-current="page">
+            <span class="rail-tab-icon" aria-hidden="true">T</span>
+            <span class="rail-tab-label">Transcript</span>
+          </button>
+          <button class="tab-btn rail-tab" type="button" data-tab="coachTab">
+            <span class="rail-tab-icon" aria-hidden="true">C</span>
+            <span class="rail-tab-label">Coach</span>
+          </button>
+          <button class="tab-btn rail-tab" type="button" data-tab="topicsTab">
+            <span class="rail-tab-icon" aria-hidden="true">P</span>
+            <span class="rail-tab-label">Topics</span>
+          </button>
+          <button class="tab-btn rail-tab" type="button" data-tab="logsTab">
+            <span class="rail-tab-icon" aria-hidden="true">L</span>
+            <span class="rail-tab-label">Logs</span>
+          </button>
+          <button class="tab-btn rail-tab" type="button" data-tab="settingsTab">
+            <span class="rail-tab-icon" aria-hidden="true">S</span>
+            <span class="rail-tab-label">Settings</span>
+          </button>
+        </nav>
+      </aside>
+
+      <section class="workspace-shell">
+        <div class="workspace-content">
+          <section id="transcriptTab" class="tab-pane active transcript-page" aria-labelledby="transcriptPageTitle">
+            <header class="workspace-page-head transcript-page-head">
+              <div>
+                <h2 id="transcriptPageTitle" class="workspace-page-title">Transcript Timeline</h2>
+                <p class="workspace-page-subtitle">
+                  <span id="transcriptMetaEntries">Entries: 0</span>
+                  <span class="dot-sep" aria-hidden="true">&#8226;</span>
+                  <span id="transcriptMetaBookmarks">Bookmarks: 0</span>
+                </p>
+              </div>
+
+              <div class="page-action-stack transcript-actions-stack">
+                <div class="control-row transcript-primary-controls">
+                  <input id="transcriptSearch" class="search-input" type="text" placeholder="Search transcript text..." />
+                  <button id="bookmarksOnlyBtn" class="btn" type="button" aria-pressed="false">Bookmarks only</button>
+                  <button id="clearBtn" class="btn btn-soft-danger" type="button">Clear</button>
+                  <div class="export-menu-wrap" data-export-menu-wrapper>
+                    <button id="transcriptExportMenuBtn" class="btn" type="button" aria-expanded="false" aria-controls="transcriptExportMenu">Export</button>
+                    <div id="transcriptExportMenu" class="export-menu hidden" role="menu" aria-label="Transcript export actions">
+                      <button id="exportTranscriptJsonBtn" class="btn export-item" type="button" role="menuitem">Transcript JSON</button>
+                      <button id="exportTranscriptCsvBtn" class="btn export-item" type="button" role="menuitem">Transcript CSV</button>
+                      <button id="exportBookmarksJsonBtn" class="btn export-item" type="button" role="menuitem">Bookmarks JSON</button>
+                      <button id="exportBookmarksCsvBtn" class="btn export-item" type="button" role="menuitem">Bookmarks CSV</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </header>
+
+            <details id="transcriptBookmarksPanel" class="card-shell transcript-bookmarks-panel">
+              <summary>Bookmarks Jump List (optional)</summary>
+              <div id="insightBookmarkSummary" class="muted">No bookmarks yet.</div>
+              <div id="insightBookmarksList" class="bookmark-jump-list"></div>
+              <div id="insightSessionStats" class="hidden"></div>
+            </details>
+
+            <div class="timeline-shell">
+              <div class="timeline-head">
+                <div class="timeline-cols">
+                  <span>English</span>
+                  <span>Arabic</span>
+                </div>
+              </div>
+              <div id="timeline" class="timeline show-ts"></div>
+            </div>
+          </section>
+          <section id="coachTab" class="tab-pane panel coach-page" aria-labelledby="coachPageTitle" hidden style="display:none" aria-hidden="true">
+            <header class="workspace-page-head coach-page-head">
+              <div>
+                <h2 id="coachPageTitle" class="workspace-page-title">Coach</h2>
+                <p class="workspace-page-subtitle">One-column command center for fast interview support.</p>
+              </div>
+              <div class="workspace-head-meta">
+                <span class="ops-kpi-chip">Status <strong id="coachKpiStatus">--</strong></span>
+              </div>
+            </header>
+
+            <div class="coach-column">
+              <details id="coachAskPanel" class="card-shell coach-ask-block coach-ask-collapsible">
+                <summary class="panel-head panel-head-compact">
+                  <h3>Ask</h3>
+                  <span id="coachStatus" class="muted hidden"></span>
+                </summary>
+                <div class="coach-ask-body">
+                  <label for="coachPrompt">Prompt</label>
+                  <textarea id="coachPrompt" rows="4" placeholder="Ask for a suggested reply or strategy..."></textarea>
+                  <div class="actions compact">
+                    <button id="askCoachBtn" class="btn" type="button">Ask Coach</button>
+                  </div>
+                </div>
+              </details>
+
+              <div class="coach-divider" aria-hidden="true"></div>
+
+              <section class="card-shell coach-latest-block">
+                <div class="panel-head panel-head-compact">
+                  <h3>Recommendations</h3>
+                  <button id="clearCoachBtn" class="btn btn-soft-danger" type="button">Delete all</button>
+                </div>
+                <div id="coachActionDeck" class="coach-latest-card" aria-live="polite"></div>
+                <div class="coach-reco-footer">
+                  <button id="coachRecoPrevBtn" class="btn" type="button" aria-label="Previous recommendation">Prev</button>
+                  <span id="coachRecoPage" class="coach-reco-page">0 / 0</span>
+                  <button id="coachRecoNextBtn" class="btn" type="button" aria-label="Next recommendation">Next</button>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section id="topicsTab" class="tab-pane panel topics-page" aria-labelledby="topicsPageTitle" hidden style="display:none" aria-hidden="true">
+            <header class="workspace-page-head topics-page-head">
+              <div class="topics-head-left">
+                <h2 id="topicsPageTitle" class="workspace-page-title">Topics</h2>
+                <p id="topicsStatus" class="workspace-page-subtitle topics-status-line">Configure topic settings, then analyze manually or automatically.</p>
+                <div class="workspace-head-meta topics-head-kpis">
+                  <span class="ops-kpi-chip">Definitions <strong id="topicsKpiCount">0</strong></span>
+                  <span class="ops-kpi-chip">Covered <strong id="topicsKpiCovered">0</strong></span>
+                </div>
+              </div>
+
+              <div class="topics-topbar-right">
+                <div class="topics-subtabs" role="tablist" aria-label="Topics views">
+                  <button class="btn topics-subtab-btn active" type="button" data-topics-tab="board" role="tab" aria-selected="true">Board</button>
+                  <button class="btn topics-subtab-btn" type="button" data-topics-tab="definitions" role="tab" aria-selected="false">Definitions</button>
+                  <button class="btn topics-subtab-btn" type="button" data-topics-tab="runs" role="tab" aria-selected="false">Runs</button>
+                  <button class="btn topics-subtab-btn" type="button" data-topics-tab="settings" role="tab" aria-selected="false">Settings</button>
+                </div>
+                <div id="topicsTopActions" class="topics-top-actions">
+                  <button id="topicsAnalyzeBtn" class="btn topics-board-action" type="button">Analyze now</button>
+                  <div id="topicsExportMenuWrap" class="export-menu-wrap topics-board-action" data-export-menu-wrapper>
+                    <button id="topicsExportMenuBtn" class="btn" type="button" aria-expanded="false" aria-controls="topicsExportMenu">Export</button>
+                    <div id="topicsExportMenu" class="export-menu hidden" role="menu" aria-label="Topics export actions">
+                      <button id="exportTopicsJsonBtn" class="btn export-item" type="button" role="menuitem">Topics JSON</button>
+                      <button id="exportTopicsCsvBtn" class="btn export-item" type="button" role="menuitem">Topics CSV</button>
+                    </div>
+                  </div>
+                  <button id="topicsClearBtn" class="btn btn-soft-danger topics-board-action" type="button">Clear</button>
+                </div>
+              </div>
+            </header>
+
+            <div id="topicsBoardControls" class="topics-view-controls">
+              <label class="topics-inline-field" for="topicsGroupBy">Group</label>
+              <select id="topicsGroupBy" aria-label="Group topics">
+                <option value="status">Status</option>
+                <option value="origin">Origin</option>
+                <option value="none">None</option>
+              </select>
+
+              <label class="topics-inline-field" for="topicsSortBy">Sort</label>
+              <select id="topicsSortBy" aria-label="Sort topics">
+                <option value="duration_desc">Duration desc</option>
+                <option value="name_asc">Name asc</option>
+                <option value="latest_activity">Latest activity</option>
+              </select>
+
+              <input id="topicsSearch" class="search-input" type="text" placeholder="Search topics or statements..." aria-label="Search topics" />
+              <button id="topicsDensityToggle" class="btn" type="button" aria-pressed="false">Compact</button>
+            </div>
+
+            <section id="topicsBoardPane" class="topics-subpane active" data-topics-pane="board">
+              <div id="topicsList" class="topics-list"></div>
+            </section>
+
+            <section id="topicsDefinitionsPane" class="topics-subpane" data-topics-pane="definitions" hidden>
+              <div class="definitions-layout">
+                <div class="card-shell definition-editor-card">
+                  <div class="panel-head panel-head-compact">
+                    <h3 id="topicsDefinitionEditorTitle">Add topic</h3>
+                    <button id="topicDefCancelBtn" class="btn" type="button">Reset</button>
+                  </div>
+
+                  <input id="topicDefIdInput" type="hidden" />
+
+                  <label for="topicDefNameInput">Name</label>
+                  <input id="topicDefNameInput" type="text" maxlength="120" placeholder="Example: Risks" />
+
+                  <div class="field-grid two-col">
+                    <div>
+                      <label for="topicDefDurationInput">Duration</label>
+                      <input id="topicDefDurationInput" type="number" min="0" max="600" step="1" value="0" />
+                    </div>
+                    <div>
+                      <label for="topicDefPriorityInput">Priority</label>
+                      <select id="topicDefPriorityInput">
+                        <option value="low">Low</option>
+                        <option value="normal" selected>Normal</option>
+                        <option value="high">High</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <label for="topicDefCommentsInput">Comments</label>
+                  <textarea id="topicDefCommentsInput" rows="3" placeholder="Notes for this topic..."></textarea>
+
+                  <div id="topicsDefinitionsValidation" class="validation-inline hidden"></div>
+
+                  <div class="actions compact">
+                    <button id="topicDefSaveBtn" class="btn" type="button">Add topic</button>
+                  </div>
+                </div>
+
+                <div class="card-shell topics-definitions-list-shell">
+                  <div class="panel-head panel-head-compact">
+                    <h3>Definitions</h3>
+                  </div>
+                  <div id="topicsDefinitionsList" class="topics-definitions-list"></div>
+                </div>
+              </div>
+            </section>
+
+            <section id="topicsRunsPane" class="topics-subpane" data-topics-pane="runs" hidden>
+              <div id="topicsRunsList" class="topics-activity-list"></div>
+            </section>
+
+            <section id="topicsSettingsPane" class="topics-subpane" data-topics-pane="settings" hidden>
+              <div class="card-shell topics-settings-shell">
+                <div class="panel-head panel-head-compact">
+                  <h3>Tracking settings</h3>
+                </div>
+                <label class="check check-row topics-main-switch" for="topicsEnableAuto">
+                  <input id="topicsEnableAuto" type="checkbox" checked />
+                  <span>Enable automatic topic analysis</span>
+                </label>
+
+                <div class="field-grid two-col">
+                  <div>
+                    <label for="topicsIntervalSec">Interval (sec)</label>
+                    <input id="topicsIntervalSec" type="number" min="30" max="300" step="5" value="60" />
+                  </div>
+                  <div>
+                    <label for="topicsChunkMode">Chunk mode</label>
+                    <select id="topicsChunkMode">
+                      <option value="since_last" selected>Since last run (recommended)</option>
+                      <option value="window">Rolling window</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div id="topicsWindowRow" class="field-grid">
+                  <div>
+                    <label for="topicsWindowSec">Window (sec)</label>
+                    <input id="topicsWindowSec" type="number" min="60" max="300" step="10" value="90" />
+                  </div>
+                </div>
+
+                <label class="check check-row" for="topicsAllowNew">
+                  <input id="topicsAllowNew" type="checkbox" checked />
+                  <span>Allow custom topics from conversation</span>
+                </label>
+
+                <textarea id="topicsAgendaInput" class="legacy-hidden" rows="2" aria-hidden="true" tabindex="-1"></textarea>
+
+                <div class="actions compact">
+                  <button id="topicsSaveBtn" class="btn" type="button">Save settings</button>
+                </div>
+              </div>
+            </section>
+          </section>
+
+          <section id="logsTab" class="tab-pane panel logs-page" aria-labelledby="logsPageTitle" hidden style="display:none" aria-hidden="true">
+            <header class="workspace-page-head logs-page-head">
+              <div>
+                <h2 id="logsPageTitle" class="workspace-page-title">Logs</h2>
+                <p class="workspace-page-subtitle">Runtime visibility with quick filtering and export.</p>
+              </div>
+              <div class="workspace-head-meta">
+                <span class="ops-kpi-chip">Visible <strong id="logsKpiVisible">0</strong></span>
+                <span class="ops-kpi-chip">Errors <strong id="logsKpiErrors">0</strong></span>
+              </div>
+            </header>
+
+            <div class="logs-toolbar">
+              <div class="logs-severity-chips" role="group" aria-label="Filter log severity">
+                <button class="btn severity-chip active" type="button" data-severity="all">All</button>
+                <button class="btn severity-chip" type="button" data-severity="debug">Debug</button>
+                <button class="btn severity-chip" type="button" data-severity="info">Info</button>
+                <button class="btn severity-chip" type="button" data-severity="warning">Warning</button>
+                <button class="btn severity-chip" type="button" data-severity="error">Error</button>
+              </div>
+              <input id="logsSearch" class="search-input" type="text" placeholder="Search logs..." />
+              <button id="logsCompactToggle" class="btn" type="button" aria-pressed="false">Compact rows</button>
+              <div class="actions compact">
+                <button id="copyLogsBtn" class="btn" type="button">Copy</button>
+                <button id="clearLogsBtn" class="btn" type="button">Clear</button>
+                <button id="exportLogsBtn" class="btn" type="button">Export TXT</button>
+              </div>
+            </div>
+
+            <div class="logs-layout">
+              <div id="logs" class="logs"></div>
+              <aside class="logs-pinned card-shell" aria-label="Pinned incidents">
+                <div class="panel-head panel-head-compact">
+                  <h3>Pinned</h3>
+                  <button id="clearPinnedLogsBtn" class="btn" type="button">Clear</button>
+                </div>
+                <div id="logsPinnedList" class="logs-pinned-list"></div>
+              </aside>
+            </div>
+          </section>
+          <section id="settingsTab" class="tab-pane panel settings-page" aria-labelledby="settingsPageTitle" hidden style="display:none" aria-hidden="true">
+            <header class="workspace-page-head settings-page-head">
+              <div>
+                <h2 id="settingsPageTitle" class="workspace-page-title">Settings Studio</h2>
+                <p class="workspace-page-subtitle">Staged apply/save flow with validation.</p>
+              </div>
+              <div class="workspace-head-meta">
+                <span class="ops-kpi-chip">Commit mode <strong id="settingsKpiMode">Staged</strong></span>
+                <span class="ops-kpi-chip">Dirty <strong id="settingsKpiDirty">No</strong></span>
+              </div>
+            </header>
+
+            <div class="settings-studio">
+              <nav class="settings-index card-shell" aria-label="Settings sections">
+                <button class="btn settings-index-btn" type="button" data-settings-target="system">System</button>
+                <button class="btn settings-index-btn" type="button" data-settings-target="coach">Coach</button>
+                <button class="btn settings-index-btn" type="button" data-settings-target="transcript">Transcript</button>
+                <button class="btn settings-index-btn" type="button" data-settings-target="appearance">Appearance</button>
+              </nav>
+
+              <div class="settings-editor">
+                <div class="settings-grid">
+                  <section class="settings-card" id="settingsSectionSystem">
+                    <details class="settings-accordion" data-accordion="system" open>
+                      <summary>System</summary>
+                      <div class="settings-card-body">
+                        <label>Recognition Language</label>
+                        <select id="cfgLang">
+                          <option value="en-AU">English (Australia)</option>
+                          <option value="en-CA">English (Canada)</option>
+                          <option value="en-GB">English (United Kingdom)</option>
+                          <option value="en-GH">English (Ghana)</option>
+                          <option value="en-HK">English (Hong Kong SAR)</option>
+                          <option value="en-IE">English (Ireland)</option>
+                          <option value="en-IN">English (India)</option>
+                          <option value="en-KE">English (Kenya)</option>
+                          <option value="en-NG">English (Nigeria)</option>
+                          <option value="en-NZ">English (New Zealand)</option>
+                          <option value="en-PH">English (Philippines)</option>
+                          <option value="en-SG">English (Singapore)</option>
+                          <option value="en-TZ">English (Tanzania)</option>
+                          <option value="en-US">English (United States)</option>
+                          <option value="en-ZA">English (South Africa)</option>
+                        </select>
+
+                        <label>Capture Mode</label>
+                        <select id="cfgCaptureMode">
+                          <option value="single">Single Input</option>
+                          <option value="dual">Dual Input (You + Remote)</option>
+                        </select>
+
+                        <div id="singleInputGroup">
+                          <label>Audio Input Source</label>
+                          <select id="cfgAudioSource">
+                            <option value="default">Default Microphone</option>
+                            <option value="device_id">Specific Device</option>
+                          </select>
+                          <label>Input Device (single mode)</label>
+                          <select id="cfgInputDeviceId"></select>
+                          <div id="audioDevicesHint" class="muted">Use Default for normal mic, or choose a specific capture device.</div>
+                        </div>
+
+                        <div id="dualInputGroup">
+                          <label>Your Speaker Label</label>
+                          <input id="cfgLocalSpeakerLabel" type="text" placeholder="You" />
+                          <label>Your Input Device</label>
+                          <select id="cfgLocalInputDeviceId"></select>
+                          <label>Remote Speaker Label</label>
+                          <input id="cfgRemoteSpeakerLabel" type="text" placeholder="Remote" />
+                          <label>Remote Input Device</label>
+                          <select id="cfgRemoteInputDeviceId"></select>
+                          <div class="muted">Dual mode needs two different active devices for clean separation.</div>
+                        </div>
+
+                        <div class="label-row">
+                          <label>End Silence (ms)</label>
+                          <details class="hint-tip">
+                            <summary aria-label="End Silence help">?</summary>
+                            <div class="hint-tip-content">Range: 50-10000 ms.</div>
+                          </details>
+                        </div>
+                        <div class="field-inline">
+                          <input id="cfgEndRange" type="range" min="50" max="10000" step="10" />
+                          <input id="cfgEnd" type="number" min="50" max="10000" step="10" />
+                        </div>
+
+                        <label>Auto Stop Silence (min)</label>
+                        <div class="field-inline">
+                          <input id="cfgAutoStopSilenceSecRange" type="range" min="0" max="5" step="0.25" />
+                          <input id="cfgAutoStopSilenceSec" type="number" min="0" max="5" step="0.25" />
+                        </div>
+                        <div class="preset-row" id="autoStopPresets">
+                          <button class="btn preset-btn" type="button" data-minutes="0">Off</button>
+                          <button class="btn preset-btn" type="button" data-minutes="0.5">0.5m</button>
+                          <button class="btn preset-btn" type="button" data-minutes="1">1m</button>
+                          <button class="btn preset-btn" type="button" data-minutes="1.5">1.5m</button>
+                          <button class="btn preset-btn" type="button" data-minutes="2">2m</button>
+                        </div>
+                        <div id="autoStopHint" class="muted">Auto-stop when no recognized speech for N minutes. 0 = never auto-stop.</div>
+
+                        <div class="label-row">
+                          <label>Max Session Duration (min)</label>
+                          <details class="hint-tip">
+                            <summary aria-label="Max Session help">?</summary>
+                            <div class="hint-tip-content">Range: 5-180 minutes (default: 60 minutes).</div>
+                          </details>
+                        </div>
+                        <div class="field-inline">
+                          <input id="cfgMaxSessionSecRange" type="range" min="5" max="180" step="1" value="60" />
+                          <input id="cfgMaxSessionSec" type="number" min="5" max="180" step="1" value="60" />
+                        </div>
+
+                        <label class="check check-row">
+                          <input id="cfgDebug" type="checkbox" />
+                          <span>Enable Debug Logs</span>
+                        </label>
+                      </div>
+                    </details>
+                  </section>
+
+                  <section class="settings-card" id="settingsSectionCoach">
+                    <details class="settings-accordion" data-accordion="coach">
+                      <summary>Coach</summary>
+                      <div class="settings-card-body">
+                        <label class="check check-row">
+                          <input id="cfgCoachEnabled" type="checkbox" />
+                          <span>Enable Auto Interview Coach</span>
+                        </label>
+
+                        <div class="label-row">
+                          <label>Coach Trigger Speaker</label>
+                          <details class="hint-tip">
+                            <summary aria-label="Coach Trigger help">?</summary>
+                            <div class="hint-tip-content">Select whose final speech can trigger automatic coach suggestions.</div>
+                          </details>
+                        </div>
+                        <select id="cfgCoachTriggerSpeaker">
+                          <option value="remote">Remote</option>
+                          <option value="local">Local</option>
+                          <option value="any">Any</option>
+                        </select>
+
+                        <div class="preset-row" id="coachPresetRow">
+                          <button class="btn preset-btn" type="button" data-preset="conservative">Conservative</button>
+                          <button class="btn preset-btn" type="button" data-preset="balanced">Balanced</button>
+                          <button class="btn preset-btn" type="button" data-preset="aggressive">Aggressive</button>
+                        </div>
+
+                        <details class="settings-advanced" open>
+                          <summary>Advanced Coach Settings</summary>
+                          <div class="label-row">
+                            <label>Coach Cooldown (seconds between suggestions)</label>
+                            <details class="hint-tip">
+                              <summary aria-label="Coach Cooldown help">?</summary>
+                              <div class="hint-tip-content">Lower values suggest more often; higher values reduce noise and cost.</div>
+                            </details>
+                          </div>
+                          <div class="field-inline">
+                            <input id="cfgCoachCooldownSecRange" type="range" min="0" max="120" step="1" />
+                            <input id="cfgCoachCooldownSec" type="number" min="0" max="120" step="1" />
+                          </div>
+
+                          <div class="label-row">
+                            <label>Conversation Memory (turns)</label>
+                            <details class="hint-tip">
+                              <summary aria-label="Conversation Memory help">?</summary>
+                              <div class="hint-tip-content">More turns improve context but can slow response.</div>
+                            </details>
+                          </div>
+                          <div class="field-inline">
+                            <input id="cfgCoachMaxTurnsRange" type="range" min="2" max="30" step="1" />
+                            <input id="cfgCoachMaxTurns" type="number" min="2" max="30" />
+                          </div>
+
+                          <label>Coach Instruction</label>
+                          <textarea id="cfgCoachInstruction" rows="4" placeholder="How the coach should respond..."></textarea>
+                        </details>
+                      </div>
+                    </details>
+                  </section>
+
+                  <section class="settings-card" id="settingsSectionTranscript">
+                    <details class="settings-accordion" data-accordion="transcript">
+                      <summary>Transcript</summary>
+                      <div class="settings-card-body">
+                        <div class="label-row">
+                          <label>Partial Translate Min Interval (sec)</label>
+                          <details class="hint-tip">
+                            <summary aria-label="Partial Translate Interval help">?</summary>
+                            <div class="hint-tip-content">Lower values update Arabic faster; higher values reduce API usage.</div>
+                          </details>
+                        </div>
+                        <div class="field-inline">
+                          <input id="cfgPartialTranslateMinIntervalSecRange" type="range" min="0.2" max="10.0" step="0.1" />
+                          <input id="cfgPartialTranslateMinIntervalSec" type="number" min="0.2" max="10.0" step="0.1" />
+                        </div>
+
+                        <label class="check check-row">
+                          <input id="showTs" type="checkbox" />
+                          <span>Show Entry Timestamps</span>
+                        </label>
+
+                        <input id="cfgInitial" type="hidden" />
+                        <input id="cfgMaxFinals" type="hidden" value="5000" />
+                      </div>
+                    </details>
+                  </section>
+
+                  <section class="settings-card" id="settingsSectionAppearance">
+                    <details class="settings-accordion" data-accordion="appearance">
+                      <summary>Appearance</summary>
+                      <div class="settings-card-body">
+                        <label>Theme</label>
+                        <button id="themeToggleBtn" class="btn" type="button" title="Toggle light/dark theme">Theme</button>
+
+                        <label>English Font</label>
+                        <select id="fontFamilyEn">
+                          <option value="Manrope">Manrope</option>
+                          <option value="Segoe UI">Segoe UI</option>
+                          <option value="Arial">Arial</option>
+                        </select>
+
+                        <label>Arabic Font</label>
+                        <select id="fontFamilyAr">
+                          <option value="IBM Plex Sans Arabic">IBM Plex Sans Arabic</option>
+                          <option value="Noto Sans Arabic">Noto Sans Arabic</option>
+                          <option value="Segoe UI">Segoe UI</option>
+                          <option value="Arial">Arial</option>
+                        </select>
+
+                        <label>English Font Size</label>
+                        <input id="fontScaleEn" type="range" min="0.6" max="1.6" step="0.05" value="1" />
+                        <div id="fontScaleEnVal" class="muted">100%</div>
+
+                        <label>Arabic Font Size</label>
+                        <input id="fontScaleAr" type="range" min="0.6" max="1.6" step="0.05" value="1" />
+                        <div id="fontScaleArVal" class="muted">100%</div>
+                      </div>
+                    </details>
+                  </section>
+                </div>
+
+                <div class="settings-actions sticky-commit-bar">
+                  <div class="settings-commit-head">
+                    <div id="settingsDirtyIndicator" class="dirty-indicator hidden">Unsaved changes</div>
+                    <div id="settingsValidationSummary" class="validation-inline hidden"></div>
+                  </div>
+
+                  <div class="settings-commit-rows">
+                    <div class="actions settings-primary-actions">
+                      <button id="applyConfigBtn" class="btn action-btn action-btn-primary" type="button">Apply</button>
+                      <button id="saveConfigBtn" class="btn action-btn" type="button">Save</button>
+                    </div>
+                    <div class="actions settings-secondary-actions">
+                      <button id="reloadConfigBtn" class="btn action-btn" type="button">Reload</button>
+                      <button id="restoreDefaultsBtn" class="btn action-btn action-btn-danger" type="button">Restore Defaults</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <aside class="settings-summary card-shell" aria-label="Settings summary">
+                <div class="panel-head panel-head-compact">
+                  <h3>Impact Summary</h3>
+                </div>
+                <div id="settingsSummary" class="settings-summary-list"></div>
+              </aside>
+            </div>
+
+          </section>
+        </div>
+
+        <div id="timelineDivider" class="timeline-divider" title="Drag to resize live area"></div>
         <section class="live-strip live-bottom">
           <div class="live-card">
             <div class="card-label-row">
@@ -129,6 +630,7 @@
             </div>
             <div id="enInterim" class="live-text en"></div>
           </div>
+
           <div class="live-card">
             <div class="card-label-row">
               <div id="arLiveLabel" class="card-label">Speaker</div>
@@ -138,326 +640,14 @@
           </div>
         </section>
       </section>
-
-      <aside class="side-panel">
-        <div class="tabs">
-          <button class="tab-btn active" type="button" data-tab="coachTab">Coach</button>
-          <button class="tab-btn" type="button" data-tab="topicsTab">Topics</button>
-          <button class="tab-btn" type="button" data-tab="settingsTab">Settings</button>
-          <button class="tab-btn" type="button" data-tab="logsTab">Logs</button>
-        </div>
-
-        <section id="logsTab" class="tab-pane panel">
-          <div class="panel-head">
-            <h3>Logs</h3>
-            <div class="actions compact">
-              <button id="copyLogsBtn" class="btn" type="button">Copy</button>
-              <button id="clearLogsBtn" class="btn" type="button">Clear</button>
-              <button id="exportLogsBtn" class="btn" type="button">Export TXT</button>
-            </div>
-          </div>
-          <input id="logsSearch" class="search-input" type="text" placeholder="Search logs..." />
-          <div id="logs" class="logs"></div>
-        </section>
-
-        <section id="coachTab" class="tab-pane active panel">
-          <div class="panel-head">
-            <h3>Interview Coach</h3>
-            <div class="actions compact">
-              <button id="clearCoachBtn" class="btn btn-soft-danger" type="button">Clear</button>
-            </div>
-          </div>
-          <label>Manual Ask</label>
-          <textarea id="coachPrompt" rows="4" placeholder="Ask for a suggested reply or strategy..."></textarea>
-          <div class="actions compact">
-            <button id="askCoachBtn" class="btn" type="button">Ask Agent</button>
-          </div>
-          <div id="coachStatus" class="muted">Coach suggestions appear here.</div>
-          <div id="coachHints" class="coach-hints"></div>
-        </section>
-
-        <section id="topicsTab" class="tab-pane panel">
-          <div class="panel-head">
-            <h3>Key Topics</h3>
-            <div class="actions compact">
-              <button id="topicsClearBtn" class="btn btn-soft-danger topics-clear-btn" type="button">Clear Topics</button>
-            </div>
-          </div>
-          <div id="topicsStatus" class="muted topics-status">Configure topics, then start your meeting.</div>
-
-          <div class="topics-section">
-            <label class="topics-section-title">Meeting Agenda</label>
-            <textarea id="topicsAgendaInput" rows="5" placeholder="One topic per line (example: Project status, Risks, Decisions, Next actions)"></textarea>
-          </div>
-
-          <div class="topics-section">
-            <label class="topics-section-title">Update Cadence</label>
-            <div class="field-inline topics-cadence">
-              <div>
-                <label>Interval (sec)</label>
-                <input id="topicsIntervalSec" type="number" min="30" max="300" step="5" value="60" />
-              </div>
-              <div>
-                <label>Window (sec)</label>
-                <input id="topicsWindowSec" type="number" min="60" max="300" step="10" value="90" />
-              </div>
-            </div>
-          </div>
-
-          <div class="topics-section">
-            <label class="topics-section-title">Options</label>
-            <div class="topics-checks">
-              <label class="check check-row">
-                <input id="topicsEnableAuto" type="checkbox" checked />
-                <span>Enable live topic tracking</span>
-              </label>
-              <label class="check check-row">
-                <input id="topicsAllowNew" type="checkbox" checked />
-                <span>Allow adding new topics automatically</span>
-              </label>
-            </div>
-          </div>
-
-          <div class="topics-section">
-            <label class="topics-section-title">Actions</label>
-            <div class="actions compact topics-actions-main">
-              <button id="topicsSaveBtn" class="btn" type="button">Save Setup</button>
-              <button id="topicsAnalyzeBtn" class="btn" type="button">Analyze Now</button>
-              <button id="exportTopicsJsonBtn" class="btn" type="button">Export JSON</button>
-              <button id="exportTopicsCsvBtn" class="btn" type="button">Export CSV</button>
-            </div>
-          </div>
-
-          <div id="topicsList" class="topics-list"></div>
-        </section>
-
-        <section id="settingsTab" class="tab-pane panel">
-          <h3>Configuration</h3>
-          <div class="settings-grid">
-            <section class="settings-card">
-              <details class="settings-accordion" data-accordion="system" open>
-              <summary>System</summary>
-              <div class="settings-card-body">
-              <label>Recognition Language</label>
-              <select id="cfgLang">
-                <option value="en-AU">English (Australia)</option>
-                <option value="en-CA">English (Canada)</option>
-                <option value="en-GB">English (United Kingdom)</option>
-                <option value="en-GH">English (Ghana)</option>
-                <option value="en-HK">English (Hong Kong SAR)</option>
-                <option value="en-IE">English (Ireland)</option>
-                <option value="en-IN">English (India)</option>
-                <option value="en-KE">English (Kenya)</option>
-                <option value="en-NG">English (Nigeria)</option>
-                <option value="en-NZ">English (New Zealand)</option>
-                <option value="en-PH">English (Philippines)</option>
-                <option value="en-SG">English (Singapore)</option>
-                <option value="en-TZ">English (Tanzania)</option>
-                <option value="en-US">English (United States)</option>
-                <option value="en-ZA">English (South Africa)</option>
-              </select>
-              <label>Capture Mode</label>
-              <select id="cfgCaptureMode">
-                <option value="single">Single Input</option>
-                <option value="dual">Dual Input (You + Remote)</option>
-              </select>
-              <div id="singleInputGroup">
-                <label>Audio Input Source</label>
-                <select id="cfgAudioSource">
-                  <option value="default">Default Microphone</option>
-                  <option value="device_id">Specific Device</option>
-                </select>
-                <label>Input Device (single mode)</label>
-                <select id="cfgInputDeviceId"></select>
-                <div id="audioDevicesHint" class="muted">Use Default for normal mic, or choose a specific capture device.</div>
-              </div>
-              <div id="dualInputGroup">
-                <label>Your Speaker Label</label>
-                <input id="cfgLocalSpeakerLabel" type="text" placeholder="You" />
-                <label>Your Input Device</label>
-                <select id="cfgLocalInputDeviceId"></select>
-                <label>Remote Speaker Label</label>
-                <input id="cfgRemoteSpeakerLabel" type="text" placeholder="Remote" />
-                <label>Remote Input Device</label>
-                <select id="cfgRemoteInputDeviceId"></select>
-                <div class="muted">Dual mode needs two different active devices for clean separation.</div>
-              </div>
-              <div class="label-row">
-                <label>End Silence (ms)</label>
-                <details class="hint-tip">
-                  <summary aria-label="End Silence help">?</summary>
-                  <div class="hint-tip-content">Range: 50-10000 ms.</div>
-                </details>
-              </div>
-              <div class="field-inline">
-                <input id="cfgEndRange" type="range" min="50" max="10000" step="10" />
-                <input id="cfgEnd" type="number" min="50" max="10000" step="10" />
-              </div>
-              <label>Auto Stop Silence (min)</label>
-              <div class="field-inline">
-                <input id="cfgAutoStopSilenceSecRange" type="range" min="0" max="5" step="0.25" />
-                <input id="cfgAutoStopSilenceSec" type="number" min="0" max="5" step="0.25" />
-              </div>
-              <div class="preset-row" id="autoStopPresets">
-                <button class="btn preset-btn" type="button" data-minutes="0">Off</button>
-                <button class="btn preset-btn" type="button" data-minutes="0.5">0.5m</button>
-                <button class="btn preset-btn" type="button" data-minutes="1">1m</button>
-                <button class="btn preset-btn" type="button" data-minutes="1.5">1.5m</button>
-                <button class="btn preset-btn" type="button" data-minutes="2">2m</button>
-              </div>
-              <div id="autoStopHint" class="muted">Auto-stop when no recognized speech for N minutes. 0 = never auto-stop.</div>
-              <div class="label-row">
-                <label>Max Session Duration (min)</label>
-                <details class="hint-tip">
-                  <summary aria-label="Max Session help">?</summary>
-                  <div class="hint-tip-content">Range: 5-180 minutes (default: 60 minutes).</div>
-                </details>
-              </div>
-              <div class="field-inline">
-                <input id="cfgMaxSessionSecRange" type="range" min="5" max="180" step="1" value="60" />
-                <input id="cfgMaxSessionSec" type="number" min="5" max="180" step="1" value="60" />
-              </div>
-              <label class="check check-row">
-                <input id="cfgDebug" type="checkbox" />
-                <span>Enable Debug Logs</span>
-              </label>
-              </div>
-              </details>
-            </section>
-
-            <section class="settings-card">
-              <details class="settings-accordion" data-accordion="coach">
-              <summary>Coach</summary>
-              <div class="settings-card-body">
-              <label class="check check-row">
-                <input id="cfgCoachEnabled" type="checkbox" />
-                <span>Enable Auto Interview Coach</span>
-              </label>
-              <div class="label-row">
-                <label>Coach Trigger Speaker</label>
-                <details class="hint-tip">
-                  <summary aria-label="Coach Trigger help">?</summary>
-                  <div class="hint-tip-content">Select whose final speech can trigger automatic coach suggestions.</div>
-                </details>
-              </div>
-              <select id="cfgCoachTriggerSpeaker">
-                <option value="remote">Remote</option>
-                <option value="local">Local</option>
-                <option value="any">Any</option>
-              </select>
-
-              <div class="preset-row" id="coachPresetRow">
-                <button class="btn preset-btn" type="button" data-preset="conservative">Conservative</button>
-                <button class="btn preset-btn" type="button" data-preset="balanced">Balanced</button>
-                <button class="btn preset-btn" type="button" data-preset="aggressive">Aggressive</button>
-              </div>
-
-              <details class="settings-advanced" open>
-                <summary>Advanced Coach Settings</summary>
-                <div class="label-row">
-                  <label>Coach Cooldown (seconds between suggestions)</label>
-                  <details class="hint-tip">
-                    <summary aria-label="Coach Cooldown help">?</summary>
-                    <div class="hint-tip-content">Lower values suggest more often; higher values reduce noise and cost.</div>
-                  </details>
-                </div>
-                <div class="field-inline">
-                  <input id="cfgCoachCooldownSecRange" type="range" min="0" max="120" step="1" />
-                  <input id="cfgCoachCooldownSec" type="number" min="0" max="120" step="1" />
-                </div>
-
-                <div class="label-row">
-                  <label>Conversation Memory (turns)</label>
-                  <details class="hint-tip">
-                    <summary aria-label="Conversation Memory help">?</summary>
-                    <div class="hint-tip-content">More turns improve context but can slow response.</div>
-                  </details>
-                </div>
-                <div class="field-inline">
-                  <input id="cfgCoachMaxTurnsRange" type="range" min="2" max="30" step="1" />
-                  <input id="cfgCoachMaxTurns" type="number" min="2" max="30" />
-                </div>
-
-                <label>Coach Instruction</label>
-                <textarea id="cfgCoachInstruction" rows="4" placeholder="How the coach should respond..."></textarea>
-              </details>
-              </div>
-              </details>
-            </section>
-
-            <section class="settings-card">
-              <details class="settings-accordion" data-accordion="transcript">
-              <summary>Transcript</summary>
-              <div class="settings-card-body">
-              <div class="label-row">
-                <label>Partial Translate Min Interval (sec)</label>
-                <details class="hint-tip">
-                  <summary aria-label="Partial Translate Interval help">?</summary>
-                  <div class="hint-tip-content">Lower values update Arabic faster; higher values reduce API usage.</div>
-                </details>
-              </div>
-              <div class="field-inline">
-                <input id="cfgPartialTranslateMinIntervalSecRange" type="range" min="0.2" max="3.0" step="0.1" />
-                <input id="cfgPartialTranslateMinIntervalSec" type="number" min="0.2" max="3.0" step="0.1" />
-              </div>
-              <label class="check check-row">
-                <input id="showTs" type="checkbox" />
-                <span>Show Entry Timestamps</span>
-              </label>
-              <input id="cfgInitial" type="hidden" />
-              <input id="cfgMaxFinals" type="hidden" value="5000" />
-              </div>
-              </details>
-            </section>
-
-            <section class="settings-card">
-              <details class="settings-accordion" data-accordion="appearance">
-              <summary>Appearance</summary>
-              <div class="settings-card-body">
-              <label>Theme</label>
-              <button id="themeToggleBtn" class="btn" type="button" title="Toggle light/dark theme">Theme</button>
-              <label>English Font</label>
-              <select id="fontFamilyEn">
-                <option value="Manrope">Manrope</option>
-                <option value="Segoe UI">Segoe UI</option>
-                <option value="Arial">Arial</option>
-              </select>
-              <label>Arabic Font</label>
-              <select id="fontFamilyAr">
-                <option value="IBM Plex Sans Arabic">IBM Plex Sans Arabic</option>
-                <option value="Noto Sans Arabic">Noto Sans Arabic</option>
-                <option value="Segoe UI">Segoe UI</option>
-                <option value="Arial">Arial</option>
-              </select>
-              <label>English Font Size</label>
-              <input id="fontScaleEn" type="range" min="0.6" max="1.6" step="0.05" value="1" />
-              <div id="fontScaleEnVal" class="muted">100%</div>
-              <label>Arabic Font Size</label>
-              <input id="fontScaleAr" type="range" min="0.6" max="1.6" step="0.05" value="1" />
-              <div id="fontScaleArVal" class="muted">100%</div>
-              </div>
-              </details>
-            </section>
-          </div>
-
-          <div class="settings-actions">
-            <div id="settingsDirtyIndicator" class="dirty-indicator hidden">Unsaved changes</div>
-            <div class="actions">
-              <button id="applyConfigBtn" class="btn action-btn action-btn-primary" type="button">Apply</button>
-              <button id="saveConfigBtn" class="btn action-btn action-btn-primary" type="button">Save</button>
-              <button id="reloadConfigBtn" class="btn action-btn" type="button">Reload</button>
-              <button id="restoreDefaultsBtn" class="btn action-btn action-btn-danger" type="button">Restore Defaults</button>
-            </div>
-          </div>
-        </section>
-
-      </aside>
     </main>
   </div>
+
   <div id="bookmarkMenu" class="bookmark-menu hidden" role="menu" aria-label="Bookmark options">
     <button id="bookmarkMenuEditBtn" class="btn bookmark-menu-btn" type="button">Edit note</button>
     <button id="bookmarkMenuRemoveBtn" class="btn bookmark-menu-btn" type="button">Remove</button>
   </div>
+
   <div id="bookmarkModal" class="bookmark-modal hidden" role="dialog" aria-modal="true" aria-labelledby="bookmarkModalTitle">
     <div class="bookmark-modal-card">
       <h4 id="bookmarkModalTitle">Bookmark note</h4>
@@ -469,7 +659,8 @@
       </div>
     </div>
   </div>
+
   <div id="toastHost" class="toast-host" aria-live="polite" aria-atomic="true"></div>
-  <script src="/client.js"></script>
+  <script src="/client.js?v=20260217s"></script>
 </body>
 </html>

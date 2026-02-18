@@ -1,142 +1,173 @@
 # Live Interview Translator - Low-Level Design
 
 ## 1. Scope and goals
-This service captures live speech from one or two audio inputs, performs EN speech recognition, translates EN text to AR, streams updates to a browser UI, and optionally asks an AI coach for reply suggestions.
+The system captures live speech, produces EN transcript, translates EN->AR, broadcasts updates to the UI, and can invoke two optional agent features:
+- interview coach hints,
+- meeting topic tracking.
 
 Primary goals:
-- Low-latency transcript updates.
-- Controlled translation cost (partial throttling + auto-stop watchdog).
-- Deterministic final transcript correctness.
-- Safe threading model between speech SDK thread and FastAPI event loop.
+- low-latency transcript/translation updates,
+- deterministic transcript correctness under concurrency,
+- bounded costs and predictable runtime behavior,
+- clear separation of responsibilities across controller modules.
 
-## 2. Runtime components
+## 2. Runtime decomposition
 
-### 2.1 `app/main.py` (`AppController`)
-Responsibilities:
-- Own global runtime state (`status`, `running`, transcript, logs, coach state).
-- Consume speech events (`partial`, `final`, `status`, `log`).
-- Coordinate translation requests through `TranslationPipeline`.
-- Coordinate coach prompts and queueing.
-- Broadcast all updates via WebSocket.
-- Enforce session watchdog (`auto_stop_silence_sec`, `max_session_sec`).
+### 2.1 Entry, API, and auth
+- `app/main.py`: creates FastAPI app, wires lifespan, starts translation worker, starts watchdog.
+- `app/api/routes.py`: authenticated REST endpoints for config, session, coach, topics.
+- `app/api/websocket.py`: authenticated websocket endpoint; sends snapshot on connect.
+- `app/api/auth.py`: loopback-only fallback or token-based auth (`API_AUTH_TOKEN`).
 
-Threading model:
-- Speech SDK callbacks happen on background thread.
-- Shared state is protected by `threading.RLock`.
-- Cross-thread async communication uses `asyncio.run_coroutine_threadsafe`.
+### 2.2 Controller layer
+- `app/controller/__init__.py` (`AppController`): wiring and facade only.
+- `app/controller/session_manager.py`:
+  - handles incoming speech events,
+  - controls session start/stop,
+  - runs watchdog for auto-stop and scheduled topic analysis.
+- `app/controller/transcript_store.py`:
+  - owns transcript/live partial state,
+  - applies translation results,
+  - tracks translation telemetry/cost estimate.
+- `app/controller/coach_orchestrator.py`:
+  - decides when to trigger coach,
+  - builds prompts from transcript deltas,
+  - manages queued trigger while busy.
+- `app/controller/topic_orchestrator.py`:
+  - stores topic config and runtime state,
+  - prepares topic agent input,
+  - normalizes and merges agent responses,
+  - allocates chunk time and maintains topic runs.
+- `app/controller/config_store.py`: runtime config persistence and validation.
+- `app/controller/broadcast_service.py`: websocket fanout and log buffering.
 
-### 2.2 `app/services/speech.py` (`SpeechService`)
-Responsibilities:
-- Build Azure Speech recognizers (single or dual capture mode).
-- Emit normalized events:
-  - partial: `{type='partial', speaker, speaker_label, en}`
-  - final: `{type='final', speaker, speaker_label, en, ts}`
-  - status/log events.
-- Start/stop recognizers and worker thread.
+### 2.3 Service layer
+- `app/services/speech.py`: Azure Speech recognizer(s), emits normalized speech/status events.
+- `app/services/translation_pipeline.py`: async queue worker with priority and stale guards.
+- `app/services/coach.py`: Azure AI Foundry coach client with conversation continuity.
+- `app/services/topic_tracker.py`: Azure AI Foundry topic tracker client with retry + JSON extraction.
 
-### 2.3 `app/services/translation_pipeline.py` (`TranslationPipeline`)
-Responsibilities:
-- Maintain segment/revision state per speaker.
-- Emit partial translation requests with throttling.
-- Always emit final translation requests.
-- Serialize translation calls through one bounded priority queue:
-  - priority 0 = final
-  - priority 1 = partial
-- Drop/replace stale partial backlog per speaker.
-- Reject stale requests using generation guard after stop/reset.
+## 3. Concurrency and lock model
 
-### 2.4 `app/services/coach.py` (`CoachService`)
-Responsibilities:
-- Manage Azure AI Projects OpenAI client.
-- Ensure/reuse one conversation session.
-- Send responses request and auto-approve MCP tool approvals.
-- Return latency metrics and response identifiers.
+### 3.1 Shared state lock
+`SessionManager`, `TranscriptStore`, `CoachOrchestrator`, and `TopicOrchestrator` share one `threading.RLock` from `AppController`.
 
-### 2.5 API and frontend
-- `app/api/routes.py`: control plane (`/start`, `/stop`, `/config`, `/coach`, etc.).
-- `app/api/websocket.py`: state snapshot + incremental events.
-- `static/client.js`: UI state reducer, rendering, filters, exports, controls.
+### 3.2 Independent state
+- `BroadcastService` is loop-owned (connection mutations on event loop).
+- `ConfigStore` has its own lock to avoid blocking runtime lock on config reads.
+- `TranslationPipeline` has its own lock for translation sequencing state.
 
-## 3. Data contracts
+### 3.3 Cross-thread execution
+- Speech callbacks come from SDK thread(s).
+- Async actions are dispatched via `asyncio.run_coroutine_threadsafe`.
+- Translation worker is one asyncio task.
 
-### 3.1 Speech event contracts
-- Partial input from `SpeechService` to `AppController`:
-  - required: `type='partial'`, `speaker`, `speaker_label`, `en`
-- Final input:
-  - required: `type='final'`, `speaker`, `speaker_label`, `en`, `ts`
+## 4. Core data contracts
 
-### 3.2 WebSocket outbound contracts
-- `snapshot`: full current state.
-- `status`: runtime state + recording timers.
-- `partial`: segment-scoped live EN/AR (`segment_id`, `revision`).
-- `final`: append-only EN transcript entry (AR may be empty initially).
-- `final_patch`: patch AR for an existing final item (same `segment_id` + `revision`).
-- `log`: user-visible log line.
-- `coach`: coach suggestion card.
+### 4.1 Inbound speech events (to `SessionManager`)
+- `partial`: `{type, speaker, speaker_label, en, ...}`
+- `final`: `{type, speaker, speaker_label, en, ts, ...}`
+- `status` / `log`
 
-## 4. Segment and revision model
-For each speaker:
-- Start partial segment with unique `segment_id`.
-- Every new partial increments `revision`.
-- Final closes segment and uses next revision.
+### 4.2 WebSocket outbound events
+- `snapshot`
+- `status`
+- `partial`
+- `final`
+- `final_patch`
+- `telemetry`
+- `coach`
+- `topics_update`
+- `log`
 
-Correctness rule:
-- A translation response is accepted only if its `(speaker, segment_id, revision)` matches current expected state (for partial) or existing final item (for final).
-- Late/out-of-order partial responses are ignored.
+### 4.3 Topic API contracts
+- `POST /api/topics/configure`: settings + agenda + definitions.
+- `POST /api/topics/analyze-now`: manual run.
+- `POST /api/topics/clear`: resets topic runtime state.
 
-## 5. Translation flow
-1. `on_recognizing` -> emit partial EN immediately.
-2. If per-speaker throttle window passed -> queue partial translation request.
-3. `on_recognized` -> append final EN and queue final translation request (always).
-4. Translation worker executes request, applies result:
-   - partial -> updates live AR for same segment+revision.
-   - final -> sends `final_patch` to replace/fill AR for exact final row.
+## 5. Translation design details
 
-Cost controls:
-- `partial_translate_min_interval_sec` throttles partial AR calls.
-- Auto-stop watchdog avoids idle paid sessions.
-- Generation guard prevents post-stop stale queue processing.
+### 5.1 Segment/revision model
+Per speaker:
+- active partial segment has `segment_id` + incremental `revision`,
+- final closes active segment and increments revision,
+- translation response must match expected segment/revision to be applied.
 
-## 6. Coach flow
-1. Final event arrives.
-2. If trigger policy allows and cooldown passed:
-   - Build prompt from transcript delta (`coach_last_sent_final_idx..end`).
-   - Trim to last `coach_max_turns` turns.
-   - Send to coach in same session conversation.
-3. If coach busy, keep latest trigger in queue and resume after current run.
+### 5.2 Queue behavior
+- bounded priority queue (`final` before `partial`),
+- per-speaker partial backlog collapse while inflight,
+- generation guard drops stale queued items after reset/stop.
 
-## 7. Invariants
-- Shared mutable runtime state is accessed under `RLock`.
-- Only one active translation worker task.
-- `finals` length never exceeds `max_finals`.
-- Coach hint history capped to 120.
-- Logs capped to 1000.
+### 5.3 Telemetry
+`TranscriptStore` computes and broadcasts:
+- latest translation latency,
+- p50 latency,
+- sample count,
+- translated char count,
+- optional estimated cost if `TRANSLATION_COST_PER_MILLION_USD` is set.
 
-## 8. Failure handling
-- Translator HTTP/network errors return empty translation; app remains live.
-- Speech cancellation emits error log and stops recognition loop.
-- Coach errors are logged and do not stop speech pipeline.
-- Missing settings file on startup falls back to defaults.
+## 6. Coach design details
+- Triggered on final turns based on `coach_trigger_speaker` and cooldown.
+- Prompt built from transcript delta (`coach_last_sent_final_idx -> end`), trimmed by `coach_max_turns`.
+- Uses conversation continuity (`conversations.create()`).
+- If a trigger arrives while busy, only latest trigger is kept.
+- Manual asks (`/api/coach/ask`) run in same conversation session.
 
-## 9. Audit findings and fixes applied
-Applied in this revision:
-- Added generation guard in `TranslationPipeline` to prevent stale queued requests after stop/reset.
-- Applied `coach_max_turns` in coach prompt build path (previously configured but unused).
-- Prevented empty final translation result from wiping existing AR text.
-- Added explicit start guard when coach is enabled but environment is not configured.
+## 7. Topics design details
 
-## 10. Remaining technical debt (non-blocking)
-- `AppController` is still large and can be split further:
-  - session state model
-  - coach orchestration
-  - websocket broadcast manager
-- No automated test suite yet (unit/integration).
-- No linter configured in environment (`ruff`/`pytest` not installed).
+### 7.1 Execution modes
+- Manual via `/api/topics/analyze-now`.
+- Automatic via watchdog when:
+  - app running,
+  - topics enabled,
+  - tracker configured,
+  - interval elapsed,
+  - no pending topic run.
 
-## 11. Suggested test matrix
-- Single mode: partial/final stream and AR patch flow.
-- Dual mode: independent segment/revision for local+remote.
-- Stop during heavy partial traffic: verify no stale AR updates after stop.
-- Translator failure: final AR remains last known good value.
-- Coach enabled/disabled and misconfigured startup guard.
-- Watchdog silence and max session auto-stop behavior.
+### 7.2 Agent payload strategy
+`TopicOrchestrator` maintains a rich internal `topic_call` context for merge logic, but sends a reduced payload to the agent (agenda/definitions/current topics/chunk/recent context/reset hint) to reduce prompt noise.
+
+### 7.3 Merge semantics (high-level)
+- Normalize and validate incoming topic rows.
+- Match names against known agenda/runtime topics.
+- Apply confidence thresholding and allow-new rules.
+- Merge status/time/statements into persisted topic state.
+- Auto-cover stale active topics after inactivity thresholds.
+- Broadcast updated topic snapshot.
+
+## 8. Watchdog behavior
+Runs once per second:
+- auto-stops session on:
+  - inactivity (`auto_stop_silence_sec`),
+  - max session duration (`max_session_sec`),
+- schedules topic auto-analysis when eligible.
+
+## 9. API security and rate limiting
+- API and websocket auth:
+  - token mode when `API_AUTH_TOKEN` is set,
+  - otherwise loopback clients only.
+- Rate limits:
+  - `/api/coach/ask`: 6/min/client IP,
+  - `/api/topics/analyze-now`: 4/min/client IP.
+
+## 10. Invariants
+- Shared runtime state changes under shared `RLock`.
+- One translation worker task at a time.
+- `finals` capped by `max_finals`.
+- Coach hints capped to 120 entries.
+- Topic runs capped to 160 entries.
+- Logs capped to 1000 entries.
+
+## 11. Failure handling
+- Translator errors: logged; app continues.
+- Coach/topic agent errors: logged and surfaced; app continues.
+- Speech failures: recognition loop stops and status/log events emitted.
+- Missing config file at startup: defaults kept; reload is optional.
+
+## 12. Suggested validation matrix
+- Single-mode partial/final flow with AR patching.
+- Dual-mode speaker separation and bleed-suppression behavior.
+- Stop/reset during heavy partial load (stale translation guard).
+- Coach enabled/disabled, cooldown, queue-latest behavior.
+- Topics manual + auto runs, allow-new on/off, context resets.
+- Auth modes: loopback-only and token-required.

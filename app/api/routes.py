@@ -1,40 +1,78 @@
+import asyncio
 import threading
 import time
 from collections import deque
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.api.auth import require_http_auth
 from app.config import RuntimeConfig
 from app.utils.audio_devices import list_capture_devices
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_http_auth)])
 _coach_rate_lock = threading.Lock()
+_topics_rate_lock = threading.Lock()
 _coach_rate_window_sec = 60
 _coach_rate_limit = 6
 _coach_rate_buckets: dict[str, deque[float]] = {}
+_topics_rate_window_sec = 60
+_topics_rate_limit = 4
+_topics_rate_buckets: dict[str, deque[float]] = {}
+
+
+def _enforce_rate_limit(
+    request: Request,
+    *,
+    lock: threading.Lock,
+    buckets: dict[str, deque[float]],
+    window_sec: int,
+    limit: int,
+    detail: str,
+) -> None:
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    cutoff = now - window_sec
+
+    with lock:
+        # Expire stale timestamps and remove empty buckets to bound memory.
+        for key, candidate in list(buckets.items()):
+            while candidate and candidate[0] <= cutoff:
+                candidate.popleft()
+            if not candidate:
+                buckets.pop(key, None)
+
+        bucket = buckets.get(client_ip)
+        if bucket is None:
+            bucket = deque()
+            buckets[client_ip] = bucket
+
+        if len(bucket) >= limit:
+            raise HTTPException(status_code=429, detail=detail)
+        bucket.append(now)
 
 
 def _enforce_coach_rate_limit(request: Request) -> None:
-    client_ip = request.client.host if request.client else "unknown"
-    now = time.time()
-    cutoff = now - _coach_rate_window_sec
+    _enforce_rate_limit(
+        request,
+        lock=_coach_rate_lock,
+        buckets=_coach_rate_buckets,
+        window_sec=_coach_rate_window_sec,
+        limit=_coach_rate_limit,
+        detail="Rate limit exceeded for /coach/ask. Try again in about a minute.",
+    )
 
-    with _coach_rate_lock:
-        bucket = _coach_rate_buckets.get(client_ip)
-        if bucket is None:
-            bucket = deque()
-            _coach_rate_buckets[client_ip] = bucket
 
-        while bucket and bucket[0] <= cutoff:
-            bucket.popleft()
-
-        if len(bucket) >= _coach_rate_limit:
-            raise HTTPException(
-                status_code=429,
-                detail="Rate limit exceeded for /coach/ask. Try again in about a minute.",
-            )
-        bucket.append(now)
+def _enforce_topics_rate_limit(request: Request) -> None:
+    _enforce_rate_limit(
+        request,
+        lock=_topics_rate_lock,
+        buckets=_topics_rate_buckets,
+        window_sec=_topics_rate_window_sec,
+        limit=_topics_rate_limit,
+        detail="Rate limit exceeded for /topics/analyze-now. Try again in about a minute.",
+    )
 
 
 @router.get("/state")
@@ -96,7 +134,7 @@ async def reset_config_defaults(request: Request) -> dict:
 @router.post("/start")
 async def start(request: Request) -> dict:
     controller = request.app.state.controller
-    started = controller.start()
+    started = await asyncio.to_thread(controller.start)
     if started:
         await controller.broadcast_log("info", "Start requested from web")
     return {"ok": True, "started": started}
@@ -105,7 +143,7 @@ async def start(request: Request) -> dict:
 @router.post("/stop")
 async def stop(request: Request) -> dict:
     controller = request.app.state.controller
-    stopped = controller.stop()
+    stopped = await controller.stop_async()
     if stopped:
         await controller.broadcast_log("info", "Stop requested from web")
     return {"ok": True, "stopped": stopped}
@@ -138,12 +176,23 @@ class CoachAskRequest(BaseModel):
     speaker_label: str = Field(default="Manual", max_length=64)
 
 
+class TopicDefinitionPayload(BaseModel):
+    id: str = Field(default="", max_length=80)
+    name: str = Field(min_length=1, max_length=120)
+    expected_duration_min: int = Field(default=0, ge=0, le=600)
+    priority: Literal["low", "normal", "high", "mandatory", "optional"] = "normal"
+    comments: str = Field(default="", max_length=400)
+    order: int = Field(default=0, ge=0, le=10_000)
+
+
 class TopicsConfigureRequest(BaseModel):
-    agenda: list[str] = Field(default_factory=list, max_length=20)
+    agenda: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=20)
     enabled: bool = True
     allow_new_topics: bool = True
+    chunk_mode: Literal["since_last", "window"] = "since_last"
     interval_sec: int = Field(default=60, ge=30, le=300)
     window_sec: int = Field(default=90, ge=60, le=300)
+    definitions: list[TopicDefinitionPayload] = Field(default_factory=list, max_length=80)
 
 
 @router.post("/coach/ask")
@@ -184,8 +233,10 @@ async def configure_topics(payload: TopicsConfigureRequest, request: Request) ->
         agenda=payload.agenda,
         enabled=payload.enabled,
         allow_new_topics=payload.allow_new_topics,
+        chunk_mode=payload.chunk_mode,
         interval_sec=payload.interval_sec,
         window_sec=payload.window_sec,
+        definitions=[row.model_dump() for row in payload.definitions],
     )
     await controller.broadcast({"type": "topics_update", "topics": topics})
     await controller.broadcast_log(
@@ -193,7 +244,9 @@ async def configure_topics(payload: TopicsConfigureRequest, request: Request) ->
         (
             "Topics configured: "
             f"enabled={topics.get('enabled')}, agenda={len(topics.get('agenda', []))}, "
+            f"definitions={len(topics.get('definitions', []))}, "
             f"allow_new={topics.get('allow_new_topics')}, "
+            f"chunk_mode={topics.get('chunk_mode')}, "
             f"interval={topics.get('interval_sec')}s, window={topics.get('window_sec')}s"
         ),
     )
@@ -202,6 +255,7 @@ async def configure_topics(payload: TopicsConfigureRequest, request: Request) ->
 
 @router.post("/topics/analyze-now")
 async def analyze_topics_now(request: Request) -> dict:
+    _enforce_topics_rate_limit(request)
     controller = request.app.state.controller
     try:
         topics = await controller.analyze_topics_now()

@@ -40,6 +40,21 @@ EnglishRecognitionLanguage = Literal[
 ]
 
 
+def validate_environment(settings: "Settings") -> None:
+    errors = []
+    if not settings.speech_key:
+        errors.append("SPEECH_KEY is required (Azure Cognitive Services key)")
+    if not settings.speech_region:
+        errors.append("SPEECH_REGION is required (e.g. 'eastus')")
+    if settings.translator_key and not settings.translator_region:
+        errors.append("TRANSLATOR_REGION is required when TRANSLATOR_KEY is set")
+    if errors:
+        raise RuntimeError(
+            "Configuration errors — check your .env file:\n"
+            + "\n".join(f"  • {e}" for e in errors)
+        )
+
+
 class RuntimeConfig(BaseModel):
     capture_mode: Literal["single", "dual"] = "single"
     recognition_language: EnglishRecognitionLanguage = "en-US"

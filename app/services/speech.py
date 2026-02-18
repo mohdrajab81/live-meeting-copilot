@@ -178,6 +178,16 @@ class SpeechService:
             en_text = (result.text or "").strip()
             if not en_text:
                 return
+            now_ts = time.time()
+            start_ts = now_ts
+            # SDK duration is in 100ns ticks; use it to estimate utterance start.
+            try:
+                duration_ticks = float(getattr(result, "duration", 0) or 0)
+                duration_sec = max(0.0, duration_ticks / 10_000_000.0)
+                if duration_sec > 0:
+                    start_ts = max(0.0, now_ts - duration_sec)
+            except Exception:
+                start_ts = now_ts
             self._emit(
                 {
                     "type": "final",
@@ -185,7 +195,8 @@ class SpeechService:
                     "speaker_label": speaker_label,
                     "en": en_text,
                     "ar": "",
-                    "ts": time.time(),
+                    "ts": now_ts,
+                    "start_ts": min(start_ts, now_ts),
                 }
             )
             if cfg.debug:
@@ -314,8 +325,25 @@ class SpeechService:
         self._wire_handlers(local_recognizer, cfg, "local", local_label)
         self._wire_handlers(remote_recognizer, cfg, "remote", remote_label)
 
-        local_recognizer.start_continuous_recognition_async().get()
-        remote_recognizer.start_continuous_recognition_async().get()
+        local_started = False
+        remote_started = False
+        try:
+            local_recognizer.start_continuous_recognition_async().get()
+            local_started = True
+            remote_recognizer.start_continuous_recognition_async().get()
+            remote_started = True
+        except Exception:
+            if remote_started:
+                try:
+                    remote_recognizer.stop_continuous_recognition_async().get()
+                except Exception:
+                    pass
+            if local_started:
+                try:
+                    local_recognizer.stop_continuous_recognition_async().get()
+                except Exception:
+                    pass
+            raise
         return [local_recognizer, remote_recognizer]
 
     def _worker(self) -> None:

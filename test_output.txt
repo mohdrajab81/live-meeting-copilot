@@ -1,0 +1,137 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.0.2, pluggy-1.6.0
+rootdir: C:\Projects\AI-102\live-interview-translator
+configfile: pytest.ini
+plugins: anyio-4.12.1, asyncio-1.3.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 331 items
+
+tests\test_auth.py ............................................          [ 13%]
+tests\test_broadcast_service.py ........F...............                 [ 20%]
+tests\test_coach_orchestrator.py .............................           [ 29%]
+tests\test_config_store.py EEEEEEEEEEEEEEEEE                             [ 34%]
+tests\test_routes.py ........................................F....       [ 48%]
+tests\test_topic_orchestrator.py ....................................... [ 59%]
+.......................................................................  [ 81%]
+tests\test_transcript_store.py ......................................    [ 92%]
+tests\test_translation_pipeline.py ........................              [100%]
+
+=================================== ERRORS ====================================
+_______ ERROR at setup of TestDefaults.test_get_returns_default_config ________
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+____________ ERROR at setup of TestDefaults.test_dump_returns_dict ____________
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+_______ ERROR at setup of TestDefaults.test_get_debug_false_by_default ________
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+_______ ERROR at setup of TestSetGet.test_set_then_get_reflects_change ________
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+_________ ERROR at setup of TestSetGet.test_get_returns_isolated_copy _________
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+_________ ERROR at setup of TestSetGet.test_get_debug_true_after_set __________
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+_____________ ERROR at setup of TestSetGet.test_set_coach_fields ______________
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+_________ ERROR at setup of TestReset.test_reset_reverts_to_defaults __________
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+_____________ ERROR at setup of TestReset.test_reset_returns_dict _____________
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+______ ERROR at setup of TestReset.test_get_after_reset_returns_defaults ______
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+__________ ERROR at setup of TestPersistence.test_save_creates_file ___________
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+________ ERROR at setup of TestPersistence.test_save_returns_filename _________
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+______ ERROR at setup of TestPersistence.test_save_and_reload_round_trip ______
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+_____ ERROR at setup of TestPersistence.test_reload_file_not_found_raises _____
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+_______ ERROR at setup of TestPersistence.test_saved_file_is_valid_json _______
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+___ ERROR at setup of TestPersistence.test_reload_validates_against_schema ____
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+____ ERROR at setup of TestPersistence.test_reload_with_extra_keys_ignored ____
+..\mslearn-ai-language-main\.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+E   PermissionError: [WinError 5] Access is denied: 'C:\\Users\\DELL\\AppData\\Local\\Temp\\pytest-of-DELL'
+================================== FAILURES ===================================
+__________________ TestPreviewText.test_long_text_truncated ___________________
+tests\test_broadcast_service.py:82: in test_long_text_truncated
+    assert len(result) == 223  # 220 chars + "..."
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert 220 == 223
+E    +  where 220 = len('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...')
+______ TestTopicsAnalyzeNow.test_rate_limit_returns_429_after_4_requests ______
+tests\test_routes.py:430: in test_rate_limit_returns_429_after_4_requests
+    assert r.status_code == 200
+E   assert 429 == 200
+E    +  where 429 = <Response [429 Too Many Requests]>.status_code
+=========================== short test summary info ===========================
+FAILED tests/test_broadcast_service.py::TestPreviewText::test_long_text_truncated
+FAILED tests/test_routes.py::TestTopicsAnalyzeNow::test_rate_limit_returns_429_after_4_requests
+ERROR tests/test_config_store.py::TestDefaults::test_get_returns_default_config
+ERROR tests/test_config_store.py::TestDefaults::test_dump_returns_dict - Perm...
+ERROR tests/test_config_store.py::TestDefaults::test_get_debug_false_by_default
+ERROR tests/test_config_store.py::TestSetGet::test_set_then_get_reflects_change
+ERROR tests/test_config_store.py::TestSetGet::test_get_returns_isolated_copy
+ERROR tests/test_config_store.py::TestSetGet::test_get_debug_true_after_set
+ERROR tests/test_config_store.py::TestSetGet::test_set_coach_fields - Permiss...
+ERROR tests/test_config_store.py::TestReset::test_reset_reverts_to_defaults
+ERROR tests/test_config_store.py::TestReset::test_reset_returns_dict - Permis...
+ERROR tests/test_config_store.py::TestReset::test_get_after_reset_returns_defaults
+ERROR tests/test_config_store.py::TestPersistence::test_save_creates_file - P...
+ERROR tests/test_config_store.py::TestPersistence::test_save_returns_filename
+ERROR tests/test_config_store.py::TestPersistence::test_save_and_reload_round_trip
+ERROR tests/test_config_store.py::TestPersistence::test_reload_file_not_found_raises
+ERROR tests/test_config_store.py::TestPersistence::test_saved_file_is_valid_json
+ERROR tests/test_config_store.py::TestPersistence::test_reload_validates_against_schema
+ERROR tests/test_config_store.py::TestPersistence::test_reload_with_extra_keys_ignored
+================== 2 failed, 312 passed, 17 errors in 1.28s ===================

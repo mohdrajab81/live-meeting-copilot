@@ -1,57 +1,98 @@
 # Architecture Summary
 
 ## Purpose
-Live interview translator that captures speech, transcribes EN, translates to AR, and optionally provides coach suggestions.
+Live interview translator that:
+- captures speech (single or dual input),
+- emits live EN transcript,
+- translates EN->AR asynchronously,
+- optionally provides coach hints,
+- optionally tracks meeting topics through an agent.
 
-## High-level components
-- `app/services/speech.py`: Azure Speech STT (single/dual input).
-- `app/services/translation_pipeline.py`: async translation queue, throttling, segment/revision guards.
-- `app/main.py` (`AppController`): orchestration, state, watchdog, coach trigger logic.
-- `app/services/coach.py`: Azure AI Foundry coach integration.
-- `app/api/routes.py`: REST control/config endpoints.
-- `app/api/websocket.py`: realtime event stream endpoint.
-- `static/client.js`: frontend state/rendering and operator controls.
+## High-level modules
 
-## Runtime flow
-1. User clicks `Start`.
+### Entry and API
+- `app/main.py`: FastAPI bootstrap, lifespan startup/shutdown, routing.
+- `app/api/routes.py`: authenticated REST control plane.
+- `app/api/websocket.py`: authenticated websocket endpoint.
+- `app/api/auth.py`: token/loopback authorization policy.
+
+### Controller layer (state and orchestration)
+- `app/controller/__init__.py` (`AppController`): dependency wiring only.
+- `app/controller/session_manager.py`: speech event handling, start/stop lifecycle, watchdog.
+- `app/controller/transcript_store.py`: transcript state + translation telemetry.
+- `app/controller/coach_orchestrator.py`: coach trigger scheduling and async execution.
+- `app/controller/topic_orchestrator.py`: topic config/state, topic agent calls, merge/allocation logic.
+- `app/controller/config_store.py`: runtime config get/set/save/reload/reset.
+- `app/controller/broadcast_service.py`: websocket fanout, log buffer, debug trace broadcasting.
+
+### Service layer
+- `app/services/speech.py`: Azure Speech recognizers and event emission.
+- `app/services/translation_pipeline.py`: async translation queue with priority and stale guards.
+- `app/services/coach.py`: Azure AI Foundry coach agent client.
+- `app/services/topic_tracker.py`: Azure AI Foundry topic tracker agent client.
+
+## Runtime flows
+
+### Transcript + translation flow
+1. `POST /api/start` starts recognition.
 2. `SpeechService` emits `partial` and `final` events.
-3. `AppController`:
-   - sends EN partials immediately,
-   - enqueues throttled partial translation,
-   - enqueues always-on final translation.
-4. `TranslationPipeline` worker translates EN->AR and applies:
-   - `partial` updates for live panel,
-   - `final_patch` updates for timeline rows.
-5. WebSocket broadcasts `status`, `partial`, `final`, `final_patch`, `log`, `coach`.
-6. Optional coach triggers on final turns based on config.
+3. `SessionManager` updates transcript state and schedules translation work.
+4. `TranslationPipeline` processes queue (`final` priority over `partial`).
+5. `TranscriptStore` applies translation results and broadcasts:
+   - `partial` updates,
+   - `final_patch` updates,
+   - `telemetry` updates.
 
-## Event contracts (core)
-- `partial`: `{speaker, speaker_label, segment_id, revision, en, ar, ts}`
-- `final`: `{speaker, speaker_label, segment_id, revision, en, ar, ts}`
-- `final_patch`: patches AR for an existing final by `segment_id + revision`
+### Coach flow
+1. Final transcript events are evaluated by `CoachOrchestrator`.
+2. If trigger/cooldown conditions pass, prompt is built from transcript delta.
+3. `CoachService` sends request in a persistent conversation session.
+4. Coach hints are broadcast as `coach` events.
+5. If busy, latest trigger is queued and resumed after current run.
 
-## Guardrails and cost controls
-- `partial_translate_min_interval_sec`: limits partial translation frequency per speaker.
-- Priority queue in translator: final requests before partial requests.
-- Backlog collapse for partials: only latest partial per speaker survives while inflight.
-- Generation guard: stale translation requests dropped after stop/reset.
-- `auto_stop_silence_sec`: auto-stop on inactivity.
-- `max_session_sec`: hard session timeout.
+### Topics flow
+1. Topics configured via `POST /api/topics/configure`.
+2. Topic analysis runs:
+   - manually via `POST /api/topics/analyze-now`,
+   - automatically by watchdog when enabled and interval elapsed.
+3. `TopicOrchestrator` builds internal call context, then sends a minimized agent payload.
+4. Agent response is normalized and merged into runtime topic state.
+5. Updates broadcast as `topics_update`.
+
+## WebSocket event families
+- `snapshot` (initial full state)
+- `status`
+- `partial`
+- `final`
+- `final_patch`
+- `telemetry`
+- `coach`
+- `topics_update`
+- `log`
+
+## Guardrails
+- Translation:
+  - per-speaker partial throttling,
+  - queue priority (`final` before `partial`),
+  - partial backlog collapse,
+  - generation guard to drop stale work after reset/stop.
+- Coach:
+  - trigger policy + cooldown,
+  - queue-latest while busy.
+- Topics:
+  - confidence threshold and merge controls in orchestrator,
+  - API rate limit on manual analyze-now endpoint.
 
 ## Concurrency model
-- Speech callbacks run on background thread.
-- Shared state protected by `threading.RLock`.
-- Cross-thread async dispatch uses `asyncio.run_coroutine_threadsafe`.
-- Translation worker runs on FastAPI event loop task.
+- Speech SDK callbacks run on background threads.
+- Controller modules sharing mutable runtime state use one shared `threading.RLock`.
+- `BroadcastService` connection set is event-loop-owned.
+- Translation worker is an asyncio task on the app loop.
+- Cross-thread dispatch uses `asyncio.run_coroutine_threadsafe`.
 
-## Coach behavior
-- Triggered on final events (`remote/local/default/any`) with cooldown.
-- Uses transcript delta since last sent index.
-- Limited by `coach_max_turns`.
-- If busy, latest trigger is queued and resumed after completion.
-
-## Key files to review first
-- `app/main.py`
-- `app/services/translation_pipeline.py`
-- `app/services/speech.py`
-- `docs/low-level-design.md`
+## Key review order
+1. `app/controller/__init__.py`
+2. `app/controller/session_manager.py`
+3. `app/controller/topic_orchestrator.py`
+4. `app/services/translation_pipeline.py`
+5. `docs/low-level-design.md`

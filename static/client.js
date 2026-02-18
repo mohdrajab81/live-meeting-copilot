@@ -1,8 +1,9 @@
 (function () {
   const MAX_ROWS = 300;
   const STICKY_THRESHOLD = 80;
-  const UI_PREFS_KEY = "translator_ui_prefs_v1";
+  const UI_PREFS_KEY = "translator_ui_prefs_v2";
   const BOOKMARKS_KEY = "translator_bookmarks_v1";
+  const API_TOKEN_KEY = "translator_api_token_v1";
   const THEMES = ["dark", "light", "graphite", "sand"];
 
   const FONT_STACKS = {
@@ -16,12 +17,10 @@
   const statusDot = document.getElementById("statusDot");
   const statusText = document.getElementById("statusText");
   const reconnectBadge = document.getElementById("reconnectBadge");
-  const telemetryWs = document.getElementById("telemetryWs");
-  const telemetryTr = document.getElementById("telemetryTr");
 
   const timeline = document.getElementById("timeline");
   const timelineDivider = document.getElementById("timelineDivider");
-  const timelineWrap = document.querySelector(".timeline-wrap");
+  const workspaceShell = document.querySelector(".workspace-shell");
   const enInterim = document.getElementById("enInterim");
   const arInterim = document.getElementById("arInterim");
   const enLiveLabel = document.getElementById("enLiveLabel");
@@ -31,6 +30,10 @@
   const transcriptSearch = document.getElementById("transcriptSearch");
   const logsEl = document.getElementById("logs");
   const logsSearch = document.getElementById("logsSearch");
+  const leftRail = document.getElementById("leftRail");
+  const navToggleBtn = document.getElementById("navToggleBtn");
+  const navCollapseBtn = document.getElementById("navCollapseBtn");
+  const navBackdrop = document.getElementById("navBackdrop");
 
   const startBtn = document.getElementById("startBtn");
   const stopBtn = document.getElementById("stopBtn");
@@ -86,6 +89,7 @@
   const reloadConfigBtn = document.getElementById("reloadConfigBtn");
   const restoreDefaultsBtn = document.getElementById("restoreDefaultsBtn");
   const settingsDirtyIndicator = document.getElementById("settingsDirtyIndicator");
+  const settingsValidationSummary = document.getElementById("settingsValidationSummary");
   const settingsTab = document.getElementById("settingsTab");
 
   const copyLogsBtn = document.getElementById("copyLogsBtn");
@@ -95,6 +99,8 @@
   const exportTranscriptCsvBtn = document.getElementById("exportTranscriptCsvBtn");
   const exportBookmarksJsonBtn = document.getElementById("exportBookmarksJsonBtn");
   const exportBookmarksCsvBtn = document.getElementById("exportBookmarksCsvBtn");
+  const transcriptExportMenuBtn = document.getElementById("transcriptExportMenuBtn");
+  const transcriptExportMenu = document.getElementById("transcriptExportMenu");
   const bookmarksOnlyBtn = document.getElementById("bookmarksOnlyBtn");
   const bookmarkMenu = document.getElementById("bookmarkMenu");
   const bookmarkMenuEditBtn = document.getElementById("bookmarkMenuEditBtn");
@@ -106,10 +112,15 @@
   const bookmarkModalCancelBtn = document.getElementById("bookmarkModalCancelBtn");
 
   const coachPrompt = document.getElementById("coachPrompt");
+  const coachAskPanel = document.getElementById("coachAskPanel");
   const askCoachBtn = document.getElementById("askCoachBtn");
   const clearCoachBtn = document.getElementById("clearCoachBtn");
-  const coachHintsEl = document.getElementById("coachHints");
   const coachStatusEl = document.getElementById("coachStatus");
+  const coachActionDeck = document.getElementById("coachActionDeck");
+  const coachRecoPrevBtn = document.getElementById("coachRecoPrevBtn");
+  const coachRecoNextBtn = document.getElementById("coachRecoNextBtn");
+  const coachRecoPage = document.getElementById("coachRecoPage");
+  const coachKpiStatus = document.getElementById("coachKpiStatus");
   const topicsAgendaInput = document.getElementById("topicsAgendaInput");
   const topicsEnableAuto = document.getElementById("topicsEnableAuto");
   const topicsAllowNew = document.getElementById("topicsAllowNew");
@@ -118,17 +129,77 @@
   const topicsSaveBtn = document.getElementById("topicsSaveBtn");
   const topicsAnalyzeBtn = document.getElementById("topicsAnalyzeBtn");
   const topicsClearBtn = document.getElementById("topicsClearBtn");
+  const topicsTopActions = document.getElementById("topicsTopActions");
+  const topicsExportMenuWrap = document.getElementById("topicsExportMenuWrap");
   const topicsStatusEl = document.getElementById("topicsStatus");
   const topicsListEl = document.getElementById("topicsList");
+  const topicsGroupBy = document.getElementById("topicsGroupBy");
+  const topicsSortBy = document.getElementById("topicsSortBy");
+  const topicsSearch = document.getElementById("topicsSearch");
+  const topicsDensityToggle = document.getElementById("topicsDensityToggle");
+  const topicsChunkMode = document.getElementById("topicsChunkMode");
+  const topicsWindowRow = document.getElementById("topicsWindowRow");
+  const topicsBoardControls = document.getElementById("topicsBoardControls");
+  const topicsBoardPane = document.getElementById("topicsBoardPane");
+  const topicsRunsPane = document.getElementById("topicsRunsPane");
+  const topicsDefinitionsPane = document.getElementById("topicsDefinitionsPane");
+  const topicsSettingsPane = document.getElementById("topicsSettingsPane");
+  const topicsRunsList = document.getElementById("topicsRunsList");
+  const topicsSubtabButtons = Array.from(document.querySelectorAll(".topics-subtab-btn"));
+  const topicsDefinitionsList = document.getElementById("topicsDefinitionsList");
+  const topicsDefinitionEditorTitle = document.getElementById("topicsDefinitionEditorTitle");
+  const topicDefIdInput = document.getElementById("topicDefIdInput");
+  const topicDefNameInput = document.getElementById("topicDefNameInput");
+  const topicDefDurationInput = document.getElementById("topicDefDurationInput");
+  const topicDefPriorityInput = document.getElementById("topicDefPriorityInput");
+  const topicDefCommentsInput = document.getElementById("topicDefCommentsInput");
+  const topicDefSaveBtn = document.getElementById("topicDefSaveBtn");
+  const topicDefCancelBtn = document.getElementById("topicDefCancelBtn");
+  const topicsDefinitionsValidation = document.getElementById("topicsDefinitionsValidation");
+  const topicsKpiCount = document.getElementById("topicsKpiCount");
+  const topicsKpiCovered = document.getElementById("topicsKpiCovered");
   const exportTopicsJsonBtn = document.getElementById("exportTopicsJsonBtn");
   const exportTopicsCsvBtn = document.getElementById("exportTopicsCsvBtn");
+  const topicsExportMenuBtn = document.getElementById("topicsExportMenuBtn");
+  const topicsExportMenu = document.getElementById("topicsExportMenu");
+  const logsCompactToggle = document.getElementById("logsCompactToggle");
+  const logsPinnedList = document.getElementById("logsPinnedList");
+  const clearPinnedLogsBtn = document.getElementById("clearPinnedLogsBtn");
+  const logsKpiVisible = document.getElementById("logsKpiVisible");
+  const logsKpiErrors = document.getElementById("logsKpiErrors");
+  const severityButtons = Array.from(document.querySelectorAll(".severity-chip"));
+  const settingsSummary = document.getElementById("settingsSummary");
+  const settingsKpiDirty = document.getElementById("settingsKpiDirty");
+  const settingsIndexButtons = Array.from(document.querySelectorAll(".settings-index-btn"));
+  const transcriptMetaEntries = document.getElementById("transcriptMetaEntries");
+  const transcriptMetaBookmarks = document.getElementById("transcriptMetaBookmarks");
+  const insightBookmarkSummary = document.getElementById("insightBookmarkSummary");
+  const insightBookmarksList = document.getElementById("insightBookmarksList");
+  const insightSessionStats = document.getElementById("insightSessionStats");
+  const insightFilterButtons = Array.from(document.querySelectorAll("[data-filter]"));
+  const insightSpeakerButtons = Array.from(document.querySelectorAll("[data-speaker]"));
 
   const tabButtons = Array.from(document.querySelectorAll(".tab-btn"));
   const tabPanes = Array.from(document.querySelectorAll(".tab-pane"));
   const settingsAccordions = Array.from(document.querySelectorAll(".settings-accordion"));
   const toastHost = document.getElementById("toastHost");
 
+  function loadApiToken() {
+    try {
+      const params = new URLSearchParams(window.location.search || "");
+      const fromQuery = String(params.get("token") || params.get("api_token") || "").trim();
+      if (fromQuery) {
+        localStorage.setItem(API_TOKEN_KEY, fromQuery);
+        return fromQuery;
+      }
+      return String(localStorage.getItem(API_TOKEN_KEY) || "").trim();
+    } catch (_err) {
+      return "";
+    }
+  }
+
   const state = {
+    apiToken: loadApiToken(),
     socket: null,
     reconnectAttempts: 0,
     reconnectTimer: null,
@@ -137,19 +208,28 @@
     liveHeldFinal: null,
     logs: [],
     coachHints: [],
+    coachCursor: {
+      lastTopKey: "",
+      lastCount: 0,
+    },
     coachPending: false,
     coachConfigured: false,
     topics: {
       configured: false,
+      settings_saved: false,
       enabled: false,
       allow_new_topics: true,
+      chunk_mode: "since_last",
       interval_sec: 60,
       window_sec: 90,
       pending: false,
       last_run_ts: 0,
+      last_final_index: 0,
       last_error: "",
       agenda: [],
+      definitions: [],
       items: [],
+      runs: [],
     },
     sessionStartedTs: null,
     recording: {
@@ -163,8 +243,42 @@
       fontFamilyAr: "Noto Sans Arabic",
       fontScaleEn: 1,
       fontScaleAr: 1,
-      livePanelHeight: 220,
+      livePanelHeight: 156,
       theme: "dark",
+      navCollapsed: false,
+      mobileNavOpen: false,
+      activeSection: "transcriptTab",
+      pageLayouts: {
+        topicsSetupCollapsed: false,
+      },
+      pageSubtabs: {
+        topics: "board",
+      },
+      transcriptView: {
+        preset: "all",
+        speaker: "any",
+        recentMinutes: 10,
+      },
+      coachView: {
+        activeIndex: 0,
+      },
+      topicsView: {
+        groupBy: "status",
+        sortBy: "duration_desc",
+        search: "",
+        density: "comfortable",
+      },
+      topicsDefinitionsView: {
+        editingId: "",
+      },
+      logsView: {
+        severity: "all",
+        compact: false,
+        pinned: {},
+      },
+      settingsView: {
+        summaryExpanded: true,
+      },
       settingsAccordions: {},
     },
     filters: {
@@ -194,7 +308,10 @@
 
   function wsUrl() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    return `${proto}://${location.host}/ws`;
+    const base = `${proto}://${location.host}/ws`;
+    const token = String(state.apiToken || "").trim();
+    if (!token) return base;
+    return `${base}?token=${encodeURIComponent(token)}`;
   }
 
   function tsToMs(ts) {
@@ -223,6 +340,66 @@
 
   function normalizeText(text) {
     return String(text || "").toLocaleLowerCase();
+  }
+
+  function normalizeTopicKey(text) {
+    return normalizeText(String(text || "").replace(/\s+/g, " ").trim());
+  }
+
+  function clipText(value, limit) {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    if (text.length <= limit) return text;
+    return `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}...`;
+  }
+
+  function cleanCoachSuggestionText(value) {
+    let text = String(value || "").replace(/\r/g, "\n");
+    text = text.replace(/\*\*/g, "");
+    text = text.replace(/```/g, "");
+    text = text.replace(/^\s*suggested reply\s*:\s*/im, "");
+    return text.trim();
+  }
+
+  function speakerFamily(value) {
+    const key = normalizeText(value);
+    if (!key) return "any";
+    if (key.includes("remote")) return "remote";
+    if (key.includes("local")) return "local";
+    if (key.includes("you")) return "local";
+    return key;
+  }
+
+  function logKey(log) {
+    return `${Math.round(Number(log?.ts || 0) * 1000)}:${String(log?.level || "")}:${String(log?.message || "")}`;
+  }
+
+  function isMobileLayout() {
+    return window.matchMedia("(max-width: 1100px)").matches;
+  }
+
+  function applyNavCollapsed() {
+    const collapsed = !!state.ui.navCollapsed && !isMobileLayout();
+    document.body.classList.toggle("nav-collapsed", collapsed);
+    if (navCollapseBtn) {
+      navCollapseBtn.textContent = collapsed ? ">>" : "Collapse";
+      navCollapseBtn.setAttribute("aria-label", collapsed ? "Expand navigation" : "Collapse navigation");
+      navCollapseBtn.title = collapsed ? "Expand navigation" : "Collapse navigation";
+    }
+  }
+
+  function applyMobileNav() {
+    const open = !!state.ui.mobileNavOpen && isMobileLayout();
+    document.body.classList.toggle("nav-open", open);
+    if (navToggleBtn) navToggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (leftRail) leftRail.setAttribute("data-open", open ? "true" : "false");
+    if (navBackdrop) navBackdrop.setAttribute("aria-hidden", open ? "false" : "true");
+  }
+
+  function closeMobileNav() {
+    if (!state.ui.mobileNavOpen) return;
+    state.ui.mobileNavOpen = false;
+    applyMobileNav();
+    saveUiPrefs();
   }
 
   function finalKey(item) {
@@ -256,14 +433,7 @@
   }
 
   function renderTelemetryHud() {
-    const wsText = state.wsConnected ? "WS Online" : "WS Offline";
-    const latest = Number(state.telemetry.latestMs);
-    const p50 = Number(state.telemetry.p50Ms);
-    const latencyText = (Number.isFinite(latest) && latest >= 0)
-      ? `Tr ${latest}ms (p50 ${Number.isFinite(p50) && p50 >= 0 ? p50 : latest}ms)`
-      : "Tr --";
-    if (telemetryWs) telemetryWs.textContent = wsText;
-    if (telemetryTr) telemetryTr.textContent = latencyText;
+    // Telemetry pills were intentionally removed from topbar in UX V3.
   }
 
   function showToast(message, type, options) {
@@ -341,38 +511,188 @@
 
   function setConfigDirty(dirty) {
     state.configDirty = !!dirty;
-    if (!settingsDirtyIndicator) return;
-    settingsDirtyIndicator.classList.toggle("hidden", !state.configDirty);
+    if (settingsDirtyIndicator) settingsDirtyIndicator.classList.toggle("hidden", !state.configDirty);
+    if (settingsKpiDirty) settingsKpiDirty.textContent = state.configDirty ? "Yes" : "No";
+    renderSettingsSummary();
+    validateSettingsInputs(true);
+  }
+
+  function setFieldValidation(el, message) {
+    if (!el || !el.id) return;
+    const selector = `.validation-field[data-for="${el.id}"]`;
+    let note = document.querySelector(selector);
+    if (!message) {
+      el.classList.remove("invalid");
+      if (note) note.remove();
+      return;
+    }
+    el.classList.add("invalid");
+    if (!note) {
+      note = document.createElement("div");
+      note.className = "validation-field";
+      note.dataset.for = el.id;
+      if (el.parentElement) el.parentElement.appendChild(note);
+    }
+    note.textContent = message;
+  }
+
+  function validateSettingsInputs(render) {
+    const errors = {};
+    const isDual = cfgCaptureMode?.value === "dual";
+    const localId = String(cfgLocalInputDeviceId?.value || "").trim();
+    const remoteId = String(cfgRemoteInputDeviceId?.value || "").trim();
+    if (isDual && !localId) errors[cfgLocalInputDeviceId.id] = "Required in dual mode.";
+    if (isDual && !remoteId) errors[cfgRemoteInputDeviceId.id] = "Required in dual mode.";
+
+    const rangeChecks = [
+      { el: cfgEnd, min: 50, max: 10000, label: "End silence" },
+      { el: cfgCoachCooldownSec, min: 0, max: 120, label: "Coach cooldown" },
+      { el: cfgCoachMaxTurns, min: 2, max: 30, label: "Coach max turns" },
+      { el: cfgPartialTranslateMinIntervalSec, min: 0.2, max: 10.0, label: "Partial interval" },
+      { el: cfgAutoStopSilenceSec, min: 0, max: 5, label: "Auto-stop silence" },
+      { el: cfgMaxSessionSec, min: 5, max: 180, label: "Max session" },
+    ];
+    rangeChecks.forEach((row) => {
+      if (!row.el) return;
+      const value = Number(row.el.value);
+      if (!Number.isFinite(value) || value < row.min || value > row.max) {
+        errors[row.el.id] = `${row.label} must be ${row.min}-${row.max}.`;
+      }
+    });
+
+    const targets = [
+      cfgLocalInputDeviceId,
+      cfgRemoteInputDeviceId,
+      cfgEnd,
+      cfgCoachCooldownSec,
+      cfgCoachMaxTurns,
+      cfgPartialTranslateMinIntervalSec,
+      cfgAutoStopSilenceSec,
+      cfgMaxSessionSec,
+    ];
+    if (render) {
+      targets.forEach((el) => setFieldValidation(el, errors[el?.id] || ""));
+      const messages = Object.values(errors);
+      if (settingsValidationSummary) {
+        if (messages.length) {
+          settingsValidationSummary.textContent = messages[0];
+          settingsValidationSummary.classList.remove("hidden");
+        } else {
+          settingsValidationSummary.textContent = "";
+          settingsValidationSummary.classList.add("hidden");
+        }
+      }
+      if (applyConfigBtn) applyConfigBtn.disabled = messages.length > 0;
+      if (saveConfigBtn) saveConfigBtn.disabled = messages.length > 0;
+    }
+    return { ok: Object.keys(errors).length === 0, errors };
   }
 
   function logLineText(log) {
     return `[${formatTimeWithMs(log.ts)}] [${log.level || "info"}] ${log.message || ""}`;
   }
 
-  function addLog(level, message, ts, prepend) {
-    const line = document.createElement("div");
-    line.className = "line";
-    line.textContent = logLineText({ level, message, ts });
-
-    if (prepend) logsEl.prepend(line);
-    else logsEl.appendChild(line);
-
-    while (logsEl.children.length > 400) logsEl.removeChild(logsEl.lastChild);
-  }
-
   function filteredLogs() {
     const query = normalizeText(state.filters.logs).trim();
-    if (!query) return [...state.logs];
+    const severity = String(state.ui.logsView?.severity || "all");
     return state.logs.filter((log) => {
-      const line = `${log.level || ""} ${log.message || ""} ${formatTime(log.ts)}`;
+      const level = normalizeText(log.level || "info");
+      if (severity !== "all" && severity !== level) return false;
+      if (!query) return true;
+      const line = `${level} ${log.message || ""} ${formatTime(log.ts)}`;
       return normalizeText(line).includes(query);
     });
   }
 
   function renderLogs() {
+    if (!logsEl) return;
     logsEl.innerHTML = "";
+    logsEl.classList.toggle("logs-compact", state.ui.logsView?.compact === true);
+    if (logsCompactToggle) {
+      const compact = state.ui.logsView?.compact === true;
+      logsCompactToggle.textContent = compact ? "Comfortable rows" : "Compact rows";
+      logsCompactToggle.setAttribute("aria-pressed", compact ? "true" : "false");
+    }
     const newestFirst = filteredLogs().reverse();
-    newestFirst.forEach((log) => addLog(log.level, log.message, log.ts, false));
+    newestFirst.forEach((log) => {
+      const line = document.createElement("div");
+      const level = normalizeText(log.level || "info");
+      line.className = `line log-line level-${level}`;
+
+      const badge = document.createElement("span");
+      badge.className = `log-level level-${level}`;
+      badge.textContent = level;
+
+      const ts = document.createElement("span");
+      ts.className = "log-ts";
+      ts.textContent = formatTimeWithMs(log.ts);
+
+      const message = document.createElement("span");
+      message.className = "log-msg";
+      message.textContent = log.message || "";
+
+      const pinBtn = document.createElement("button");
+      pinBtn.type = "button";
+      pinBtn.className = "btn log-pin-btn";
+      const key = logKey(log);
+      const pinned = !!state.ui.logsView?.pinned?.[key];
+      pinBtn.textContent = pinned ? "Unpin" : "Pin";
+      pinBtn.setAttribute("aria-label", pinned ? "Unpin log line" : "Pin log line");
+      pinBtn.addEventListener("click", () => {
+        if (!state.ui.logsView.pinned) state.ui.logsView.pinned = {};
+        if (state.ui.logsView.pinned[key]) delete state.ui.logsView.pinned[key];
+        else state.ui.logsView.pinned[key] = true;
+        saveUiPrefs();
+        renderLogs();
+      });
+
+      line.appendChild(badge);
+      line.appendChild(ts);
+      line.appendChild(message);
+      line.appendChild(pinBtn);
+      logsEl.appendChild(line);
+    });
+
+    if (logsKpiVisible) logsKpiVisible.textContent = String(newestFirst.length);
+    if (logsKpiErrors) {
+      const errors = filteredLogs().filter((x) => normalizeText(x.level) === "error").length;
+      logsKpiErrors.textContent = String(errors);
+    }
+    renderPinnedLogs();
+    syncSeverityChips();
+  }
+
+  function renderPinnedLogs() {
+    if (!logsPinnedList) return;
+    logsPinnedList.innerHTML = "";
+    const pinnedMap = state.ui.logsView?.pinned || {};
+    const pinnedRows = state.logs.filter((log) => pinnedMap[logKey(log)]);
+    if (!pinnedRows.length) {
+      const empty = document.createElement("div");
+      empty.className = "muted";
+      empty.textContent = "No pinned incidents yet.";
+      logsPinnedList.appendChild(empty);
+      return;
+    }
+    pinnedRows
+      .slice()
+      .reverse()
+      .forEach((log) => {
+        const row = document.createElement("div");
+        row.className = "pinned-row";
+        row.textContent = clipText(logLineText(log), 180);
+        logsPinnedList.appendChild(row);
+      });
+  }
+
+  function syncSeverityChips() {
+    if (!severityButtons.length) return;
+    const current = String(state.ui.logsView?.severity || "all");
+    severityButtons.forEach((btn) => {
+      const active = btn.getAttribute("data-severity") === current;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+    });
   }
 
   function makeTimelineRow(item) {
@@ -469,6 +789,83 @@
     timeline.innerHTML = "";
     filteredFinals().forEach((item) => timeline.appendChild(makeTimelineRow(item)));
     if (sticky) scrollToBottom(timeline);
+    renderTranscriptInsights();
+  }
+
+  function jumpToTimelineKey(key) {
+    if (!key) return;
+    let target = Array.from(timeline.querySelectorAll(".row")).find((row) => row.dataset.key === key);
+    if (!target) {
+      state.ui.transcriptView.preset = "all";
+      state.filters.bookmarksOnly = false;
+      if (bookmarksOnlyBtn) {
+        bookmarksOnlyBtn.classList.remove("active");
+        bookmarksOnlyBtn.setAttribute("aria-pressed", "false");
+      }
+      renderFinals(true);
+      target = Array.from(timeline.querySelectorAll(".row")).find((row) => row.dataset.key === key);
+    }
+    if (!target) return;
+    target.classList.add("row-focus");
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => target.classList.remove("row-focus"), 1200);
+  }
+
+  function syncTranscriptPresetButtons() {
+    const currentPreset = String(state.ui.transcriptView?.preset || "all");
+    const currentSpeaker = String(state.ui.transcriptView?.speaker || "any");
+    insightFilterButtons.forEach((btn) => {
+      const active = btn.getAttribute("data-filter") === currentPreset;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    insightSpeakerButtons.forEach((btn) => {
+      const active = btn.getAttribute("data-speaker") === currentSpeaker;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+  }
+
+  function renderTranscriptInsights() {
+    const bookmarkedRows = state.finals
+      .map((item) => {
+        const key = finalKey(item);
+        const mark = state.bookmarks[key];
+        if (!mark) return null;
+        return { key, item, note: mark.note || "" };
+      })
+      .filter(Boolean);
+
+    if (transcriptMetaEntries) transcriptMetaEntries.textContent = `Entries: ${state.finals.length}`;
+    if (transcriptMetaBookmarks) transcriptMetaBookmarks.textContent = `Bookmarks: ${bookmarkedRows.length}`;
+    syncTranscriptPresetButtons();
+
+    if (!insightBookmarkSummary || !insightBookmarksList || !insightSessionStats) return;
+    insightBookmarkSummary.textContent = bookmarkedRows.length
+      ? `${bookmarkedRows.length} bookmarked moments`
+      : "No bookmarks yet.";
+    insightBookmarksList.innerHTML = "";
+    bookmarkedRows
+      .slice(-8)
+      .reverse()
+      .forEach((row) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn insight-jump-btn";
+        const label = row.item?.speaker_label || "Speaker";
+        btn.textContent = `${formatTime(row.item?.ts)} ${label} - ${clipText(row.item?.en, 56)}`;
+        btn.title = row.note ? `Note: ${row.note}` : "Jump to bookmark";
+        btn.addEventListener("click", () => jumpToTimelineKey(row.key));
+        insightBookmarksList.appendChild(btn);
+      });
+    insightSessionStats.innerHTML = "";
+  }
+
+  function setLiveTextWithAutoScroll(el, text) {
+    if (!el) return;
+    const sticky = isNearBottom(el);
+    el.textContent = text;
+    if (sticky) scrollToBottom(el);
   }
 
   function renderLivePartials() {
@@ -484,8 +881,8 @@
     if (enLiveLabel) enLiveLabel.textContent = speakerLabel;
     if (arLiveLabel) arLiveLabel.textContent = speakerLabel;
 
-    enInterim.textContent = enText;
-    arInterim.textContent = arText;
+    setLiveTextWithAutoScroll(enInterim, enText);
+    setLiveTextWithAutoScroll(arInterim, arText);
 
     const hasHeld = !useLive && heldEntry.length > 0;
     const enState = useLive && enText ? "live" : (hasHeld && enText ? "held" : "idle");
@@ -514,83 +911,256 @@
     el.textContent = "Waiting";
   }
 
+  function renderCoachActionDeck(hints) {
+    if (!coachActionDeck) return;
+    coachActionDeck.innerHTML = "";
+    coachActionDeck.scrollTop = 0;
+    const total = Array.isArray(hints) ? hints.length : 0;
+    const maxIndex = Math.max(0, total - 1);
+    let activeIndex = Number(state.ui.coachView?.activeIndex || 0);
+    if (!Number.isFinite(activeIndex)) activeIndex = 0;
+    activeIndex = Math.max(0, Math.min(maxIndex, Math.floor(activeIndex)));
+    state.ui.coachView.activeIndex = activeIndex;
+
+    if (coachRecoPage) {
+      coachRecoPage.textContent = total ? `${activeIndex + 1} / ${total}` : "0 / 0";
+    }
+    if (coachRecoPrevBtn) coachRecoPrevBtn.disabled = activeIndex <= 0;
+    if (coachRecoNextBtn) coachRecoNextBtn.disabled = total === 0 || activeIndex >= maxIndex;
+
+    const selected = hints[activeIndex];
+    if (!selected) {
+      const empty = document.createElement("div");
+      empty.className = "muted";
+      empty.textContent = "Latest recommendation appears after the next coach response.";
+      coachActionDeck.appendChild(empty);
+      return;
+    }
+
+    const suggestion = cleanCoachSuggestionText(selected.suggestion || "");
+    const trigger = cleanCoachSuggestionText(selected.trigger_en || "");
+    const bodyText = (suggestion || trigger || "No recommendation yet.").trim();
+
+    const section = document.createElement("section");
+    section.className = "coach-structured-section coach-latest-single";
+
+    if (selected?.ts || selected?.speaker_label) {
+      const meta = document.createElement("div");
+      meta.className = "coach-meta";
+      const label = String(selected.speaker_label || "Manual").trim() || "Manual";
+      meta.textContent = `${formatTime(selected.ts)} | ${label}`;
+      section.appendChild(meta);
+    }
+
+    const body = document.createElement("pre");
+    body.className = "coach-structured-body";
+    body.textContent = bodyText;
+    section.appendChild(body);
+
+    if (suggestion && trigger) {
+      const basedOn = document.createElement("div");
+      basedOn.className = "muted";
+      basedOn.textContent = `Based on: ${trigger}`;
+      section.appendChild(basedOn);
+    }
+
+    coachActionDeck.appendChild(section);
+    body.scrollTop = 0;
+  }
+
   function renderCoachHints() {
-    coachHintsEl.innerHTML = "";
     const mergedByGroup = new Map();
     const ordered = [...state.coachHints];
     ordered.forEach((hint, idx) => {
       const gid = hint.group_id || `manual-${idx}`;
       const prev = mergedByGroup.get(gid);
-      if (!prev) {
-        mergedByGroup.set(gid, hint);
-        return;
-      }
-      if (prev.ts <= hint.ts) {
-        mergedByGroup.set(gid, hint);
-      }
+      if (!prev || Number(prev.ts || 0) <= Number(hint.ts || 0)) mergedByGroup.set(gid, hint);
     });
-    const hints = Array.from(mergedByGroup.values()).reverse();
-    hints.forEach((hint) => {
-      const card = document.createElement("div");
-      card.className = "coach-item";
-
-      const meta = document.createElement("div");
-      meta.className = "coach-meta";
-      const kind = hint.hint_kind || "manual";
-      const kindLabel = kind === "deep" ? "Auto" : "Manual";
-      meta.textContent = `${formatTime(hint.ts)} | ${kindLabel} | Trigger: ${hint.speaker_label || "Manual"}`;
-
-      const text = document.createElement("div");
-      text.className = "coach-text";
-      text.textContent = hint.suggestion || "";
-
-      card.appendChild(meta);
-      if (hint.trigger_en) {
-        const q = document.createElement("div");
-        q.className = "muted";
-        q.textContent = `Based on: ${hint.trigger_en}`;
-        card.appendChild(q);
-      }
-      card.appendChild(text);
-      coachHintsEl.appendChild(card);
-    });
-
-    const statusParts = [];
-    statusParts.push(state.coachConfigured ? "Coach ready" : "Coach unavailable");
-    if (state.coachPending) {
-      statusParts.push("Generating reply...");
-    } else if (hints.length === 0) {
-      statusParts.push("No suggestions yet");
+    const hints = Array.from(mergedByGroup.values()).sort(
+      (a, b) => Number(b?.ts || 0) - Number(a?.ts || 0)
+    );
+    const topKey = hints.length
+      ? `${Number(hints[0]?.ts || 0)}:${String(hints[0]?.group_id || "")}`
+      : "";
+    if (
+      topKey !== state.coachCursor.lastTopKey
+      || hints.length !== state.coachCursor.lastCount
+    ) {
+      state.ui.coachView.activeIndex = 0;
+      state.coachCursor.lastTopKey = topKey;
+      state.coachCursor.lastCount = hints.length;
+      saveUiPrefs();
     }
-    coachStatusEl.textContent = statusParts.join(" | ");
+    renderCoachActionDeck(hints);
+
+    if (coachStatusEl) {
+      if (!state.coachConfigured) {
+        coachStatusEl.textContent = "Coach unavailable";
+        coachStatusEl.classList.remove("hidden");
+      } else if (state.coachPending) {
+        coachStatusEl.textContent = "Generating recommendation...";
+        coachStatusEl.classList.remove("hidden");
+      } else {
+        coachStatusEl.textContent = "";
+        coachStatusEl.classList.add("hidden");
+      }
+    }
+    if (coachKpiStatus) coachKpiStatus.textContent = state.coachPending ? "Pending" : (state.coachConfigured ? "Ready" : "Off");
+  }
+
+  function normalizeTopicDefinition(raw, index) {
+    const name = String(raw?.name || "").replace(/\s+/g, " ").trim();
+    if (!name) return null;
+    const idRaw = String(raw?.id || "").trim();
+    const normalizedId = idRaw || `topic-${index + 1}`;
+    const priorityRaw = String(raw?.priority || "normal").trim().toLowerCase();
+    const priorityMapped = priorityRaw === "mandatory"
+      ? "high"
+      : (priorityRaw === "optional" ? "normal" : priorityRaw);
+    const priority = ["low", "normal", "high"].includes(priorityMapped) ? priorityMapped : "normal";
+    return {
+      id: normalizedId,
+      name,
+      expected_duration_min: clampNumber(raw?.expected_duration_min, 0, 600, 0),
+      priority,
+      comments: String(raw?.comments || "").trim(),
+      order: clampNumber(raw?.order, 0, 10000, index),
+    };
+  }
+
+  function ensureTopicDefinitions() {
+    const incoming = Array.isArray(state.topics?.definitions) ? state.topics.definitions : [];
+    const normalized = [];
+    const seenNames = new Set();
+    incoming.forEach((row, idx) => {
+      const parsed = normalizeTopicDefinition(row, idx);
+      if (!parsed) return;
+      const key = normalizeTopicKey(parsed.name);
+      if (!key || seenNames.has(key)) return;
+      seenNames.add(key);
+      normalized.push(parsed);
+    });
+    if (!normalized.length) {
+      const agenda = Array.isArray(state.topics?.agenda) ? state.topics.agenda : [];
+      agenda.forEach((name, idx) => {
+        const parsed = normalizeTopicDefinition({
+          name,
+          expected_duration_min: 0,
+          priority: "normal",
+          comments: "",
+          order: idx,
+        }, idx);
+        if (parsed) normalized.push(parsed);
+      });
+    }
+    normalized.sort((a, b) => {
+      if (a.order !== b.order) return a.order - b.order;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+    normalized.forEach((row, idx) => { row.order = idx; });
+    state.topics.definitions = normalized;
+    return normalized;
   }
 
   function agendaLinesFromInput() {
-    if (!topicsAgendaInput) return [];
-    const lines = String(topicsAgendaInput.value || "")
-      .split(/\r?\n/g)
-      .map((x) => x.trim())
-      .filter(Boolean);
-    const uniq = [];
-    const seen = new Set();
-    lines.forEach((line) => {
-      const key = normalizeText(line);
-      if (seen.has(key)) return;
-      seen.add(key);
-      uniq.push(line);
+    const defs = ensureTopicDefinitions();
+    return defs.map((row) => row.name).slice(0, 20);
+  }
+
+  function syncTopicsSubtabUI() {
+    const active = String(state.ui.pageSubtabs?.topics || "board");
+    const tabs = topicsSubtabButtons || [];
+    tabs.forEach((btn) => {
+      const key = String(btn.getAttribute("data-topics-tab") || "board");
+      const selected = key === active;
+      btn.classList.toggle("active", selected);
+      btn.setAttribute("aria-selected", selected ? "true" : "false");
     });
-    return uniq.slice(0, 20);
+    if (topicsBoardPane) {
+      const on = active === "board";
+      topicsBoardPane.classList.toggle("active", on);
+      topicsBoardPane.hidden = !on;
+    }
+    if (topicsRunsPane) {
+      const on = active === "runs";
+      topicsRunsPane.classList.toggle("active", on);
+      topicsRunsPane.hidden = !on;
+    }
+    if (topicsDefinitionsPane) {
+      const on = active === "definitions";
+      topicsDefinitionsPane.classList.toggle("active", on);
+      topicsDefinitionsPane.hidden = !on;
+    }
+    if (topicsSettingsPane) {
+      const on = active === "settings";
+      topicsSettingsPane.classList.toggle("active", on);
+      topicsSettingsPane.hidden = !on;
+    }
+    if (topicsBoardControls) topicsBoardControls.classList.toggle("hidden", active !== "board");
+
+    const showTopActions = active === "board" || active === "runs";
+    if (topicsAnalyzeBtn) topicsAnalyzeBtn.classList.toggle("hidden", !showTopActions);
+    if (topicsClearBtn) topicsClearBtn.classList.toggle("hidden", !showTopActions);
+    if (topicsExportMenuWrap) topicsExportMenuWrap.classList.toggle("hidden", !showTopActions);
+    if (topicsTopActions) topicsTopActions.classList.toggle("definitions-mode", !showTopActions);
+  }
+
+  function resetTopicDefinitionEditor() {
+    state.ui.topicsDefinitionsView.editingId = "";
+    if (topicsDefinitionEditorTitle) topicsDefinitionEditorTitle.textContent = "Add topic";
+    if (topicDefIdInput) topicDefIdInput.value = "";
+    if (topicDefNameInput) topicDefNameInput.value = "";
+    if (topicDefDurationInput) topicDefDurationInput.value = "0";
+    if (topicDefPriorityInput) topicDefPriorityInput.value = "normal";
+    if (topicDefCommentsInput) topicDefCommentsInput.value = "";
+    if (topicDefSaveBtn) topicDefSaveBtn.textContent = "Add topic";
+    if (topicsDefinitionsValidation) {
+      topicsDefinitionsValidation.classList.add("hidden");
+      topicsDefinitionsValidation.textContent = "";
+    }
   }
 
   function setTopicsUIFromState() {
     const t = state.topics || {};
+    const defs = ensureTopicDefinitions();
     if (topicsEnableAuto) topicsEnableAuto.checked = !!t.enabled;
     if (topicsAllowNew) topicsAllowNew.checked = !!t.allow_new_topics;
+    if (topicsChunkMode) topicsChunkMode.value = String(t.chunk_mode || "since_last");
     if (topicsIntervalSec) topicsIntervalSec.value = clampNumber(t.interval_sec, 30, 300, 60);
     if (topicsWindowSec) topicsWindowSec.value = clampNumber(t.window_sec, 60, 300, 90);
+    if (topicsWindowRow) topicsWindowRow.classList.toggle("hidden", String(t.chunk_mode || "since_last") !== "window");
     if (topicsAgendaInput && document.activeElement !== topicsAgendaInput) {
-      topicsAgendaInput.value = Array.isArray(t.agenda) ? t.agenda.join("\n") : "";
+      topicsAgendaInput.value = defs.map((row) => row.name).join("\n");
     }
+    if (topicsGroupBy) topicsGroupBy.value = state.ui.topicsView.groupBy;
+    if (topicsSortBy) topicsSortBy.value = state.ui.topicsView.sortBy;
+    if (topicsSearch && document.activeElement !== topicsSearch) {
+      topicsSearch.value = state.ui.topicsView.search || "";
+    }
+    if (topicsDensityToggle) {
+      const compact = state.ui.topicsView.density === "compact";
+      topicsDensityToggle.textContent = compact ? "Comfortable" : "Compact";
+      topicsDensityToggle.setAttribute("aria-pressed", compact ? "true" : "false");
+    }
+    if (topicsListEl) topicsListEl.classList.toggle("compact", state.ui.topicsView.density === "compact");
+    syncTopicsSettingsControls();
+    syncTopicsSubtabUI();
+    const activeEl = document.activeElement;
+    const editingInputs = [topicDefNameInput, topicDefDurationInput, topicDefPriorityInput, topicDefCommentsInput];
+    const editorBusy = editingInputs.includes(activeEl);
+    if (!editorBusy && !state.ui.topicsDefinitionsView.editingId) {
+      resetTopicDefinitionEditor();
+    }
+  }
+
+  function syncTopicsSettingsControls() {
+    const autoEnabled = !!topicsEnableAuto?.checked;
+    if (topicsIntervalSec) topicsIntervalSec.disabled = !autoEnabled;
+    if (topicsChunkMode) topicsChunkMode.disabled = !autoEnabled;
+    const chunkMode = String(topicsChunkMode?.value || state.topics?.chunk_mode || "since_last");
+    const showWindow = autoEnabled && chunkMode === "window";
+    if (topicsWindowRow) topicsWindowRow.classList.toggle("hidden", !showWindow);
+    if (topicsWindowSec) topicsWindowSec.disabled = !showWindow;
   }
 
   function formatTopicSeconds(sec) {
@@ -601,57 +1171,515 @@
     return rem ? `${mins}m ${rem}s` : `${mins}m`;
   }
 
+  function formatTopicGroupLabel(groupBy, key) {
+    if (groupBy === "status") {
+      if (key === "active") return "Active";
+      if (key === "covered") return "Covered";
+      if (key === "not_started") return "Not started";
+      return "Other";
+    }
+    if (groupBy === "origin") {
+      return key === "agenda" ? "Agenda topics" : "Custom topics";
+    }
+    return "All topics";
+  }
+
+  function getDefinitionByTopicName() {
+    const defs = ensureTopicDefinitions();
+    const map = new Map();
+    defs.forEach((row) => {
+      map.set(normalizeTopicKey(row.name), row);
+    });
+    return map;
+  }
+
+  function buildTopicRows() {
+    const t = state.topics || {};
+    const definitionMap = getDefinitionByTopicName();
+    const agendaSet = new Set(
+      (Array.isArray(t.agenda) ? t.agenda : []).map((name) => normalizeTopicKey(name))
+    );
+    const items = Array.isArray(t.items) ? t.items : [];
+    return items.map((item) => {
+      const keyStatements = Array.isArray(item.key_statements) ? item.key_statements : [];
+      const latestStatementTs = keyStatements.reduce((acc, row) => {
+        const ts = Number(row?.ts || 0);
+        if (!Number.isFinite(ts) || ts <= 0) return acc;
+        return Math.max(acc, ts);
+      }, 0);
+      const updatedTs = Number(item.updated_ts || 0);
+      const latestActivityTs = latestStatementTs > 0 ? latestStatementTs : (updatedTs > 0 ? updatedTs : 0);
+      const name = String(item.name || "Untitled");
+      const key = normalizeTopicKey(name);
+      const definition = definitionMap.get(key) || null;
+      const originRaw = String(item.origin || "").trim().toLowerCase();
+      const origin = ["agenda", "custom"].includes(originRaw)
+        ? originRaw
+        : (agendaSet.has(key) ? "agenda" : "custom");
+      return {
+        ...item,
+        name,
+        status: String(item.status || "not_started"),
+        time_seconds: Number(item.time_seconds || 0),
+        key_statements: keyStatements,
+        origin,
+        latest_activity_ts: Number(item.latest_activity_ts || latestActivityTs),
+        statement_count: Number(item.statement_count || keyStatements.length || 0),
+        expected_duration_min: Number(
+          definition?.expected_duration_min ?? item.expected_duration_min ?? 0
+        ),
+        priority: String(definition?.priority || item.priority || "normal"),
+        comments: String(definition?.comments || item.comments || ""),
+        definition_id: String(definition?.id || item.definition_id || ""),
+        definition_order: Number(definition?.order ?? item.definition_order ?? 0),
+      };
+    });
+  }
+
+  function getTopicsViewModel() {
+    const view = state.ui.topicsView || {};
+    const groupBy = ["status", "origin", "none"].includes(view.groupBy) ? view.groupBy : "status";
+    const sortBy = ["duration_desc", "name_asc", "latest_activity"].includes(view.sortBy)
+      ? view.sortBy
+      : "duration_desc";
+    const query = normalizeText(view.search || "").trim();
+    const rows = buildTopicRows();
+
+    const filtered = rows.filter((item) => {
+      if (!query) return true;
+      const statementBlob = item.key_statements
+        .map((row) => `${row?.speaker || ""} ${row?.text || ""}`)
+        .join(" ");
+      const blob = `${item.name} ${item.status} ${item.origin} ${statementBlob}`;
+      return normalizeText(blob).includes(query);
+    });
+
+    const sorted = [...filtered].sort((a, b) => {
+      if (sortBy === "name_asc") {
+        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      }
+      if (sortBy === "latest_activity") {
+        if (b.latest_activity_ts !== a.latest_activity_ts) return b.latest_activity_ts - a.latest_activity_ts;
+        if (b.time_seconds !== a.time_seconds) return b.time_seconds - a.time_seconds;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      }
+      if (b.time_seconds !== a.time_seconds) return b.time_seconds - a.time_seconds;
+      if (b.latest_activity_ts !== a.latest_activity_ts) return b.latest_activity_ts - a.latest_activity_ts;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+
+    if (groupBy === "none") {
+      return {
+        totalCount: rows.length,
+        filteredCount: sorted.length,
+        groups: [
+          {
+            key: "all",
+            title: "All topics",
+            items: sorted,
+          },
+        ],
+      };
+    }
+
+    const groupOrder = groupBy === "status"
+      ? ["active", "covered", "not_started", "other"]
+      : ["agenda", "custom"];
+    const grouped = new Map();
+    sorted.forEach((item) => {
+      let key = groupBy === "status" ? item.status : item.origin;
+      if (groupBy === "status" && !["active", "covered", "not_started"].includes(key)) key = "other";
+      if (groupBy === "origin" && !["agenda", "custom"].includes(key)) key = "custom";
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(item);
+    });
+
+    const groups = [];
+    groupOrder.forEach((key) => {
+      const items = grouped.get(key) || [];
+      if (!items.length) return;
+      groups.push({ key, title: formatTopicGroupLabel(groupBy, key), items });
+    });
+    grouped.forEach((items, key) => {
+      if (groupOrder.includes(key)) return;
+      groups.push({ key, title: formatTopicGroupLabel(groupBy, key), items });
+    });
+
+    return {
+      totalCount: rows.length,
+      filteredCount: sorted.length,
+      groups,
+    };
+  }
+
+  function renderTopicsBoard(vm) {
+    if (!topicsListEl) return;
+    topicsListEl.innerHTML = "";
+    topicsListEl.classList.toggle("compact", state.ui.topicsView.density === "compact");
+    if (!vm.groups.length || vm.filteredCount === 0) {
+      const empty = document.createElement("div");
+      empty.className = "topics-empty topics-empty-rich";
+
+      const title = document.createElement("div");
+      title.className = "topics-empty-title";
+
+      const sub = document.createElement("div");
+      sub.className = "topics-empty-sub";
+
+      const actions = document.createElement("div");
+      actions.className = "topics-empty-actions";
+
+      const defs = ensureTopicDefinitions();
+      if (!defs.length && !state.topics.allow_new_topics) {
+        title.textContent = "No topic definitions yet.";
+        sub.textContent = "Open Definitions, add your topics, then save setup.";
+        const openDefsBtn = document.createElement("button");
+        openDefsBtn.type = "button";
+        openDefsBtn.className = "btn";
+        openDefsBtn.textContent = "Open Definitions";
+        openDefsBtn.addEventListener("click", () => {
+          state.ui.pageSubtabs.topics = "definitions";
+          syncTopicsSubtabUI();
+          saveUiPrefs();
+        });
+        actions.appendChild(openDefsBtn);
+      } else if (!defs.length && state.topics.allow_new_topics) {
+        title.textContent = "No tracked topics yet.";
+        sub.textContent = "Custom topics are allowed. Speak, then run manual analysis.";
+        const analyzeBtn = document.createElement("button");
+        analyzeBtn.type = "button";
+        analyzeBtn.className = "btn";
+        analyzeBtn.textContent = "Analyze now";
+        analyzeBtn.disabled = !!state.topics.pending || !state.topics.configured || !state.topics.settings_saved;
+        analyzeBtn.addEventListener("click", () => {
+          if (topicsAnalyzeBtn) topicsAnalyzeBtn.click();
+        });
+        actions.appendChild(analyzeBtn);
+      } else if (!state.topics.enabled) {
+        title.textContent = "Automatic analysis is disabled.";
+        sub.textContent = "You can run manual analysis now, or enable automatic runs.";
+        const analyzeBtn = document.createElement("button");
+        analyzeBtn.type = "button";
+        analyzeBtn.className = "btn";
+        analyzeBtn.textContent = "Analyze now";
+        analyzeBtn.disabled = !!state.topics.pending || !state.topics.configured || !state.topics.settings_saved;
+        analyzeBtn.addEventListener("click", () => {
+          if (topicsAnalyzeBtn) topicsAnalyzeBtn.click();
+        });
+        const enableBtn = document.createElement("button");
+        enableBtn.type = "button";
+        enableBtn.className = "btn";
+        enableBtn.textContent = "Enable Automatic";
+        enableBtn.addEventListener("click", () => {
+          withBusy(enableBtn, "Enabling", async () => {
+            if (topicsEnableAuto) topicsEnableAuto.checked = true;
+            await saveTopicsSetup();
+            showToast("Automatic analysis enabled and saved.", "success");
+          }).catch(notifyError);
+        });
+        actions.appendChild(analyzeBtn);
+        actions.appendChild(enableBtn);
+      } else {
+        title.textContent = "No topics match the current view.";
+        sub.textContent = "Clear filters or run analysis after speaking to populate coverage.";
+        const analyzeBtn = document.createElement("button");
+        analyzeBtn.type = "button";
+        analyzeBtn.className = "btn";
+        analyzeBtn.textContent = "Analyze now";
+        analyzeBtn.disabled = !!state.topics.pending;
+        analyzeBtn.addEventListener("click", () => {
+          if (topicsAnalyzeBtn) topicsAnalyzeBtn.click();
+        });
+        const resetBtn = document.createElement("button");
+        resetBtn.type = "button";
+        resetBtn.className = "btn";
+        resetBtn.textContent = "Reset View";
+        resetBtn.addEventListener("click", () => {
+          state.ui.topicsView.groupBy = "status";
+          state.ui.topicsView.sortBy = "duration_desc";
+          state.ui.topicsView.search = "";
+          saveUiPrefs();
+          setTopicsUIFromState();
+          renderTopics();
+        });
+        actions.appendChild(analyzeBtn);
+        actions.appendChild(resetBtn);
+      }
+
+      empty.appendChild(title);
+      empty.appendChild(sub);
+      empty.appendChild(actions);
+      topicsListEl.appendChild(empty);
+      return;
+    }
+
+    vm.groups.forEach((group) => {
+      const groupWrap = document.createElement("section");
+      groupWrap.className = "topics-group";
+
+      const groupHead = document.createElement("div");
+      groupHead.className = "topics-group-head";
+      const groupTitle = document.createElement("div");
+      groupTitle.className = "topics-group-title";
+      groupTitle.textContent = group.title;
+      const groupMeta = document.createElement("div");
+      groupMeta.className = "topics-group-meta";
+      const totalSeconds = group.items.reduce((acc, item) => acc + Math.max(0, Number(item.time_seconds || 0)), 0);
+      groupMeta.textContent = `${group.items.length} topics | ${formatTopicSeconds(totalSeconds)}`;
+      groupHead.appendChild(groupTitle);
+      groupHead.appendChild(groupMeta);
+      groupWrap.appendChild(groupHead);
+
+      group.items.forEach((item) => {
+        const card = document.createElement("div");
+        card.className = "topic-item";
+        const head = document.createElement("div");
+        head.className = "topic-item-head";
+
+        const status = document.createElement("span");
+        const rawStatus = String(item.status || "not_started");
+        status.className = `topic-status status-${rawStatus}`;
+        status.textContent = rawStatus.replace("_", " ");
+
+        const origin = document.createElement("span");
+        origin.className = `topic-origin origin-${item.origin}`;
+        origin.textContent = item.origin;
+
+        const name = document.createElement("div");
+        name.className = "topic-item-name";
+        const priority = String(item.priority || "normal");
+        const priorityLabel = priority.charAt(0).toUpperCase() + priority.slice(1);
+        name.textContent = `${item.name || "Untitled"} (${priorityLabel})`;
+
+        const timeBlock = document.createElement("div");
+        timeBlock.className = "topic-item-time-block";
+        const time = document.createElement("div");
+        time.className = "topic-item-time";
+        time.textContent = formatTopicSeconds(item.time_seconds || 0);
+        const activity = document.createElement("div");
+        activity.className = "topic-item-activity";
+        activity.textContent = item.latest_activity_ts
+          ? `Last ${formatTime(item.latest_activity_ts)}`
+          : "Last --";
+
+        timeBlock.appendChild(time);
+        timeBlock.appendChild(activity);
+        head.appendChild(status);
+        head.appendChild(origin);
+        head.appendChild(name);
+        head.appendChild(timeBlock);
+        card.appendChild(head);
+
+        const rows = Array.isArray(item.key_statements) ? item.key_statements : [];
+        if (rows.length) {
+          const ul = document.createElement("ul");
+          ul.className = "topic-statements";
+          const visibleLimit = state.ui.topicsView.density === "compact" ? 4 : 6;
+          rows.slice(0, visibleLimit).forEach((row) => {
+            const li = document.createElement("li");
+            const ts = row.ts ? formatTime(row.ts) : "";
+            const speaker = (row.speaker || "Speaker").trim();
+            const text = clipText(row.text || "", state.ui.topicsView.density === "compact" ? 74 : 130);
+            li.textContent = ts ? `[${ts}] ${speaker}: ${text}` : `${speaker}: ${text}`;
+            ul.appendChild(li);
+          });
+          if (rows.length > visibleLimit) {
+            const more = document.createElement("li");
+            more.className = "topic-statements-more";
+            more.textContent = `+${rows.length - visibleLimit} more`;
+            ul.appendChild(more);
+          }
+          card.appendChild(ul);
+        }
+        groupWrap.appendChild(card);
+      });
+      topicsListEl.appendChild(groupWrap);
+    });
+  }
+
+  function renderTopicsRuns() {
+    if (!topicsRunsList) return;
+    topicsRunsList.innerHTML = "";
+    const runs = Array.isArray(state.topics?.runs) ? state.topics.runs : [];
+    if (!runs.length) {
+      const empty = document.createElement("div");
+      empty.className = "topics-empty";
+      empty.textContent = "No runs yet.";
+      topicsRunsList.appendChild(empty);
+      return;
+    }
+    runs.slice().reverse().forEach((run) => {
+      const card = document.createElement("div");
+      card.className = "topics-activity-item";
+
+      const ts = Number(run?.ts || 0);
+      const trigger = String(run?.trigger || "manual");
+      const status = String(run?.status || "success");
+      const fromIdx = Number(run?.from_final_index || 0);
+      const toIdx = Number(run?.to_final_index || 0);
+      const chunkTurns = Number(run?.chunk_turns || 0);
+      const chunkSec = Number(run?.chunk_seconds || 0);
+      const chunkActiveSec = Number(run?.chunk_active_seconds || 0);
+      const totalMs = Number(run?.total_ms || 0);
+      const summary = (
+        status === "error"
+          ? `Error: ${String(run?.error || "unknown error")}`
+          : `Topics: +${Number(run?.new_topics || 0)} new, ${Number(run?.updated_topics || 0)} updated, ${Number(run?.unchanged_topics || 0)} unchanged`
+      );
+
+      const line1 = document.createElement("div");
+      line1.className = "topic-run-head";
+      line1.textContent = `[${ts ? formatTime(ts) : "--"}] ${trigger.toUpperCase()} | ${status.toUpperCase()} | turns [${fromIdx}..${toIdx}) (${chunkTurns})`;
+
+      const line2 = document.createElement("div");
+      line2.className = "topic-run-meta";
+      line2.textContent = `chunk=${chunkSec}s | active=${chunkActiveSec}s | mode=${String(run?.chunk_mode || "since_last")} | allow_custom=${Boolean(run?.allow_new_topics)} | total=${totalMs}ms`;
+
+      const line3 = document.createElement("div");
+      line3.className = "topic-run-summary";
+      line3.textContent = summary;
+
+      card.appendChild(line1);
+      card.appendChild(line2);
+      card.appendChild(line3);
+      topicsRunsList.appendChild(card);
+    });
+  }
+
+  function renderTopicDefinitionsList() {
+    if (!topicsDefinitionsList) return;
+    const defs = ensureTopicDefinitions();
+    topicsDefinitionsList.innerHTML = "";
+    if (!defs.length) {
+      const empty = document.createElement("div");
+      empty.className = "topics-empty";
+      empty.textContent = "No topic definitions yet. Add one to start tracking.";
+      topicsDefinitionsList.appendChild(empty);
+      return;
+    }
+    defs.forEach((row, idx) => {
+      const card = document.createElement("article");
+      card.className = "topic-def-item";
+
+      const top = document.createElement("div");
+      top.className = "topic-def-top";
+      const name = document.createElement("div");
+      name.className = "topic-def-name";
+      name.textContent = row.name;
+      top.appendChild(name);
+
+      const meta = document.createElement("div");
+      meta.className = "topic-def-meta";
+      const dur = row.expected_duration_min > 0 ? `${row.expected_duration_min}m` : "duration --";
+      meta.textContent = `${dur} | ${row.priority} | order ${idx + 1}`;
+
+      const comments = document.createElement("div");
+      comments.className = "muted";
+      comments.textContent = row.comments || "No comments";
+
+      const actions = document.createElement("div");
+      actions.className = "topic-def-actions";
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "btn";
+      editBtn.textContent = "Edit";
+      editBtn.addEventListener("click", () => {
+        state.ui.topicsDefinitionsView.editingId = row.id;
+        if (topicsDefinitionEditorTitle) topicsDefinitionEditorTitle.textContent = "Edit topic";
+        if (topicDefIdInput) topicDefIdInput.value = row.id;
+        if (topicDefNameInput) topicDefNameInput.value = row.name;
+        if (topicDefDurationInput) topicDefDurationInput.value = String(row.expected_duration_min || 0);
+        if (topicDefPriorityInput) topicDefPriorityInput.value = row.priority || "normal";
+        if (topicDefCommentsInput) topicDefCommentsInput.value = row.comments || "";
+        if (topicDefSaveBtn) topicDefSaveBtn.textContent = "Update topic";
+      });
+
+      const upBtn = document.createElement("button");
+      upBtn.type = "button";
+      upBtn.className = "btn";
+      upBtn.textContent = "Up";
+      upBtn.disabled = idx === 0;
+      upBtn.addEventListener("click", () => {
+        if (idx <= 0) return;
+        const copy = [...defs];
+        const [moved] = copy.splice(idx, 1);
+        copy.splice(idx - 1, 0, moved);
+        copy.forEach((it, order) => { it.order = order; });
+        commitTopicDefinitions(copy, "Topic order saved.").catch(notifyError);
+      });
+
+      const downBtn = document.createElement("button");
+      downBtn.type = "button";
+      downBtn.className = "btn";
+      downBtn.textContent = "Down";
+      downBtn.disabled = idx >= defs.length - 1;
+      downBtn.addEventListener("click", () => {
+        if (idx >= defs.length - 1) return;
+        const copy = [...defs];
+        const [moved] = copy.splice(idx, 1);
+        copy.splice(idx + 1, 0, moved);
+        copy.forEach((it, order) => { it.order = order; });
+        commitTopicDefinitions(copy, "Topic order saved.").catch(notifyError);
+      });
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "btn btn-soft-danger";
+      deleteBtn.textContent = "Delete";
+      deleteBtn.addEventListener("click", () => {
+        const next = defs.filter((it) => it.id !== row.id).map((it, order) => ({ ...it, order }));
+        if (!topicsAllowNew?.checked && next.length === 0) {
+          showTopicsDefinitionsError("Add at least one topic definition when custom topics are disabled.");
+          return;
+        }
+        showTopicsDefinitionsError("");
+        commitTopicDefinitions(next, "Topic deleted and saved.").catch(notifyError);
+      });
+
+      actions.appendChild(editBtn);
+      actions.appendChild(upBtn);
+      actions.appendChild(downBtn);
+      actions.appendChild(deleteBtn);
+      card.appendChild(top);
+      card.appendChild(meta);
+      card.appendChild(comments);
+      card.appendChild(actions);
+      topicsDefinitionsList.appendChild(card);
+    });
+  }
+
   function renderTopics() {
     const t = state.topics || {};
-    if (!topicsListEl || !topicsStatusEl) return;
-    topicsListEl.innerHTML = "";
-    const items = Array.isArray(t.items) ? t.items : [];
+    const rows = buildTopicRows();
+    const vm = getTopicsViewModel();
+    const defs = ensureTopicDefinitions();
+
     const statusParts = [];
+    if (!defs.length && !t.allow_new_topics) statusParts.push("No definitions yet");
+    else if (!defs.length && t.allow_new_topics) statusParts.push("Custom-only mode");
+    else statusParts.push("Definitions ready");
     statusParts.push(t.configured ? "Model ready" : "Model unavailable");
+    statusParts.push(t.settings_saved ? "Setup saved" : "Setup not saved");
+    statusParts.push(t.enabled ? "Auto on" : "Manual only");
+    statusParts.push(`Mode ${String(t.chunk_mode || "since_last")}`);
     if (t.pending) statusParts.push("Updating...");
     if (t.last_error) statusParts.push(`Error: ${t.last_error}`);
-    if (!t.pending && !t.last_error) {
-      statusParts.push(`Topics: ${items.length}`);
-      if (t.last_run_ts) statusParts.push(`Last run ${formatTime(t.last_run_ts)}`);
-    }
-    topicsStatusEl.textContent = statusParts.join(" | ");
+    if (!t.pending && !t.last_error && t.last_run_ts) statusParts.push(`Last run ${formatTime(t.last_run_ts)}`);
+    if (topicsStatusEl) topicsStatusEl.textContent = statusParts.join(" | ");
 
-    items.forEach((item) => {
-      const card = document.createElement("div");
-      card.className = "topic-item";
-      const head = document.createElement("div");
-      head.className = "topic-item-head";
-      const status = document.createElement("span");
-      const rawStatus = String(item.status || "not_started");
-      status.className = `topic-status status-${rawStatus}`;
-      status.textContent = rawStatus.replace("_", " ");
-      const name = document.createElement("div");
-      name.className = "topic-item-name";
-      name.textContent = item.name || "Untitled";
-      const time = document.createElement("div");
-      time.className = "topic-item-time";
-      time.textContent = formatTopicSeconds(item.time_seconds || 0);
-      head.appendChild(status);
-      head.appendChild(name);
-      head.appendChild(time);
-      card.appendChild(head);
+    if (topicsKpiCount) topicsKpiCount.textContent = String(defs.length);
+    if (topicsKpiCovered) topicsKpiCovered.textContent = String(rows.filter((item) => item.status === "covered").length);
 
-      const rows = Array.isArray(item.key_statements) ? item.key_statements : [];
-      if (rows.length) {
-        const ul = document.createElement("ul");
-        ul.className = "topic-statements";
-        rows.slice(0, 4).forEach((row) => {
-          const li = document.createElement("li");
-          const ts = row.ts ? formatTime(row.ts) : "";
-          const speaker = (row.speaker || "Speaker").trim();
-          const text = (row.text || "").trim();
-          li.textContent = ts ? `[${ts}] ${speaker}: ${text}` : `${speaker}: ${text}`;
-          ul.appendChild(li);
-        });
-        card.appendChild(ul);
-      }
-      topicsListEl.appendChild(card);
-    });
+    const canAnalyze = !t.pending && !!t.settings_saved && !!t.configured && (defs.length > 0 || !!t.allow_new_topics);
+    if (topicsAnalyzeBtn) topicsAnalyzeBtn.disabled = !canAnalyze;
+    if (topicsClearBtn) topicsClearBtn.disabled = !rows.length;
+    if (topicsExportMenuBtn) topicsExportMenuBtn.disabled = !rows.length;
+    if (topicsSaveBtn) topicsSaveBtn.disabled = !!t.pending || (!t.allow_new_topics && defs.length === 0);
+
+    syncTopicsSubtabUI();
+    renderTopicsBoard(vm);
+    renderTopicsRuns();
+    renderTopicDefinitionsList();
   }
 
   async function clearTranscript() {
@@ -661,7 +1689,7 @@
     state.liveHeldFinal = null;
     state.bookmarks = {};
     saveBookmarks();
-    timeline.innerHTML = "";
+    renderFinals();
     renderLivePartials();
   }
 
@@ -716,7 +1744,7 @@
     if (cfgCoachMaxTurnsRange) cfgCoachMaxTurnsRange.value = cfgCoachMaxTurns.value;
     renderCoachPresetState();
     if (cfgPartialTranslateMinIntervalSec) {
-      const interval = clampDecimal(config.partial_translate_min_interval_sec, 0.2, 3.0, 0.6, 1);
+      const interval = clampDecimal(config.partial_translate_min_interval_sec, 0.2, 10.0, 0.6, 1);
       cfgPartialTranslateMinIntervalSec.value = interval;
       if (cfgPartialTranslateMinIntervalSecRange) cfgPartialTranslateMinIntervalSecRange.value = interval;
     }
@@ -737,6 +1765,8 @@
     syncAudioSourceUI();
     syncCoachControlsUI();
     setConfigDirty(false);
+    renderSettingsSummary();
+    validateSettingsInputs(true);
   }
 
   function syncAudioSourceUI() {
@@ -809,7 +1839,7 @@
         ? cfgPartialTranslateMinIntervalSecRange.value
         : cfgPartialTranslateMinIntervalSec.value
     );
-    const bounded = clampDecimal(raw, 0.2, 3.0, 0.6, 1);
+    const bounded = clampDecimal(raw, 0.2, 10.0, 0.6, 1);
     cfgPartialTranslateMinIntervalSec.value = bounded;
     if (cfgPartialTranslateMinIntervalSecRange) cfgPartialTranslateMinIntervalSecRange.value = bounded;
   }
@@ -981,6 +2011,64 @@
       }
       if (typeof parsed.livePanelHeight === "number") state.ui.livePanelHeight = parsed.livePanelHeight;
       if (THEMES.includes(parsed.theme)) state.ui.theme = parsed.theme;
+      if (typeof parsed.navCollapsed === "boolean") state.ui.navCollapsed = parsed.navCollapsed;
+      if (typeof parsed.mobileNavOpen === "boolean") state.ui.mobileNavOpen = parsed.mobileNavOpen;
+      if (typeof parsed.activeSection === "string") state.ui.activeSection = parsed.activeSection;
+      if (parsed.pageLayouts && typeof parsed.pageLayouts === "object") {
+        if (typeof parsed.pageLayouts.topicsSetupCollapsed === "boolean") {
+          state.ui.pageLayouts.topicsSetupCollapsed = parsed.pageLayouts.topicsSetupCollapsed;
+        }
+      }
+      if (parsed.pageSubtabs && typeof parsed.pageSubtabs === "object") {
+        const topicsSubtab = String(parsed.pageSubtabs.topics || "").trim().toLowerCase();
+        if (["board", "definitions", "runs", "settings"].includes(topicsSubtab)) {
+          state.ui.pageSubtabs.topics = topicsSubtab;
+        } else if (topicsSubtab === "activity") {
+          state.ui.pageSubtabs.topics = "runs";
+        }
+      }
+      if (parsed.transcriptView && typeof parsed.transcriptView === "object") {
+        const preset = String(parsed.transcriptView.preset || "").trim();
+        const recentMinutes = Number(parsed.transcriptView.recentMinutes || 10);
+        if (["all", "bookmarked"].includes(preset)) state.ui.transcriptView.preset = preset;
+        state.ui.transcriptView.speaker = "any";
+        if (Number.isFinite(recentMinutes) && recentMinutes > 0) state.ui.transcriptView.recentMinutes = recentMinutes;
+      }
+      if (parsed.coachView && typeof parsed.coachView === "object") {
+        const activeIndex = Number(parsed.coachView.activeIndex);
+        if (Number.isFinite(activeIndex) && activeIndex >= 0) {
+          state.ui.coachView.activeIndex = Math.floor(activeIndex);
+        }
+      }
+      if (parsed.topicsView && typeof parsed.topicsView === "object") {
+        const groupBy = String(parsed.topicsView.groupBy || "").trim();
+        const sortBy = String(parsed.topicsView.sortBy || "").trim();
+        const search = String(parsed.topicsView.search || "");
+        const density = String(parsed.topicsView.density || "");
+        if (["status", "origin", "none"].includes(groupBy)) state.ui.topicsView.groupBy = groupBy;
+        if (["duration_desc", "name_asc", "latest_activity"].includes(sortBy)) state.ui.topicsView.sortBy = sortBy;
+        state.ui.topicsView.search = search;
+        if (["comfortable", "compact"].includes(density)) state.ui.topicsView.density = density;
+      }
+      if (parsed.topicsDefinitionsView && typeof parsed.topicsDefinitionsView === "object") {
+        const editingId = String(parsed.topicsDefinitionsView.editingId || "");
+        state.ui.topicsDefinitionsView.editingId = editingId;
+      }
+      if (parsed.logsView && typeof parsed.logsView === "object") {
+        const severity = String(parsed.logsView.severity || "").trim();
+        if (["all", "debug", "info", "warning", "error"].includes(severity)) {
+          state.ui.logsView.severity = severity;
+        }
+        state.ui.logsView.compact = !!parsed.logsView.compact;
+        if (parsed.logsView.pinned && typeof parsed.logsView.pinned === "object") {
+          state.ui.logsView.pinned = parsed.logsView.pinned;
+        }
+      }
+      if (parsed.settingsView && typeof parsed.settingsView === "object") {
+        if (typeof parsed.settingsView.summaryExpanded === "boolean") {
+          state.ui.settingsView.summaryExpanded = parsed.settingsView.summaryExpanded;
+        }
+      }
       if (parsed.settingsAccordions && typeof parsed.settingsAccordions === "object") {
         state.ui.settingsAccordions = parsed.settingsAccordions;
       }
@@ -1023,6 +2111,25 @@
   function closeBookmarkMenu() {
     state.bookmarkUi.menuKey = "";
     if (bookmarkMenu) bookmarkMenu.classList.add("hidden");
+  }
+
+  function closeExportMenus() {
+    const menus = [transcriptExportMenu, topicsExportMenu];
+    menus.forEach((menu) => {
+      if (!menu) return;
+      menu.classList.add("hidden");
+    });
+    if (transcriptExportMenuBtn) transcriptExportMenuBtn.setAttribute("aria-expanded", "false");
+    if (topicsExportMenuBtn) topicsExportMenuBtn.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleExportMenu(buttonEl, menuEl) {
+    if (!buttonEl || !menuEl) return;
+    const opening = menuEl.classList.contains("hidden");
+    closeExportMenus();
+    if (!opening) return;
+    menuEl.classList.remove("hidden");
+    buttonEl.setAttribute("aria-expanded", "true");
   }
 
   function openBookmarkMenuFor(key, anchorEl) {
@@ -1092,6 +2199,7 @@
         el.open = pref;
       }
     });
+    setActiveSettingsIndex(getActiveSettingsSection());
   }
 
   function bindSettingsAccordionPrefs() {
@@ -1101,9 +2209,61 @@
         const key = String(el.dataset.accordion || "").trim();
         if (!key) return;
         state.ui.settingsAccordions[key] = !!el.open;
+        if (el.open) setActiveSettingsIndex(key);
         saveUiPrefs();
       });
     });
+  }
+
+  function getActiveSettingsSection() {
+    const open = settingsAccordions.find((el) => !!el.open);
+    if (open) return String(open.dataset.accordion || "system");
+    const first = settingsIndexButtons[0];
+    if (first) return String(first.getAttribute("data-settings-target") || "system");
+    return "system";
+  }
+
+  function setActiveSettingsIndex(sectionKey) {
+    const activeKey = String(sectionKey || "").trim().toLowerCase();
+    if (!settingsIndexButtons.length) return;
+    settingsIndexButtons.forEach((btn) => {
+      const key = String(btn.getAttribute("data-settings-target") || "").trim().toLowerCase();
+      const isActive = key && key === activeKey;
+      btn.classList.toggle("active", isActive);
+      if (isActive) btn.setAttribute("aria-current", "true");
+      else btn.removeAttribute("aria-current");
+    });
+  }
+
+  function renderSettingsSummary() {
+    if (!settingsSummary) return;
+    const rows = [];
+    rows.push(state.configDirty ? "Pending changes are not yet applied." : "All settings are synced.");
+    rows.push(`Capture mode: ${cfgCaptureMode?.value || "single"}`);
+    rows.push(`Coach: ${cfgCoachEnabled?.checked ? "enabled" : "disabled"}`);
+    if (cfgAutoStopSilenceSec) {
+      const mins = clampDecimal(cfgAutoStopSilenceSec.value, 0, 5, 1.25, 2);
+      rows.push(mins > 0 ? `Auto-stop: ${mins} minute silence` : "Auto-stop: off");
+    }
+    if (cfgPartialTranslateMinIntervalSec) {
+      rows.push(`Partial translate interval: ${cfgPartialTranslateMinIntervalSec.value}s`);
+    }
+    settingsSummary.innerHTML = "";
+    rows.forEach((line) => {
+      const el = document.createElement("div");
+      el.className = "settings-summary-row";
+      el.textContent = line;
+      settingsSummary.appendChild(el);
+    });
+  }
+
+  function scrollToSettingsSection(sectionKey) {
+    if (!sectionKey) return;
+    const target = settingsAccordions.find((row) => String(row.dataset.accordion || "") === sectionKey);
+    if (!target) return;
+    target.open = true;
+    setActiveSettingsIndex(sectionKey);
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function applyFontSettings() {
@@ -1114,10 +2274,10 @@
 
     document.documentElement.style.setProperty("--ui-font-en", selectedFamilyEn);
     document.documentElement.style.setProperty("--ui-font-ar", selectedFamilyAr);
-    document.documentElement.style.setProperty("--line-en-size", `${(1.32 * scaleEn).toFixed(2)}rem`);
-    document.documentElement.style.setProperty("--line-ar-size", `${(1.72 * scaleAr).toFixed(2)}rem`);
-    document.documentElement.style.setProperty("--live-en-size", `${(1.38 * scaleEn).toFixed(2)}rem`);
-    document.documentElement.style.setProperty("--live-ar-size", `${(1.80 * scaleAr).toFixed(2)}rem`);
+    document.documentElement.style.setProperty("--line-en-size", `${(1.08 * scaleEn).toFixed(2)}rem`);
+    document.documentElement.style.setProperty("--line-ar-size", `${(1.20 * scaleAr).toFixed(2)}rem`);
+    document.documentElement.style.setProperty("--live-en-size", `${(1.02 * scaleEn).toFixed(2)}rem`);
+    document.documentElement.style.setProperty("--live-ar-size", `${(1.10 * scaleAr).toFixed(2)}rem`);
 
     if (fontFamilyEn) fontFamilyEn.value = state.ui.fontFamilyEn;
     if (fontFamilyAr) fontFamilyAr.value = state.ui.fontFamilyAr;
@@ -1144,25 +2304,25 @@
   }
 
   function clampLiveHeight(px) {
-    if (!timelineWrap) return 180;
-    const wrapH = Math.max(240, Math.floor(timelineWrap.clientHeight || 0));
+    if (!workspaceShell) return 180;
+    const wrapH = Math.max(240, Math.floor(workspaceShell.clientHeight || 0));
     const minH = 90;
-    const maxH = Math.floor(wrapH * 0.55);
+    const maxH = Math.floor(wrapH * 0.6);
     return Math.max(minH, Math.min(maxH, Math.floor(px)));
   }
 
   function applyLivePanelHeight(px) {
     const height = clampLiveHeight(px);
     state.ui.livePanelHeight = height;
-    if (timelineWrap) {
-      timelineWrap.style.setProperty("--live-panel-height", `${height}px`);
+    if (workspaceShell) {
+      workspaceShell.style.setProperty("--live-panel-height", `${height}px`);
     }
   }
 
   function setupTimelineDivider() {
-    if (!timelineDivider || !timelineWrap) return;
+    if (!timelineDivider || !workspaceShell) return;
     const onDrag = (clientY) => {
-      const rect = timelineWrap.getBoundingClientRect();
+      const rect = workspaceShell.getBoundingClientRect();
       const nextHeight = rect.bottom - clientY;
       applyLivePanelHeight(nextHeight);
     };
@@ -1217,9 +2377,43 @@
     recordTimer.textContent = `Record ${formatDuration(computeRecordedMs())}`;
   }
 
+  function enforceSingleVisiblePane(activeId) {
+    tabPanes.forEach((pane) => {
+      const active = pane.id === activeId;
+      pane.hidden = !active;
+      pane.style.display = active ? "flex" : "none";
+      pane.classList.toggle("active", active);
+      pane.setAttribute("aria-hidden", active ? "false" : "true");
+    });
+  }
+
   function setActiveTab(tabId) {
-    tabButtons.forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tabId));
-    tabPanes.forEach((pane) => pane.classList.toggle("active", pane.id === tabId));
+    const next = tabPanes.some((pane) => pane.id === tabId) ? tabId : "transcriptTab";
+    state.ui.activeSection = next;
+    closeExportMenus();
+    tabButtons.forEach((btn) => {
+      const active = btn.dataset.tab === next;
+      btn.classList.toggle("active", active);
+      if (active) btn.setAttribute("aria-current", "page");
+      else btn.removeAttribute("aria-current");
+    });
+    enforceSingleVisiblePane(next);
+    if (state.ui.mobileNavOpen) {
+      state.ui.mobileNavOpen = false;
+      applyMobileNav();
+    }
+    if (next === "transcriptTab") renderTranscriptInsights();
+    if (next === "logsTab") renderLogs();
+    if (next === "topicsTab") renderTopics();
+    if (next === "coachTab") {
+      state.ui.coachView.activeIndex = 0;
+      renderCoachHints();
+    }
+    if (next === "settingsTab") {
+      renderSettingsSummary();
+      setActiveSettingsIndex(getActiveSettingsSection());
+    }
+    saveUiPrefs();
   }
 
   function renderSnapshot(msg) {
@@ -1278,15 +2472,20 @@
     state.topics = {
       ...state.topics,
       configured: !!topics.configured,
+      settings_saved: !!topics.settings_saved,
       enabled: !!topics.enabled,
       allow_new_topics: !!topics.allow_new_topics,
+      chunk_mode: String(topics.chunk_mode || "since_last"),
       interval_sec: clampNumber(topics.interval_sec, 30, 300, 60),
       window_sec: clampNumber(topics.window_sec, 60, 300, 90),
       pending: !!topics.pending,
       last_run_ts: Number(topics.last_run_ts || 0),
+      last_final_index: Number(topics.last_final_index || 0),
       last_error: String(topics.last_error || ""),
       agenda: Array.isArray(topics.agenda) ? topics.agenda : [],
+      definitions: Array.isArray(topics.definitions) ? topics.definitions : (Array.isArray(state.topics.definitions) ? state.topics.definitions : []),
       items: Array.isArray(topics.items) ? topics.items : [],
+      runs: Array.isArray(topics.runs) ? topics.runs : [],
     };
 
     state.sessionStartedTs = msg.session_started_ts || null;
@@ -1312,19 +2511,40 @@
   }
 
   async function request(path, method, body) {
+    const headers = {};
+    if (body) headers["Content-Type"] = "application/json";
+    const token = String(state.apiToken || "").trim();
+    if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(path, {
       method: method || "GET",
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers: Object.keys(headers).length ? headers : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || `${path} failed`);
+      const detail = err?.detail;
+      let message = `${path} failed`;
+      if (typeof detail === "string" && detail.trim()) {
+        message = detail.trim();
+      } else if (Array.isArray(detail) && detail.length) {
+        const first = detail[0];
+        const msg = typeof first?.msg === "string" ? first.msg : "";
+        const loc = Array.isArray(first?.loc) ? first.loc.join(".") : "";
+        message = loc ? `${loc}: ${msg}` : (msg || message);
+      }
+      const ex = new Error(message);
+      ex.status = res.status;
+      ex.detail = detail;
+      throw ex;
     }
     return res.json().catch(() => ({}));
   }
 
   async function applyConfig() {
+    const settingsValidation = validateSettingsInputs(true);
+    if (!settingsValidation.ok) {
+      throw new Error("Fix validation errors before applying settings.");
+    }
     const existing = state.currentConfig || {};
     const payload = {
       recognition_language: cfgLang.value.trim(),
@@ -1340,7 +2560,7 @@
       coach_cooldown_sec: clampNumber(cfgCoachCooldownSec.value, 0, 120, 8),
       coach_max_turns: clampNumber(cfgCoachMaxTurns.value, 2, 30, 8),
       partial_translate_min_interval_sec: cfgPartialTranslateMinIntervalSec
-        ? clampDecimal(cfgPartialTranslateMinIntervalSec.value, 0.2, 3.0, 0.6, 1)
+        ? clampDecimal(cfgPartialTranslateMinIntervalSec.value, 0.2, 10.0, 0.6, 1)
         : Number(existing.partial_translate_min_interval_sec || 0.6),
       auto_stop_silence_sec: cfgAutoStopSilenceSec
         ? clampNumber(Math.round(clampDecimal(cfgAutoStopSilenceSec.value, 0, 5, 1.25, 2) * 60), 0, 300, 75)
@@ -1362,6 +2582,10 @@
   }
 
   async function saveConfig() {
+    const settingsValidation = validateSettingsInputs(true);
+    if (!settingsValidation.ok) {
+      throw new Error("Fix validation errors before saving settings.");
+    }
     if (state.configDirty) {
       await applyConfig();
     }
@@ -1533,12 +2757,17 @@
     const data = {
       exported_at: new Date().toISOString(),
       configured: !!t.configured,
+      settings_saved: !!t.settings_saved,
       enabled: !!t.enabled,
       allow_new_topics: !!t.allow_new_topics,
+      chunk_mode: String(t.chunk_mode || "since_last"),
       interval_sec: Number(t.interval_sec || 60),
       window_sec: Number(t.window_sec || 90),
+      last_final_index: Number(t.last_final_index || 0),
       agenda: Array.isArray(t.agenda) ? t.agenda : [],
+      definitions: Array.isArray(t.definitions) ? t.definitions : [],
       items: Array.isArray(t.items) ? t.items : [],
+      runs: Array.isArray(t.runs) ? t.runs : [],
     };
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     downloadFile(
@@ -1599,7 +2828,8 @@
   async function clearLogs() {
     await request("/api/logs/clear", "POST");
     state.logs = [];
-    logsEl.innerHTML = "";
+    state.ui.logsView.pinned = {};
+    renderLogs();
   }
 
   async function askCoach() {
@@ -1615,22 +2845,119 @@
   async function clearCoach() {
     await request("/api/coach/clear", "POST");
     state.coachHints = [];
+    state.coachCursor.lastTopKey = "";
+    state.coachCursor.lastCount = 0;
+    state.ui.coachView.activeIndex = 0;
+    saveUiPrefs();
     renderCoachHints();
     showToast("Coach history cleared.", "info");
   }
 
+  function showTopicsDefinitionsError(message) {
+    if (!topicsDefinitionsValidation) return;
+    if (!message) {
+      topicsDefinitionsValidation.textContent = "";
+      topicsDefinitionsValidation.classList.add("hidden");
+      return;
+    }
+    topicsDefinitionsValidation.textContent = message;
+    topicsDefinitionsValidation.classList.remove("hidden");
+  }
+
+  function collectDefinitionEditorValue() {
+    return normalizeTopicDefinition({
+      id: String(topicDefIdInput?.value || "").trim(),
+      name: String(topicDefNameInput?.value || "").trim(),
+      expected_duration_min: Number(topicDefDurationInput?.value || 0),
+      priority: String(topicDefPriorityInput?.value || "normal"),
+      comments: String(topicDefCommentsInput?.value || "").trim(),
+      order: Number(state.topics.definitions?.length || 0),
+    }, Number(state.topics.definitions?.length || 0));
+  }
+
+  function cloneDefinitions(defs) {
+    return (Array.isArray(defs) ? defs : []).map((row, idx) => ({
+      ...row,
+      id: String(row?.id || `topic-${idx + 1}`),
+      name: String(row?.name || "").trim(),
+      expected_duration_min: clampNumber(row?.expected_duration_min, 0, 600, 0),
+      priority: String(row?.priority || "normal"),
+      comments: String(row?.comments || "").trim(),
+      order: idx,
+    }));
+  }
+
+  async function commitTopicDefinitions(nextDefs, successMessage) {
+    const previousDefs = cloneDefinitions(ensureTopicDefinitions());
+    const normalizedNext = cloneDefinitions(nextDefs);
+    state.topics.definitions = normalizedNext;
+    renderTopicDefinitionsList();
+    renderTopics();
+    try {
+      await saveTopicsSetup();
+      if (successMessage) showToast(successMessage, "success");
+    } catch (err) {
+      state.topics.definitions = previousDefs;
+      renderTopicDefinitionsList();
+      renderTopics();
+      throw err;
+    }
+  }
+
+  function upsertDefinitionFromEditor() {
+    const draft = collectDefinitionEditorValue();
+    if (!draft) {
+      showTopicsDefinitionsError("Topic name is required.");
+      return null;
+    }
+    const defs = ensureTopicDefinitions();
+    const editingId = String(topicDefIdInput?.value || "").trim();
+    const duplicate = defs.find((row) => normalizeTopicKey(row.name) === normalizeTopicKey(draft.name) && row.id !== editingId);
+    if (duplicate) {
+      showTopicsDefinitionsError("Topic name must be unique.");
+      return null;
+    }
+
+    showTopicsDefinitionsError("");
+    let next = [];
+    if (editingId) {
+      next = defs.map((row) => (row.id === editingId ? { ...row, ...draft, id: editingId } : row));
+    } else {
+      next = defs.concat([{ ...draft, id: draft.id || `topic-${defs.length + 1}` }]);
+    }
+    next = next.map((row, idx) => ({ ...row, order: idx }));
+    return {
+      mode: editingId ? "updated" : "added",
+      definitions: next,
+    };
+  }
+
   async function saveTopicsSetup() {
     const agenda = agendaLinesFromInput();
+    const definitions = ensureTopicDefinitions().map((row, idx) => ({
+      ...row,
+      order: idx,
+    }));
+    const allowNew = !!topicsAllowNew?.checked;
+    if (!allowNew && definitions.length === 0) {
+      throw new Error("Add at least one topic definition when custom topics are disabled.");
+    }
+    const chunkMode = String(topicsChunkMode?.value || "since_last").trim().toLowerCase() === "window"
+      ? "window"
+      : "since_last";
     const payload = {
       agenda,
       enabled: !!topicsEnableAuto?.checked,
-      allow_new_topics: !!topicsAllowNew?.checked,
+      allow_new_topics: allowNew,
+      chunk_mode: chunkMode,
       interval_sec: clampNumber(topicsIntervalSec?.value, 30, 300, 60),
       window_sec: clampNumber(topicsWindowSec?.value, 60, 300, 90),
+      definitions,
     };
     const out = await request("/api/topics/configure", "POST", payload);
     if (out?.topics) {
       state.topics = { ...state.topics, ...out.topics };
+      saveUiPrefs();
       setTopicsUIFromState();
       renderTopics();
     }
@@ -1648,6 +2975,7 @@
     const out = await request("/api/topics/clear", "POST");
     if (out?.topics) {
       state.topics = { ...state.topics, ...out.topics };
+      saveUiPrefs();
       setTopicsUIFromState();
       renderTopics();
     }
@@ -1685,7 +3013,6 @@
       const key = msg.speaker || "default";
       state.lastSpeechActivityTs = Date.now() / 1000;
       state.liveHeldFinal = null;
-      state.livePartials = {};
       state.livePartials[key] = {
         speaker: key,
         speaker_label: msg.speaker_label || "Speaker",
@@ -1703,16 +3030,17 @@
     if (msg.type === "final") {
       state.lastSpeechActivityTs = Date.now() / 1000;
       appendFinal(msg);
+      const speakerKey = msg.speaker || "default";
       state.liveHeldFinal = {
         en: msg.en || "",
         ar: msg.ar || "",
-        speaker: msg.speaker || "default",
+        speaker: speakerKey,
         speaker_label: msg.speaker_label || "Speaker",
         segment_id: msg.segment_id || "",
         revision: Number(msg.revision || 0),
         ts: msg.ts || Date.now() / 1000,
       };
-      state.livePartials = {};
+      delete state.livePartials[speakerKey];
       renderLivePartials();
       renderSilenceGuardChip();
       return;
@@ -1746,6 +3074,7 @@
     if (msg.type === "coach") {
       state.coachHints.push(msg);
       while (state.coachHints.length > 120) state.coachHints.shift();
+      state.ui.coachView.activeIndex = 0;
       state.coachPending = false;
       renderCoachHints();
       return;
@@ -1756,15 +3085,20 @@
       state.topics = {
         ...state.topics,
         configured: !!topics.configured,
+        settings_saved: !!topics.settings_saved,
         enabled: !!topics.enabled,
         allow_new_topics: !!topics.allow_new_topics,
+        chunk_mode: String(topics.chunk_mode || "since_last"),
         interval_sec: clampNumber(topics.interval_sec, 30, 300, 60),
         window_sec: clampNumber(topics.window_sec, 60, 300, 90),
         pending: !!topics.pending,
         last_run_ts: Number(topics.last_run_ts || 0),
+        last_final_index: Number(topics.last_final_index || 0),
         last_error: String(topics.last_error || ""),
         agenda: Array.isArray(topics.agenda) ? topics.agenda : [],
+        definitions: Array.isArray(topics.definitions) ? topics.definitions : (Array.isArray(state.topics.definitions) ? state.topics.definitions : []),
         items: Array.isArray(topics.items) ? topics.items : [],
+        runs: Array.isArray(topics.runs) ? topics.runs : [],
       };
       setTopicsUIFromState();
       renderTopics();
@@ -1838,6 +3172,55 @@
   tabButtons.forEach((btn) => {
     btn.addEventListener("click", () => setActiveTab(btn.dataset.tab));
   });
+  if (transcriptExportMenuBtn && transcriptExportMenu) {
+    transcriptExportMenuBtn.addEventListener("click", () => {
+      toggleExportMenu(transcriptExportMenuBtn, transcriptExportMenu);
+    });
+  }
+  if (topicsExportMenuBtn && topicsExportMenu) {
+    topicsExportMenuBtn.addEventListener("click", () => {
+      toggleExportMenu(topicsExportMenuBtn, topicsExportMenu);
+    });
+  }
+  if (coachRecoPrevBtn) {
+    coachRecoPrevBtn.addEventListener("click", () => {
+      state.ui.coachView.activeIndex = Math.max(0, Number(state.ui.coachView.activeIndex || 0) - 1);
+      saveUiPrefs();
+      renderCoachHints();
+    });
+  }
+  if (coachRecoNextBtn) {
+    coachRecoNextBtn.addEventListener("click", () => {
+      state.ui.coachView.activeIndex = Math.max(0, Number(state.ui.coachView.activeIndex || 0) + 1);
+      saveUiPrefs();
+      renderCoachHints();
+    });
+  }
+  if (navToggleBtn) {
+    navToggleBtn.addEventListener("click", () => {
+      state.ui.mobileNavOpen = !state.ui.mobileNavOpen;
+      applyMobileNav();
+      saveUiPrefs();
+    });
+  }
+  if (navCollapseBtn) {
+    navCollapseBtn.addEventListener("click", () => {
+      state.ui.navCollapsed = !state.ui.navCollapsed;
+      applyNavCollapsed();
+      saveUiPrefs();
+    });
+  }
+  if (navBackdrop) {
+    navBackdrop.addEventListener("click", () => closeMobileNav());
+  }
+  window.addEventListener("resize", () => {
+    if (!isMobileLayout() && state.ui.mobileNavOpen) {
+      state.ui.mobileNavOpen = false;
+      applyMobileNav();
+      saveUiPrefs();
+    }
+    applyNavCollapsed();
+  });
 
   startBtn.addEventListener("click", () => withBusy(startBtn, "Starting", async () => {
     const v = validateStartInputs();
@@ -1887,6 +3270,7 @@
   showTs.addEventListener("change", () => {
     state.ui.showTs = showTs.checked;
     applyTimestampVisibility();
+    renderSettingsSummary();
     saveUiPrefs();
   });
 
@@ -1924,6 +3308,7 @@
       const idx = Math.max(0, THEMES.indexOf(state.ui.theme));
       state.ui.theme = THEMES[(idx + 1) % THEMES.length];
       applyTheme();
+      renderSettingsSummary();
       saveUiPrefs();
     });
   }
@@ -1931,10 +3316,12 @@
   cfgCaptureMode.addEventListener("change", () => {
     syncCaptureModeUI();
     syncAudioSourceUI();
+    renderSettingsSummary();
   });
   if (cfgCoachEnabled) {
     cfgCoachEnabled.addEventListener("change", () => {
       syncCoachControlsUI();
+      renderSettingsSummary();
     });
   }
   cfgAudioSource.addEventListener("change", syncAudioSourceUI);
@@ -2026,9 +3413,14 @@
         || id === "fontScaleAr"
         || id === "themeToggleBtn"
       );
-      if (ignore) return;
+      if (ignore) {
+        renderSettingsSummary();
+        validateSettingsInputs(true);
+        return;
+      }
       if (target.closest(".settings-actions")) return;
       setConfigDirty(true);
+      validateSettingsInputs(true);
     });
     settingsTab.addEventListener("change", (ev) => {
       const target = ev.target;
@@ -2042,9 +3434,14 @@
         || id === "fontScaleAr"
         || id === "themeToggleBtn"
       );
-      if (ignore) return;
+      if (ignore) {
+        renderSettingsSummary();
+        validateSettingsInputs(true);
+        return;
+      }
       if (target.closest(".settings-actions")) return;
       setConfigDirty(true);
+      validateSettingsInputs(true);
     });
   }
   transcriptSearch.addEventListener("input", () => {
@@ -2056,6 +3453,118 @@
     state.filters.logs = logsSearch.value;
     renderLogs();
   });
+  if (severityButtons.length) {
+    severityButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.ui.logsView.severity = String(btn.getAttribute("data-severity") || "all");
+        saveUiPrefs();
+        renderLogs();
+      });
+    });
+  }
+  if (logsCompactToggle) {
+    logsCompactToggle.addEventListener("click", () => {
+      state.ui.logsView.compact = !state.ui.logsView.compact;
+      logsCompactToggle.setAttribute("aria-pressed", state.ui.logsView.compact ? "true" : "false");
+      saveUiPrefs();
+      renderLogs();
+    });
+  }
+  if (clearPinnedLogsBtn) {
+    clearPinnedLogsBtn.addEventListener("click", () => {
+      state.ui.logsView.pinned = {};
+      saveUiPrefs();
+      renderLogs();
+    });
+  }
+  if (topicsGroupBy) {
+    topicsGroupBy.addEventListener("change", () => {
+      state.ui.topicsView.groupBy = topicsGroupBy.value;
+      saveUiPrefs();
+      renderTopics();
+    });
+  }
+  if (topicsSortBy) {
+    topicsSortBy.addEventListener("change", () => {
+      state.ui.topicsView.sortBy = topicsSortBy.value;
+      saveUiPrefs();
+      renderTopics();
+    });
+  }
+  if (topicsSearch) {
+    topicsSearch.addEventListener("input", () => {
+      state.ui.topicsView.search = topicsSearch.value;
+      saveUiPrefs();
+      renderTopics();
+    });
+  }
+  if (topicsDensityToggle) {
+    topicsDensityToggle.addEventListener("click", () => {
+      state.ui.topicsView.density = state.ui.topicsView.density === "compact" ? "comfortable" : "compact";
+      saveUiPrefs();
+      setTopicsUIFromState();
+      renderTopics();
+    });
+  }
+  if (topicsEnableAuto) {
+    topicsEnableAuto.addEventListener("change", () => {
+      state.topics.enabled = !!topicsEnableAuto.checked;
+      syncTopicsSettingsControls();
+      renderTopics();
+    });
+  }
+  if (topicsAllowNew) {
+    topicsAllowNew.addEventListener("change", () => {
+      state.topics.allow_new_topics = !!topicsAllowNew.checked;
+      renderTopics();
+    });
+  }
+  if (topicsChunkMode) {
+    topicsChunkMode.addEventListener("change", () => {
+      state.topics.chunk_mode = String(topicsChunkMode.value || "since_last");
+      syncTopicsSettingsControls();
+      renderTopics();
+    });
+  }
+  if (topicsSubtabButtons.length) {
+    topicsSubtabButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const tab = String(btn.getAttribute("data-topics-tab") || "board");
+        state.ui.pageSubtabs.topics = ["board", "definitions", "runs", "settings"].includes(tab) ? tab : "board";
+        closeExportMenus();
+        saveUiPrefs();
+        syncTopicsSubtabUI();
+        renderTopics();
+      });
+    });
+  }
+  if (topicDefCancelBtn) {
+    topicDefCancelBtn.addEventListener("click", () => {
+      resetTopicDefinitionEditor();
+    });
+  }
+  if (topicDefSaveBtn) {
+    topicDefSaveBtn.addEventListener("click", () => withBusy(topicDefSaveBtn, "Saving", async () => {
+      const result = upsertDefinitionFromEditor();
+      if (!result) return;
+      await commitTopicDefinitions(
+        result.definitions,
+        result.mode === "added" ? "Topic added and saved." : "Topic updated and saved."
+      );
+      resetTopicDefinitionEditor();
+    }).catch((err) => {
+      showTopicsDefinitionsError("Could not save topic definition. Check the input and try again.");
+      notifyError(err);
+    }));
+  }
+  if (settingsIndexButtons.length) {
+    settingsIndexButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const target = String(btn.getAttribute("data-settings-target") || "");
+        scrollToSettingsSection(target);
+      });
+    });
+  }
 
   askCoachBtn.addEventListener("click", () => askCoach().catch(notifyError));
   clearCoachBtn.addEventListener("click", () => clearCoach().catch(notifyError));
@@ -2090,44 +3599,52 @@
   if (exportTranscriptJsonBtn) {
     exportTranscriptJsonBtn.addEventListener("click", () => {
       exportTranscriptJson();
+      closeExportMenus();
       showToast("Transcript JSON exported.", "success");
     });
   }
   if (exportTranscriptCsvBtn) {
     exportTranscriptCsvBtn.addEventListener("click", () => {
       exportTranscriptCsv();
+      closeExportMenus();
       showToast("Transcript CSV exported.", "success");
     });
   }
   if (exportBookmarksJsonBtn) {
     exportBookmarksJsonBtn.addEventListener("click", () => {
       exportBookmarksJson();
+      closeExportMenus();
       showToast("Bookmarks JSON exported.", "success");
     });
   }
   if (exportBookmarksCsvBtn) {
     exportBookmarksCsvBtn.addEventListener("click", () => {
       exportBookmarksCsv();
+      closeExportMenus();
       showToast("Bookmarks CSV exported.", "success");
     });
   }
   if (exportTopicsJsonBtn) {
     exportTopicsJsonBtn.addEventListener("click", () => {
       exportTopicsJson();
+      closeExportMenus();
       showToast("Topics JSON exported.", "success");
     });
   }
   if (exportTopicsCsvBtn) {
     exportTopicsCsvBtn.addEventListener("click", () => {
       exportTopicsCsv();
+      closeExportMenus();
       showToast("Topics CSV exported.", "success");
     });
   }
   if (bookmarksOnlyBtn) {
     bookmarksOnlyBtn.addEventListener("click", () => {
       state.filters.bookmarksOnly = !state.filters.bookmarksOnly;
+      state.ui.transcriptView.preset = state.filters.bookmarksOnly ? "bookmarked" : "all";
       bookmarksOnlyBtn.classList.toggle("active", state.filters.bookmarksOnly);
       bookmarksOnlyBtn.setAttribute("aria-pressed", state.filters.bookmarksOnly ? "true" : "false");
+      saveUiPrefs();
       renderFinals();
     });
   }
@@ -2182,6 +3699,9 @@
   document.addEventListener("click", (ev) => {
     const target = ev.target;
     if (!(target instanceof Element)) return;
+    if (!target.closest("[data-export-menu-wrapper]")) {
+      closeExportMenus();
+    }
     if (bookmarkMenu && !bookmarkMenu.classList.contains("hidden")) {
       if (!target.closest("#bookmarkMenu") && !target.closest(".bookmark-btn")) {
         closeBookmarkMenu();
@@ -2201,6 +3721,11 @@
       return;
     }
     if (ev.key === "Escape" && !typing) {
+      if ((transcriptExportMenu && !transcriptExportMenu.classList.contains("hidden")) || (topicsExportMenu && !topicsExportMenu.classList.contains("hidden"))) {
+        ev.preventDefault();
+        closeExportMenus();
+        return;
+      }
       if (bookmarkModal && !bookmarkModal.classList.contains("hidden")) {
         ev.preventDefault();
         closeBookmarkModal();
@@ -2211,16 +3736,26 @@
         closeBookmarkMenu();
         return;
       }
+      if (state.ui.mobileNavOpen) {
+        ev.preventDefault();
+        closeMobileNav();
+        return;
+      }
       ev.preventDefault();
       stopBtn.click();
     }
   });
 
   loadUiPrefs();
+  state.ui.activeSection = "transcriptTab";
+  state.ui.mobileNavOpen = false;
   loadBookmarks();
   applyTheme();
+  applyNavCollapsed();
+  applyMobileNav();
   applyTimestampVisibility();
   applyFontSettings();
+  if (coachAskPanel) coachAskPanel.open = false;
   applySettingsAccordionPrefs();
   bindSettingsAccordionPrefs();
   applyLivePanelHeight(state.ui.livePanelHeight);
@@ -2230,6 +3765,12 @@
   renderSilenceGuardChip();
   renderTelemetryHud();
   setTopicsUIFromState();
+  resetTopicDefinitionEditor();
+  renderSettingsSummary();
+  validateSettingsInputs(true);
+  syncSeverityChips();
+  enforceSingleVisiblePane("transcriptTab");
+  setActiveTab(state.ui.activeSection);
   renderTopics();
   setupTimelineDivider();
 
