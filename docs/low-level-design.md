@@ -1,9 +1,10 @@
 # Live Interview Translator - Low-Level Design
 
 ## 1. Scope and goals
-The system captures live speech, produces EN transcript, optionally translates EN->AR, broadcasts updates to the UI, and can invoke two optional agent features:
+The system captures live speech, produces EN transcript, optionally translates EN->AR, broadcasts updates to the UI, and can invoke three optional agent features:
 - interview coach hints,
-- meeting topic tracking.
+- meeting topic tracking,
+- session summary generation.
 
 Primary goals:
 - low-latency transcript/translation updates,
@@ -38,6 +39,10 @@ Primary goals:
   - prepares topic agent input,
   - normalizes and merges agent responses,
   - allocates chunk time and maintains topic runs.
+- `app/controller/summary_orchestrator.py`:
+  - builds transcript prompt from final turns,
+  - runs summary generation (auto on stop/manual endpoint),
+  - stores summary pending/result/error state.
 - `app/controller/config_store.py`: runtime config persistence and validation.
 - `app/controller/broadcast_service.py`: websocket fanout and log buffering.
 
@@ -46,6 +51,7 @@ Primary goals:
 - `app/services/translation_pipeline.py`: async queue worker with priority and stale guards.
 - `app/services/coach.py`: Azure AI Foundry coach client with conversation continuity.
 - `app/services/topic_tracker.py`: Azure AI Foundry topic tracker client with retry + JSON extraction.
+- `app/services/summary.py`: Azure AI Foundry summary client with structured JSON extraction.
 
 ## 3. Concurrency and lock model
 
@@ -78,12 +84,19 @@ Primary goals:
 - `telemetry`
 - `coach`
 - `topics_update`
+- `summary`
+- `summary_cleared`
 - `log`
 
 ### 4.3 Topic API contracts
 - `POST /api/topics/configure`: settings + agenda + definitions.
 - `POST /api/topics/analyze-now`: manual run.
 - `POST /api/topics/clear`: resets topic runtime state.
+
+### 4.4 Summary API contracts
+- `POST /api/summary/generate`: manual summary trigger.
+- `POST /api/summary/clear`: clears stored summary state.
+- `GET /api/summary`: returns current summary snapshot.
 
 ## 5. Translation design details
 
@@ -146,6 +159,7 @@ Runs once per second:
   - inactivity (`auto_stop_silence_sec`),
   - max session duration (`max_session_sec`),
 - schedules topic auto-analysis when eligible.
+- on stop, `SessionManager.stop_async()` runs one final topic flush then summary generation.
 
 ## 9. API security and rate limiting
 - API and websocket auth:
@@ -153,7 +167,8 @@ Runs once per second:
   - otherwise loopback clients only.
 - Rate limits:
   - `/api/coach/ask`: 6/min/client IP,
-  - `/api/topics/analyze-now`: 4/min/client IP.
+  - `/api/topics/analyze-now`: 4/min/client IP,
+  - `/api/summary/generate`: 2/min/client IP.
 
 ## 10. Invariants
 - Shared runtime state changes under shared `RLock`.

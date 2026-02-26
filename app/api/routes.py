@@ -14,12 +14,16 @@ from app.utils.audio_devices import list_capture_devices
 router = APIRouter(dependencies=[Depends(require_http_auth)])
 _coach_rate_lock = threading.Lock()
 _topics_rate_lock = threading.Lock()
+_summary_rate_lock = threading.Lock()
 _coach_rate_window_sec = 60
 _coach_rate_limit = 6
 _coach_rate_buckets: dict[str, deque[float]] = {}
 _topics_rate_window_sec = 60
 _topics_rate_limit = 4
 _topics_rate_buckets: dict[str, deque[float]] = {}
+_summary_rate_window_sec = 60
+_summary_rate_limit = 2
+_summary_rate_buckets: dict[str, deque[float]] = {}
 
 
 def _enforce_rate_limit(
@@ -272,3 +276,49 @@ async def clear_topics(request: Request) -> dict:
     await controller.broadcast({"type": "topics_update", "topics": topics})
     await controller.broadcast_log("info", "Topics cleared from web")
     return {"ok": True, "topics": topics}
+
+
+# ── Summary routes ────────────────────────────────────────────────────────────
+
+@router.post("/summary/generate")
+async def generate_summary(request: Request) -> dict:
+    _enforce_rate_limit(
+        request,
+        lock=_summary_rate_lock,
+        buckets=_summary_rate_buckets,
+        window_sec=_summary_rate_window_sec,
+        limit=_summary_rate_limit,
+        detail="Rate limit exceeded for /summary/generate. Try again in about a minute.",
+    )
+    controller = request.app.state.controller
+    config = controller.get_runtime_config()
+    if not config.summary_enabled:
+        raise HTTPException(status_code=412, detail="Summary is disabled in config.")
+    if not controller.summary_service.is_configured:
+        raise HTTPException(
+            status_code=412,
+            detail="Summary agent not configured. Set SUMMARY_AGENT_ID and related env vars.",
+        )
+    try:
+        snap = await controller.generate_summary()
+    except ValueError as ex:
+        raise HTTPException(status_code=409, detail=str(ex))
+    except Exception as ex:
+        raise HTTPException(status_code=502, detail=str(ex))
+    return {"ok": True, "summary": snap}
+
+
+@router.post("/summary/clear")
+async def clear_summary(request: Request) -> dict:
+    controller = request.app.state.controller
+    controller.clear_summary()
+    snap = controller.summary_snapshot()
+    await controller.broadcast({"type": "summary_cleared"})
+    await controller.broadcast_log("info", "Summary cleared from web")
+    return {"ok": True, "summary": snap}
+
+
+@router.get("/summary")
+def get_summary(request: Request) -> dict:
+    controller = request.app.state.controller
+    return {"ok": True, "summary": controller.summary_snapshot()}

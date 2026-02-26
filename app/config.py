@@ -79,4 +79,5 @@ class RuntimeConfig(BaseModel):
     initial_silence_ms: int = Field(default=3000, ge=1000, le=120000)
     max_finals: int = Field(default=5000, ge=100, le=10000)
     translation_enabled: bool = True
+    summary_enabled: bool = True
     debug: bool = False

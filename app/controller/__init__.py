@@ -15,6 +15,7 @@ from fastapi import WebSocket
 from app.config import RuntimeConfig, Settings
 from app.services.coach import CoachService
 from app.services.speech import SpeechService
+from app.services.summary import SummaryService
 from app.services.topic_tracker import TopicTrackerService
 from app.services.translation_pipeline import TranslationPipeline
 
@@ -22,6 +23,7 @@ from .broadcast_service import BroadcastService
 from .config_store import ConfigStore
 from .coach_orchestrator import CoachOrchestrator
 from .session_manager import SessionManager
+from .summary_orchestrator import SummaryOrchestrator
 from .topic_orchestrator import TopicOrchestrator
 from .transcript_store import TranscriptStore
 
@@ -40,6 +42,7 @@ class AppController:
         # ── Services ──────────────────────────────────────────────────────────
         self.coach = CoachService.from_environment()
         self.topic_tracker = TopicTrackerService.from_environment()
+        self.summary_service = SummaryService.from_environment()
 
         # ── Shared-lock modules (receive the RLock) ────────────────────────────
         self.transcript_store = TranscriptStore(
@@ -79,6 +82,15 @@ class AppController:
             preview_text=self.broadcast_svc.preview_text,
         )
 
+        self.summary_orch = SummaryOrchestrator(
+            lock=self.lock,
+            summary_service=self.summary_service,
+            broadcast=self.broadcast_svc.broadcast,
+            broadcast_log=self.broadcast_svc.broadcast_log,
+            get_finals=self.transcript_store.get_finals,
+            get_config=self.config_store.get,
+        )
+
         self.session_mgr = SessionManager(
             lock=self.lock,
             speech=SpeechService(
@@ -90,6 +102,7 @@ class AppController:
             transcript_store=self.transcript_store,
             coach_orch=self.coach_orch,
             topic_orch=self.topic_orch,
+            summary_orch=self.summary_orch,
             broadcast=self.broadcast_svc.broadcast,
             broadcast_from_thread=self.broadcast_svc.broadcast_from_thread,
             broadcast_log=self.broadcast_svc.broadcast_log,
@@ -210,6 +223,19 @@ class AppController:
     def clear_topics(self) -> None:
         self.topic_orch.clear(topic_tracker=self.topic_tracker)
 
+    # ── Public API: summary ───────────────────────────────────────────────────
+
+    async def generate_summary(self) -> dict[str, Any]:
+        return await self.summary_orch.run_summary_now()
+
+    def clear_summary(self) -> None:
+        with self.lock:
+            self.summary_orch.clear_unlocked()
+
+    def summary_snapshot(self) -> dict[str, Any]:
+        with self.lock:
+            return self.summary_orch.snapshot_unlocked()
+
     # ── Public API: WebSocket ─────────────────────────────────────────────────
 
     async def connect_websocket(self, websocket: WebSocket) -> None:
@@ -239,6 +265,7 @@ class AppController:
             session_snap = self.session_mgr.snapshot_unlocked()
             coach_snap = self.coach_orch.snapshot_unlocked()
             topic_snap = self.topic_orch.payload_unlocked()
+            summary_snap = self.summary_orch.snapshot_unlocked()
             telemetry = self.transcript_store.build_telemetry_unlocked(
                 ws_connections=len(self.broadcast_svc.connections),
                 status=session_snap["status"],
@@ -258,5 +285,6 @@ class AppController:
             "recording": session_snap["recording"],
             "coach": coach_snap,
             "topics": topic_snap,
+            "summary": summary_snap,
             "telemetry": telemetry,
         }

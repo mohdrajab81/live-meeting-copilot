@@ -9,6 +9,7 @@ Features
 - Real-time speech recognition with optional EN->AR translation.
 - Single and dual microphone capture modes.
 - WebSocket live updates for transcript, translation patches, telemetry, coach hints, and topics.
+- Session summary generation (auto on stop or manual on demand).
 - Config API with in-memory update + save/reload/reset.
 - Optional coach agent (manual ask + auto-trigger on final turns).
 - Optional topic tracker agent (manual and scheduled analysis).
@@ -27,13 +28,14 @@ Current Architecture (at a glance)
 - `app/services/translation_pipeline.py`: async translation queue + segment/revision guards.
 - `app/services/coach.py`: Azure AI Foundry coach client.
 - `app/services/topic_tracker.py`: Azure AI Foundry topic tracker client.
+- `app/services/summary.py`: Azure AI Foundry summary client.
 
 Prerequisites
 -------------
 - Windows recommended (audio device listing endpoint is Windows-oriented).
 - Python 3.10+ (3.12 recommended).
 - Azure Speech key + region.
-- Optional for coach/topics:
+- Optional for coach/topics/summary:
   - Azure AI Foundry project endpoint.
   - Model deployment.
   - Agent ID or name.
@@ -72,6 +74,14 @@ Optional topic agent (can reuse model/agent vars above if dedicated vars are not
 TOPIC_MODEL_DEPLOYMENT_NAME="gpt-4.1-mini"
 TOPIC_AGENT_ID="asst_..."
 # or TOPIC_AGENT_NAME="..."
+```
+
+Optional summary agent (can reuse project/model vars above):
+
+```
+SUMMARY_MODEL_DEPLOYMENT_NAME="gpt-4.1-mini"
+SUMMARY_AGENT_ID="asst_..."
+# or SUMMARY_AGENT_NAME="..."
 ```
 
 Optional API auth token:
@@ -124,10 +134,14 @@ REST API
 - `POST /api/topics/configure`
 - `POST /api/topics/analyze-now`
 - `POST /api/topics/clear`
+- `POST /api/summary/generate`
+- `POST /api/summary/clear`
+- `GET /api/summary`
 
 Rate limits:
 - `/api/coach/ask`: 6 requests/minute per client IP.
 - `/api/topics/analyze-now`: 4 requests/minute per client IP.
+- `/api/summary/generate`: 2 requests/minute per client IP.
 
 WebSocket
 ---------
@@ -140,6 +154,8 @@ WebSocket
   - `telemetry`
   - `coach`
   - `topics_update`
+  - `summary`
+  - `summary_cleared`
   - `log`
 
 Runtime Config (`PUT /api/config`)
@@ -152,6 +168,7 @@ Key fields:
 - `local_input_device_id`, `remote_input_device_id`
 - `local_speaker_label`, `remote_speaker_label`
 - `translation_enabled`
+- `summary_enabled`
 - `coach_enabled`, `coach_trigger_speaker`, `coach_cooldown_sec`, `coach_max_turns`, `coach_instruction`
 - `partial_translate_min_interval_sec`
 - `auto_stop_silence_sec`

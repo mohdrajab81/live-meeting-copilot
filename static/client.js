@@ -166,6 +166,22 @@
   const exportTopicsCsvBtn = document.getElementById("exportTopicsCsvBtn");
   const topicsExportMenuBtn = document.getElementById("topicsExportMenuBtn");
   const topicsExportMenu = document.getElementById("topicsExportMenu");
+  const summaryGenerateBtn = document.getElementById("summaryGenerateBtn");
+  const summaryClearBtn = document.getElementById("summaryClearBtn");
+  const summaryExportMenuBtn = document.getElementById("summaryExportMenuBtn");
+  const summaryExportMenu = document.getElementById("summaryExportMenu");
+  const exportSummaryJsonBtn = document.getElementById("exportSummaryJsonBtn");
+  const exportSummaryTxtBtn = document.getElementById("exportSummaryTxtBtn");
+  const summaryKpiStatus = document.getElementById("summaryKpiStatus");
+  const summaryPendingIndicator = document.getElementById("summaryPendingIndicator");
+  const summaryError = document.getElementById("summaryError");
+  const summaryEmpty = document.getElementById("summaryEmpty");
+  const summaryBody = document.getElementById("summaryBody");
+  const summaryExecutiveText = document.getElementById("summaryExecutiveText");
+  const summaryKeyPointsList = document.getElementById("summaryKeyPointsList");
+  const summaryActionItemsList = document.getElementById("summaryActionItemsList");
+  const cfgSummaryEnabled = document.getElementById("cfgSummaryEnabled");
+
   const logsCompactToggle = document.getElementById("logsCompactToggle");
   const logsPinnedList = document.getElementById("logsPinnedList");
   const clearPinnedLogsBtn = document.getElementById("clearPinnedLogsBtn");
@@ -308,6 +324,14 @@
       menuKey: "",
       modalKey: "",
       modalMode: "add",
+    },
+    summary: {
+      pending: false,
+      generated_ts: null,
+      executive_summary: "",
+      key_points: [],
+      action_items: [],
+      error: "",
     },
   };
 
@@ -1744,6 +1768,116 @@
     syncCoachControlsUI();
   }
 
+  function renderSummary() {
+    const s = state.summary;
+    const hasSummary = !!(s.executive_summary || (s.key_points && s.key_points.length) || (s.action_items && s.action_items.length));
+    const summaryChip = summaryKpiStatus ? summaryKpiStatus.closest(".ops-kpi-chip") : null;
+
+    if (summaryKpiStatus) {
+      summaryKpiStatus.textContent = s.pending ? "Generating…" : (s.error ? "Error" : (hasSummary ? "Ready" : "--"));
+    }
+    if (summaryChip) {
+      summaryChip.classList.remove("is-ready", "is-pending", "is-error");
+      if (s.pending) summaryChip.classList.add("is-pending");
+      else if (s.error) summaryChip.classList.add("is-error");
+      else if (hasSummary) summaryChip.classList.add("is-ready");
+    }
+    if (summaryPendingIndicator) summaryPendingIndicator.classList.toggle("hidden", !s.pending);
+    if (summaryError) {
+      summaryError.classList.toggle("hidden", !s.error);
+      if (s.error) summaryError.textContent = `Error: ${s.error}`;
+    }
+    if (summaryEmpty) summaryEmpty.classList.toggle("hidden", hasSummary || s.pending || !!s.error);
+    if (summaryBody) summaryBody.classList.toggle("hidden", !hasSummary);
+    if (summaryExportMenuBtn) summaryExportMenuBtn.disabled = !hasSummary;
+
+    if (!hasSummary) return;
+
+    if (summaryExecutiveText) summaryExecutiveText.textContent = s.executive_summary || "";
+
+    if (summaryKeyPointsList) {
+      summaryKeyPointsList.innerHTML = "";
+      (s.key_points || []).forEach((pt) => {
+        const li = document.createElement("li");
+        li.textContent = String(pt);
+        summaryKeyPointsList.appendChild(li);
+      });
+    }
+
+    if (summaryActionItemsList) {
+      summaryActionItemsList.innerHTML = "";
+      if ((s.action_items || []).length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "summary-empty-state summary-empty-state-inline";
+        empty.textContent = "No action items identified.";
+        summaryActionItemsList.appendChild(empty);
+      } else {
+        (s.action_items || []).forEach((ai) => {
+          const row = document.createElement("div");
+          row.className = "action-item-row";
+          const item = document.createElement("span");
+          item.className = "ai-item";
+          item.textContent = String(ai.item || "");
+          const owner = document.createElement("span");
+          owner.className = "ai-owner";
+          owner.textContent = ai.owner ? `Owner: ${ai.owner}` : "";
+          const due = document.createElement("span");
+          due.className = "ai-due";
+          due.textContent = ai.due_date ? `Due: ${ai.due_date}` : "";
+          row.appendChild(item);
+          row.appendChild(owner);
+          row.appendChild(due);
+          summaryActionItemsList.appendChild(row);
+        });
+      }
+    }
+  }
+
+  function exportSummaryJson() {
+    const s = state.summary;
+    const blob = new Blob([JSON.stringify({
+      executive_summary: s.executive_summary,
+      key_points: s.key_points,
+      action_items: s.action_items,
+      generated_ts: s.generated_ts,
+    }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "summary.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportSummaryTxt() {
+    const s = state.summary;
+    const lines = [];
+    if (s.executive_summary) {
+      lines.push("EXECUTIVE SUMMARY", "=".repeat(40), s.executive_summary, "");
+    }
+    if (s.key_points && s.key_points.length) {
+      lines.push("KEY POINTS", "=".repeat(40));
+      s.key_points.forEach((pt, i) => lines.push(`${i + 1}. ${pt}`));
+      lines.push("");
+    }
+    if (s.action_items && s.action_items.length) {
+      lines.push("ACTION ITEMS", "=".repeat(40));
+      s.action_items.forEach((ai, i) => {
+        let line = `${i + 1}. ${ai.item || ""}`;
+        if (ai.owner) line += ` [Owner: ${ai.owner}]`;
+        if (ai.due_date) line += ` [Due: ${ai.due_date}]`;
+        lines.push(line);
+      });
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "summary.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function setConfigUI(config) {
     state.currentConfig = { ...config };
     renderAudioDeviceOptions(config);
@@ -1762,6 +1896,7 @@
     cfgMaxFinals.value = Number(config.max_finals || 5000);
     cfgDebug.checked = !!config.debug;
     if (cfgTranslationEnabled) cfgTranslationEnabled.checked = !!(config.translation_enabled ?? true);
+    if (cfgSummaryEnabled) cfgSummaryEnabled.checked = !!(config.summary_enabled ?? true);
     cfgCoachEnabled.checked = !!config.coach_enabled;
     const trigger = String(config.coach_trigger_speaker || "remote");
     cfgCoachTriggerSpeaker.value = trigger === "default" ? "remote" : trigger;
@@ -2152,13 +2287,14 @@
   }
 
   function closeExportMenus() {
-    const menus = [transcriptExportMenu, topicsExportMenu];
+    const menus = [transcriptExportMenu, topicsExportMenu, summaryExportMenu];
     menus.forEach((menu) => {
       if (!menu) return;
       menu.classList.add("hidden");
     });
     if (transcriptExportMenuBtn) transcriptExportMenuBtn.setAttribute("aria-expanded", "false");
     if (topicsExportMenuBtn) topicsExportMenuBtn.setAttribute("aria-expanded", "false");
+    if (summaryExportMenuBtn) summaryExportMenuBtn.setAttribute("aria-expanded", "false");
   }
 
   function toggleExportMenu(buttonEl, menuEl) {
@@ -2280,6 +2416,7 @@
     rows.push(`Capture mode: ${cfgCaptureMode?.value || "single"}`);
     rows.push(`Coach: ${cfgCoachEnabled?.checked ? "enabled" : "disabled"}`);
     rows.push(`Translation: ${cfgTranslationEnabled?.checked !== false ? "enabled" : "off"}`);
+    rows.push(`Summary: ${cfgSummaryEnabled?.checked !== false ? "enabled" : "off"}`);
     if (cfgAutoStopSilenceSec) {
       const mins = clampDecimal(cfgAutoStopSilenceSec.value, 0, 5, 1.25, 2);
       rows.push(mins > 0 ? `Auto-stop: ${mins} minute silence` : "Auto-stop: off");
@@ -2544,12 +2681,28 @@
     state.telemetry.estimatedCostUsd = telemetry.estimated_cost_usd ?? null;
     setRecording(msg.recording || null);
 
+    const summarySnap = msg.summary || {};
+    const summaryResult = summarySnap.result || {};
+    state.summary.pending = !!summarySnap.pending;
+    state.summary.generated_ts = summarySnap.generated_ts || null;
+    state.summary.executive_summary = String(
+      summarySnap.executive_summary || summaryResult.executive_summary || ""
+    );
+    state.summary.key_points = Array.isArray(summarySnap.key_points)
+      ? summarySnap.key_points
+      : (Array.isArray(summaryResult.key_points) ? summaryResult.key_points : []);
+    state.summary.action_items = Array.isArray(summarySnap.action_items)
+      ? summarySnap.action_items
+      : (Array.isArray(summaryResult.action_items) ? summaryResult.action_items : []);
+    state.summary.error = String(summarySnap.error || "");
+
     renderFinals();
     renderLogs();
     renderLivePartials();
     renderCoachHints();
     setTopicsUIFromState();
     renderTopics();
+    renderSummary();
     setStatus(msg.status || "idle", msg.running ? "listening" : "connected");
     applyTimestampVisibility();
     applyTranslationVisibility();
@@ -2621,6 +2774,7 @@
       initial_silence_ms: Number(cfgInitial.value),
       max_finals: Number(cfgMaxFinals.value),
       translation_enabled: cfgTranslationEnabled ? cfgTranslationEnabled.checked : !!(existing.translation_enabled ?? true),
+      summary_enabled: cfgSummaryEnabled ? cfgSummaryEnabled.checked : !!(existing.summary_enabled ?? true),
       debug: cfgDebug.checked,
     };
     const out = await request("/api/config", "PUT", payload);
@@ -3154,6 +3308,34 @@
       return;
     }
 
+    if (msg.type === "summary") {
+      state.summary.pending = false;
+      state.summary.error = String(msg.error || "");
+      state.summary.generated_ts = msg.generated_ts || null;
+      state.summary.executive_summary = String(msg.executive_summary || "");
+      state.summary.key_points = Array.isArray(msg.key_points) ? msg.key_points : [];
+      state.summary.action_items = Array.isArray(msg.action_items) ? msg.action_items : [];
+      renderSummary();
+      if (!msg.error) {
+        setActiveTab("summaryTab");
+        showToast("Summary ready.", "success");
+      }
+      return;
+    }
+
+    if (msg.type === "summary_cleared") {
+      state.summary = {
+        pending: false,
+        generated_ts: null,
+        executive_summary: "",
+        key_points: [],
+        action_items: [],
+        error: "",
+      };
+      renderSummary();
+      return;
+    }
+
     if (msg.type === "log") {
       const log = {
         level: msg.level || "info",
@@ -3229,6 +3411,11 @@
   if (topicsExportMenuBtn && topicsExportMenu) {
     topicsExportMenuBtn.addEventListener("click", () => {
       toggleExportMenu(topicsExportMenuBtn, topicsExportMenu);
+    });
+  }
+  if (summaryExportMenuBtn && summaryExportMenu) {
+    summaryExportMenuBtn.addEventListener("click", () => {
+      toggleExportMenu(summaryExportMenuBtn, summaryExportMenu);
     });
   }
   if (coachRecoPrevBtn) {
@@ -3327,6 +3514,29 @@
     cfgTranslationEnabled.addEventListener("change", () => {
       setConfigDirty(true);
     });
+  }
+  if (cfgSummaryEnabled) {
+    cfgSummaryEnabled.addEventListener("change", () => {
+      setConfigDirty(true);
+    });
+  }
+
+  if (summaryGenerateBtn) {
+    summaryGenerateBtn.addEventListener("click", () => withBusy(summaryGenerateBtn, "Generating", async () => {
+      state.summary.pending = true;
+      renderSummary();
+      await request("/api/summary/generate", "POST");
+    }).catch((err) => {
+      state.summary.pending = false;
+      renderSummary();
+      notifyError(err);
+    }));
+  }
+  if (summaryClearBtn) {
+    summaryClearBtn.addEventListener("click", () => withBusy(summaryClearBtn, "Clearing", async () => {
+      await request("/api/summary/clear", "POST");
+      showToast("Summary cleared.", "info");
+    }).catch(notifyError));
   }
 
   if (fontFamilyEn) {
@@ -3693,6 +3903,21 @@
       showToast("Topics CSV exported.", "success");
     });
   }
+  if (exportSummaryJsonBtn) {
+    exportSummaryJsonBtn.addEventListener("click", () => {
+      exportSummaryJson();
+      closeExportMenus();
+      showToast("Summary JSON exported.", "success");
+    });
+  }
+  if (exportSummaryTxtBtn) {
+    exportSummaryTxtBtn.addEventListener("click", () => {
+      exportSummaryTxt();
+      closeExportMenus();
+      showToast("Summary TXT exported.", "success");
+    });
+  }
+
   if (bookmarksOnlyBtn) {
     bookmarksOnlyBtn.addEventListener("click", () => {
       state.filters.bookmarksOnly = !state.filters.bookmarksOnly;
@@ -3776,7 +4001,7 @@
       return;
     }
     if (ev.key === "Escape" && !typing) {
-      if ((transcriptExportMenu && !transcriptExportMenu.classList.contains("hidden")) || (topicsExportMenu && !topicsExportMenu.classList.contains("hidden"))) {
+      if ((transcriptExportMenu && !transcriptExportMenu.classList.contains("hidden")) || (topicsExportMenu && !topicsExportMenu.classList.contains("hidden")) || (summaryExportMenu && !summaryExportMenu.classList.contains("hidden"))) {
         ev.preventDefault();
         closeExportMenus();
         return;
@@ -3822,6 +4047,7 @@
   renderTelemetryHud();
   setTopicsUIFromState();
   resetTopicDefinitionEditor();
+  renderSummary();
   renderSettingsSummary();
   validateSettingsInputs(true);
   syncSeverityChips();

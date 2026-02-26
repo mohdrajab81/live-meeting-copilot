@@ -56,6 +56,10 @@
             <span class="rail-tab-icon" aria-hidden="true">P</span>
             <span class="rail-tab-label">Topics</span>
           </button>
+          <button class="tab-btn rail-tab" type="button" data-tab="summaryTab">
+            <span class="rail-tab-icon" aria-hidden="true">M</span>
+            <span class="rail-tab-label">Summary</span>
+          </button>
           <button class="tab-btn rail-tab" type="button" data-tab="logsTab">
             <span class="rail-tab-icon" aria-hidden="true">L</span>
             <span class="rail-tab-label">Logs</span>
@@ -310,6 +314,50 @@
             </section>
           </section>
 
+          <section id="summaryTab" class="tab-pane panel summary-page" aria-labelledby="summaryPageTitle" hidden style="display:none" aria-hidden="true">
+            <header class="workspace-page-head summary-page-head">
+              <div>
+                <h2 id="summaryPageTitle" class="workspace-page-title">Session Summary</h2>
+                <p class="workspace-page-subtitle">Auto-generated after session stops. Trigger manually or export.</p>
+              </div>
+              <div class="page-action-stack summary-action-stack">
+                <div class="workspace-head-meta summary-head-meta">
+                  <span class="ops-kpi-chip">Status <strong id="summaryKpiStatus">--</strong></span>
+                </div>
+                <div class="control-row summary-controls">
+                  <button id="summaryGenerateBtn" class="btn" type="button">Generate Now</button>
+                  <button id="summaryClearBtn" class="btn btn-soft-danger" type="button">Clear</button>
+                  <div class="export-menu-wrap" data-export-menu-wrapper>
+                    <button id="summaryExportMenuBtn" class="btn" type="button" aria-expanded="false" aria-controls="summaryExportMenu" disabled>Export</button>
+                    <div id="summaryExportMenu" class="export-menu hidden" role="menu" aria-label="Summary export actions">
+                      <button id="exportSummaryJsonBtn" class="btn export-item" type="button" role="menuitem">Summary JSON</button>
+                      <button id="exportSummaryTxtBtn" class="btn export-item" type="button" role="menuitem">Summary TXT</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </header>
+            <div id="summaryContent" class="summary-content">
+              <div id="summaryPendingIndicator" class="summary-pending hidden">Generating summary…</div>
+              <div id="summaryError" class="summary-error hidden"></div>
+              <div id="summaryEmpty" class="summary-empty-state">No summary yet. Summary is generated automatically when a session stops.</div>
+              <div id="summaryBody" class="summary-body hidden">
+                <div class="card-shell summary-section">
+                  <h3 class="summary-section-title">Executive Summary</h3>
+                  <p id="summaryExecutiveText" class="summary-executive-text"></p>
+                </div>
+                <div class="card-shell summary-section">
+                  <h3 class="summary-section-title">Key Points</h3>
+                  <ul id="summaryKeyPointsList" class="summary-key-points-list"></ul>
+                </div>
+                <div class="card-shell summary-section">
+                  <h3 class="summary-section-title">Action Items</h3>
+                  <div id="summaryActionItemsList" class="summary-action-items-list"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section id="logsTab" class="tab-pane panel logs-page" aria-labelledby="logsPageTitle" hidden style="display:none" aria-hidden="true">
             <header class="workspace-page-head logs-page-head">
               <div>
@@ -550,6 +598,11 @@
                         <label class="check check-row">
                           <input id="cfgTranslationEnabled" type="checkbox" checked />
                           <span>Enable Arabic Translation</span>
+                        </label>
+
+                        <label class="check check-row">
+                          <input id="cfgSummaryEnabled" type="checkbox" checked />
+                          <span>Generate summary on session stop</span>
                         </label>
 
                         <label class="check check-row">

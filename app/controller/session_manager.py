@@ -19,6 +19,7 @@ from app.services.speech import SpeechService
 from app.services.translation_pipeline import TranslationPipeline
 
 from .coach_orchestrator import CoachOrchestrator
+from .summary_orchestrator import SummaryOrchestrator
 from .topic_orchestrator import TopicOrchestrator
 from .transcript_store import TranscriptStore
 
@@ -39,6 +40,7 @@ class SessionManager:
         transcript_store: TranscriptStore,
         coach_orch: CoachOrchestrator,
         topic_orch: TopicOrchestrator,
+        summary_orch: SummaryOrchestrator,
         broadcast: BroadcastCallback,
         broadcast_from_thread: BroadcastFromThreadCallback,
         broadcast_log: BroadcastLogCallback,
@@ -53,6 +55,7 @@ class SessionManager:
         self._transcript = transcript_store
         self._coach_orch = coach_orch
         self._topic_orch = topic_orch
+        self._summary_orch = summary_orch
         self._broadcast = broadcast
         self._broadcast_from_thread = broadcast_from_thread
         self._broadcast_log = broadcast_log
@@ -361,6 +364,10 @@ class SessionManager:
                 )
             except Exception:
                 pass  # flush failure must not block cleanup
+        try:
+            await asyncio.wait_for(self._summary_orch.run_summary(), timeout=60.0)
+        except Exception:
+            pass  # summary failure must not block cleanup
         self._do_finalize()
         return True
 

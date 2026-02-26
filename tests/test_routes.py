@@ -66,6 +66,18 @@ def _make_controller(running=False):
     ctrl.analyze_topics_now = AsyncMock(return_value={
         "enabled": True, "items": [], "agenda": [], "runs": [],
     })
+
+    from app.config import RuntimeConfig
+    ctrl.get_runtime_config = MagicMock(return_value=RuntimeConfig())
+    ctrl.summary_service = MagicMock()
+    ctrl.summary_service.is_configured = True
+    _default_summary_snap = {
+        "configured": True, "pending": False, "error": "",
+        "generated_ts": None, "result": None,
+    }
+    ctrl.generate_summary = AsyncMock(return_value=_default_summary_snap)
+    ctrl.clear_summary = MagicMock()
+    ctrl.summary_snapshot = MagicMock(return_value=_default_summary_snap)
     return ctrl
 
 
@@ -469,3 +481,109 @@ class TestAudioDevices:
         tc, _ = client
         r = tc.get("/api/audio/devices")
         assert "devices" in r.json()
+
+
+# ---------------------------------------------------------------------------
+# POST /api/summary/generate
+# ---------------------------------------------------------------------------
+
+class TestSummaryGenerate:
+    def test_returns_200_when_configured(self, client):
+        tc, _ = client
+        r = tc.post("/api/summary/generate")
+        assert r.status_code == 200
+
+    def test_response_has_ok_and_summary(self, client):
+        tc, _ = client
+        r = tc.post("/api/summary/generate")
+        data = r.json()
+        assert data.get("ok") is True
+        assert "summary" in data
+
+    def test_returns_412_when_summary_disabled(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        from app.config import RuntimeConfig
+        tc, ctrl = client
+        ctrl.get_runtime_config.return_value = RuntimeConfig(summary_enabled=False)
+        r = tc.post("/api/summary/generate")
+        assert r.status_code == 412
+
+    def test_returns_412_when_not_configured(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, ctrl = client
+        ctrl.summary_service.is_configured = False
+        r = tc.post("/api/summary/generate")
+        assert r.status_code == 412
+
+    def test_returns_409_on_value_error(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        from unittest.mock import AsyncMock
+        tc, ctrl = client
+        ctrl.generate_summary = AsyncMock(side_effect=ValueError("already pending"))
+        r = tc.post("/api/summary/generate")
+        assert r.status_code == 409
+
+    def test_returns_502_on_unexpected_error(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        from unittest.mock import AsyncMock
+        tc, ctrl = client
+        ctrl.generate_summary = AsyncMock(side_effect=RuntimeError("Azure error"))
+        r = tc.post("/api/summary/generate")
+        assert r.status_code == 502
+
+    def test_rate_limit_returns_429_after_2_requests(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, _ = client
+        tc.post("/api/summary/generate")
+        tc.post("/api/summary/generate")
+        r = tc.post("/api/summary/generate")
+        assert r.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# POST /api/summary/clear
+# ---------------------------------------------------------------------------
+
+class TestSummaryClear:
+    def test_returns_200(self, client):
+        tc, _ = client
+        r = tc.post("/api/summary/clear")
+        assert r.status_code == 200
+
+    def test_calls_clear_summary(self, client):
+        tc, ctrl = client
+        tc.post("/api/summary/clear")
+        ctrl.clear_summary.assert_called_once()
+
+    def test_broadcasts_summary_cleared(self, client):
+        tc, ctrl = client
+        tc.post("/api/summary/clear")
+        ctrl.broadcast.assert_awaited_once()
+        payload = ctrl.broadcast.await_args.args[0]
+        assert payload["type"] == "summary_cleared"
+
+
+# ---------------------------------------------------------------------------
+# GET /api/summary
+# ---------------------------------------------------------------------------
+
+class TestGetSummary:
+    def test_returns_200(self, client):
+        tc, _ = client
+        r = tc.get("/api/summary")
+        assert r.status_code == 200
+
+    def test_response_has_summary_key(self, client):
+        tc, _ = client
+        r = tc.get("/api/summary")
+        assert "summary" in r.json()
+
+    def test_calls_summary_snapshot(self, client):
+        tc, ctrl = client
+        tc.get("/api/summary")
+        ctrl.summary_snapshot.assert_called_once()

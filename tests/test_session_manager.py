@@ -39,6 +39,9 @@ def _make_session_manager():
     topic_orch.prepare_call_unlocked.return_value = None
     topic_orch.run_update = AsyncMock()
 
+    summary_orch = MagicMock()
+    summary_orch.run_summary = AsyncMock()
+
     broadcast = AsyncMock()
     broadcast_from_thread = MagicMock()
     broadcast_log = AsyncMock()
@@ -53,6 +56,7 @@ def _make_session_manager():
         transcript_store=transcript_store,
         coach_orch=coach_orch,
         topic_orch=topic_orch,
+        summary_orch=summary_orch,
         broadcast=broadcast,
         broadcast_from_thread=broadcast_from_thread,
         broadcast_log=broadcast_log,
@@ -220,3 +224,33 @@ def test_final_enqueues_when_translation_enabled():
     mgr._handle_final_event(_final_payload(), RuntimeConfig(translation_enabled=True))
 
     translation.enqueue_from_thread.assert_called_once_with(req)
+
+
+# ---------------------------------------------------------------------------
+# summary_orch integration in stop_async
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_stop_async_runs_summary():
+    mgr, _, _, _, topic_orch, _, _ = _make_session_manager()
+    topic_orch.prepare_call_unlocked.return_value = None
+    mgr._do_finalize = MagicMock()
+
+    result = await mgr.stop_async()
+
+    assert result is True
+    run_summary_mock: AsyncMock = mgr._summary_orch.run_summary  # type: ignore[assignment]
+    assert run_summary_mock.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_stop_async_summary_failure_does_not_block():
+    mgr, _, _, _, topic_orch, _, _ = _make_session_manager()
+    topic_orch.prepare_call_unlocked.return_value = None
+    mgr._summary_orch.run_summary = AsyncMock(side_effect=RuntimeError("summary failed"))
+    mgr._do_finalize = MagicMock()
+
+    result = await mgr.stop_async()
+
+    assert result is True
+    mgr._do_finalize.assert_called_once()

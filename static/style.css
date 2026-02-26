@@ -811,8 +811,157 @@ body[data-theme="sand"] select {
 .coach-column,
 .topics-page,
 .logs-page,
-.settings-page {
+.settings-page,
+.summary-page {
   min-height: 0;
+}
+
+/* ── Summary tab ─────────────────────────────────────────────────────────── */
+
+.summary-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow: auto;
+  padding-bottom: var(--space-4);
+}
+
+.summary-page-head {
+  align-items: center;
+}
+
+.summary-page-head > :first-child {
+  min-width: 0;
+}
+
+.summary-action-stack {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.summary-controls {
+  justify-content: flex-end;
+}
+
+.summary-head-meta .ops-kpi-chip.is-ready {
+  border-color: color-mix(in srgb, var(--success) 48%, var(--border));
+  color: color-mix(in srgb, var(--success) 82%, var(--text-strong));
+}
+
+.summary-head-meta .ops-kpi-chip.is-pending {
+  border-color: color-mix(in srgb, var(--warning) 50%, var(--border));
+  color: color-mix(in srgb, var(--warning) 84%, var(--text-strong));
+}
+
+.summary-head-meta .ops-kpi-chip.is-error {
+  border-color: color-mix(in srgb, var(--danger) 52%, var(--border));
+  color: color-mix(in srgb, var(--danger) 86%, var(--text-strong));
+}
+
+.summary-content,
+.summary-body {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.summary-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--panel-soft) 66%, transparent);
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.summary-section-title {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.summary-executive-text {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.65;
+  max-width: 112ch;
+}
+
+.summary-key-points-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+  color: var(--text);
+}
+
+.summary-key-points-list li {
+  line-height: 1.6;
+}
+
+.summary-action-items-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.action-item-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--space-2) var(--space-3);
+  align-items: start;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+}
+
+.ai-item {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+.ai-owner {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.ai-due {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.summary-pending {
+  padding: var(--space-3);
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+}
+
+.summary-error {
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+  border-radius: var(--radius-sm);
+  color: color-mix(in srgb, var(--danger) 75%, var(--text));
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  font-size: 0.9rem;
+}
+
+.summary-empty-state {
+  padding: var(--space-4);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.summary-empty-state-inline {
+  padding: var(--space-3);
+  border-style: solid;
+  background: color-mix(in srgb, var(--surface) 75%, transparent);
 }
 
 .coach-column {
@@ -2017,6 +2166,11 @@ textarea.invalid {
     grid-column: 1 / -1;
     min-height: 150px;
   }
+
+  .summary-action-stack {
+    margin-left: 0;
+    justify-content: space-between;
+  }
 }
 
 @media (max-width: 1100px) {
@@ -2143,5 +2297,23 @@ textarea.invalid {
 
   .settings-secondary-actions {
     margin-left: 0;
+  }
+
+  .summary-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .summary-controls > .btn,
+  .summary-controls > .export-menu-wrap {
+    flex: 1 1 0;
+  }
+
+  .summary-controls .export-menu-wrap > .btn {
+    width: 100%;
+  }
+
+  .action-item-row {
+    grid-template-columns: 1fr;
   }
 }
