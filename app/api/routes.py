@@ -105,7 +105,7 @@ async def save_config(request: Request) -> dict:
     controller = request.app.state.controller
     path = controller.save_config_to_disk()
     await controller.broadcast_log("info", f"Configuration saved to {path}")
-    return {"ok": True, "path": path, "config": controller.get_config()}
+    return {"ok": True, "config": controller.get_config()}
 
 
 @router.post("/config/reload")

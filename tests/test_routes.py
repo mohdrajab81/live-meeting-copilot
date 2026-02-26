@@ -205,10 +205,10 @@ class TestSaveConfig:
         r = tc.post("/api/config/save")
         assert r.status_code == 200
 
-    def test_response_contains_path(self, client):
+    def test_response_contains_config(self, client):
         tc, _ = client
         r = tc.post("/api/config/save")
-        assert "path" in r.json()
+        assert "config" in r.json()
 
 
 # ---------------------------------------------------------------------------

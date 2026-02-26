@@ -64,16 +64,12 @@ class SpeechService:
         self._on_event(payload)
 
     def _make_speech_config(self, cfg: RuntimeConfig):
-        for kwargs in (
-            {"speech_key": self._settings.speech_key, "region": self._settings.speech_region},
-            {"subscription": self._settings.speech_key, "region": self._settings.speech_region},
-        ):
-            try:
-                config = speech_sdk.SpeechConfig(**kwargs)
-                break
-            except TypeError:
-                continue
-        else:
+        try:
+            config = speech_sdk.SpeechConfig(
+                subscription=self._settings.speech_key,
+                region=self._settings.speech_region,
+            )
+        except TypeError:
             config = speech_sdk.SpeechConfig(
                 self._settings.speech_key,
                 self._settings.speech_region,
@@ -91,19 +87,10 @@ class SpeechService:
         return config
 
     def _make_recognizer(self, config, audio):
-        for kwargs in (
-            {"speech_config": config, "audio_config": audio},
-        ):
-            try:
-                return speech_sdk.SpeechRecognizer(**kwargs)
-            except TypeError:
-                continue
-        return speech_sdk.SpeechRecognizer(config, audio)
-
-    def _make_audio_config_single(self, cfg: RuntimeConfig):
-        if cfg.audio_source == "device_id" and (cfg.input_device_id or "").strip():
-            return speech_sdk.audio.AudioConfig(device_name=cfg.input_device_id.strip())
-        return speech_sdk.audio.AudioConfig(use_default_microphone=True)
+        try:
+            return speech_sdk.SpeechRecognizer(speech_config=config, audio_config=audio)
+        except TypeError:
+            return speech_sdk.SpeechRecognizer(config, audio)
 
     def _make_audio_config_device(self, device_id: str):
         cleaned = (device_id or "").strip()
@@ -137,6 +124,7 @@ class SpeechService:
         cfg: RuntimeConfig,
         speaker_key: str,
         speaker_label: str,
+        restart_event: threading.Event,
     ) -> None:
         def on_recognizing(evt: Any) -> None:
             result = evt.result
@@ -219,18 +207,36 @@ class SpeechService:
                     "message": f"[{speaker_label}] Canceled: {reason}. {err}".strip(),
                 }
             )
-            self._stop_event.set()
+            # "client buffer exceeded" is a recoverable inactivity timeout.
+            # Signal only this channel's restart_event so the other channel
+            # (in dual mode) is never interrupted.
+            if "client buffer exceeded" in err.lower():
+                self._emit(
+                    {
+                        "type": "log",
+                        "level": "info",
+                        "message": (
+                            f"[{speaker_label}] Buffer overflow due to silence — "
+                            "auto-restarting this channel"
+                        ),
+                    }
+                )
+                restart_event.set()
+            else:
+                self._stop_event.set()
 
         recognizer.recognizing.connect(on_recognizing)
         recognizer.recognized.connect(on_recognized)
         recognizer.canceled.connect(on_canceled)
 
-    def _start_single_mode(self, cfg: RuntimeConfig) -> list[speech_sdk.SpeechRecognizer]:
-        config = self._make_speech_config(cfg)
+    def _start_single_mode(self, cfg: RuntimeConfig) -> list[dict]:
+        restart_evt = threading.Event()
         device_id = (cfg.input_device_id or "").strip()
-        audio = self._make_audio_config_single(cfg)
 
         if cfg.audio_source == "device_id" and device_id:
+            def audio_factory() -> speech_sdk.audio.AudioConfig:
+                return speech_sdk.audio.AudioConfig(device_name=device_id)
+
             self._emit(
                 {
                     "type": "log",
@@ -242,6 +248,9 @@ class SpeechService:
                 }
             )
         elif cfg.audio_source == "device_id" and not device_id:
+            def audio_factory() -> speech_sdk.audio.AudioConfig:  # type: ignore[no-redef]
+                return speech_sdk.audio.AudioConfig(use_default_microphone=True)
+
             self._emit(
                 {
                     "type": "log",
@@ -250,6 +259,9 @@ class SpeechService:
                 }
             )
         else:
+            def audio_factory() -> speech_sdk.audio.AudioConfig:  # type: ignore[no-redef]
+                return speech_sdk.audio.AudioConfig(use_default_microphone=True)
+
             self._emit(
                 {
                     "type": "log",
@@ -258,12 +270,21 @@ class SpeechService:
                 }
             )
 
-        recognizer = self._make_recognizer(config, audio)
-        self._wire_handlers(recognizer, cfg, "default", "Speaker")
+        config = self._make_speech_config(cfg)
+        recognizer = self._make_recognizer(config, audio_factory())
+        self._wire_handlers(recognizer, cfg, "default", "Speaker", restart_evt)
         recognizer.start_continuous_recognition_async().get()
-        return [recognizer]
+        return [
+            {
+                "recognizer": recognizer,
+                "restart_event": restart_evt,
+                "audio_factory": audio_factory,
+                "speaker_key": "default",
+                "speaker_label": "Speaker",
+            }
+        ]
 
-    def _start_dual_mode(self, cfg: RuntimeConfig) -> list[speech_sdk.SpeechRecognizer]:
+    def _start_dual_mode(self, cfg: RuntimeConfig) -> list[dict]:
         local_label = (cfg.local_speaker_label or "You").strip() or "You"
         remote_label = (cfg.remote_speaker_label or "Remote").strip() or "Remote"
 
@@ -294,8 +315,7 @@ class SpeechService:
                 "type": "log",
                 "level": "info",
                 "message": (
-                    f"[{local_label}] device: "
-                    f"{self._device_display_name(local_device)}"
+                    f"[{local_label}] device: {self._device_display_name(local_device)}"
                 ),
             }
         )
@@ -310,20 +330,25 @@ class SpeechService:
             }
         )
 
+        local_restart = threading.Event()
+        remote_restart = threading.Event()
+
+        def local_audio_factory() -> speech_sdk.audio.AudioConfig:
+            return self._make_audio_config_device(local_device)
+
+        def remote_audio_factory() -> speech_sdk.audio.AudioConfig:
+            return self._make_audio_config_device(remote_device)
+
         local_cfg = self._make_speech_config(cfg)
         remote_cfg = self._make_speech_config(cfg)
 
-        local_recognizer = self._make_recognizer(
-            local_cfg,
-            self._make_audio_config_device(local_device),
-        )
-        remote_recognizer = self._make_recognizer(
-            remote_cfg,
-            self._make_audio_config_device(remote_device),
-        )
+        local_recognizer = self._make_recognizer(local_cfg, local_audio_factory())
+        remote_recognizer = self._make_recognizer(remote_cfg, remote_audio_factory())
 
-        self._wire_handlers(local_recognizer, cfg, "local", local_label)
-        self._wire_handlers(remote_recognizer, cfg, "remote", remote_label)
+        self._wire_handlers(local_recognizer, cfg, "local", local_label, local_restart)
+        self._wire_handlers(
+            remote_recognizer, cfg, "remote", remote_label, remote_restart
+        )
 
         local_started = False
         remote_started = False
@@ -344,11 +369,46 @@ class SpeechService:
                 except Exception:
                     pass
             raise
-        return [local_recognizer, remote_recognizer]
+
+        return [
+            {
+                "recognizer": local_recognizer,
+                "restart_event": local_restart,
+                "audio_factory": local_audio_factory,
+                "speaker_key": "local",
+                "speaker_label": local_label,
+            },
+            {
+                "recognizer": remote_recognizer,
+                "restart_event": remote_restart,
+                "audio_factory": remote_audio_factory,
+                "speaker_key": "remote",
+                "speaker_label": remote_label,
+            },
+        ]
+
+    def _restart_channel(self, ch: dict) -> None:
+        """Stop one channel's recognizer and start a fresh one in its place.
+
+        Mutates ch in-place so the caller's reference stays valid.
+        The other channel(s) are never touched.
+        """
+        try:
+            ch["recognizer"].stop_continuous_recognition_async().get()
+        except Exception:
+            pass
+        new_evt = threading.Event()
+        cfg = self._get_runtime_config()
+        speech_cfg = self._make_speech_config(cfg)
+        new_recognizer = self._make_recognizer(speech_cfg, ch["audio_factory"]())
+        self._wire_handlers(
+            new_recognizer, cfg, ch["speaker_key"], ch["speaker_label"], new_evt
+        )
+        new_recognizer.start_continuous_recognition_async().get()
+        ch["recognizer"] = new_recognizer
+        ch["restart_event"] = new_evt
 
     def _worker(self) -> None:
-        cfg = self._get_runtime_config()
-        recognizers: list[speech_sdk.SpeechRecognizer] = []
         self._emit(
             {
                 "type": "log",
@@ -363,23 +423,58 @@ class SpeechService:
 
         try:
             self._refresh_device_labels()
+            cfg = self._get_runtime_config()
+
             if cfg.capture_mode == "dual":
-                recognizers = self._start_dual_mode(cfg)
+                channels = self._start_dual_mode(cfg)
             else:
-                recognizers = self._start_single_mode(cfg)
+                channels = self._start_single_mode(cfg)
 
             with self._lock:
-                self._recognizers = recognizers
+                self._recognizers = [ch["recognizer"] for ch in channels]
 
-            self._emit({"type": "log", "level": "info", "message": "Recognition started"})
+            self._emit(
+                {"type": "log", "level": "info", "message": "Recognition started"}
+            )
             self._emit({"type": "status", "status": "listening", "running": True})
 
+            # Monitor loop: handle per-channel buffer-overflow restarts individually
+            # so a silent channel never interrupts a healthy active one.
             while not self._stop_event.is_set():
+                for ch in channels:
+                    if ch["restart_event"].is_set():
+                        ch["restart_event"].clear()
+                        label = ch["speaker_label"]
+                        self._emit(
+                            {
+                                "type": "log",
+                                "level": "info",
+                                "message": f"[{label}] Restarting recognition after buffer overflow...",
+                            }
+                        )
+                        self._restart_channel(ch)
+                        with self._lock:
+                            self._recognizers = [c["recognizer"] for c in channels]
+                        self._emit(
+                            {
+                                "type": "log",
+                                "level": "info",
+                                "message": f"[{label}] Recognition restarted",
+                            }
+                        )
                 time.sleep(0.2)
 
-            self._emit({"type": "log", "level": "info", "message": "Stopping recognition"})
-            for recognizer in recognizers:
-                recognizer.stop_continuous_recognition_async().get()
+            # Normal stop: tear down all channels.
+            self._emit(
+                {"type": "log", "level": "info", "message": "Stopping recognition"}
+            )
+            for ch in channels:
+                try:
+                    ch["recognizer"].stop_continuous_recognition_async().get()
+                except Exception:
+                    pass
+            with self._lock:
+                self._recognizers = []
 
         except Exception as ex:
             err_text = str(ex).strip()

@@ -241,7 +241,6 @@ class CoachOrchestrator:
             result = await asyncio.to_thread(self._coach.ask, prompt)
             hint = {
                 "type": "coach",
-                "hint_kind": "deep",
                 "group_id": group_id,
                 "ts": time.time(),
                 "speaker": str(trigger_item.get("speaker", "default") or "default"),
@@ -376,7 +375,6 @@ class CoachOrchestrator:
         result = await asyncio.to_thread(self._coach.ask, manual_prompt)
         hint = {
             "type": "coach",
-            "hint_kind": "manual",
             "group_id": "",
             "ts": time.time(),
             "speaker": "manual",
