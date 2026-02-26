@@ -47,7 +47,7 @@ Turn the app into a public-ready meeting intelligence platform with clear value 
 - Add searchable keyword index for recap/exploration.
 
 3. Optional translation mode
-- Allow users to disable translation and run transcript-only intelligence mode.
+- Implemented on February 26, 2026: users can disable translation and run transcript-only intelligence mode.
 - Reduce cost and support same-language meetings.
 
 ## Phase 3 (Platform + Market Expansion)

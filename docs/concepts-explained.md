@@ -31,7 +31,7 @@ The system does five things simultaneously during a live interview:
 
 1. **Captures speech** from one or two microphones using Azure Speech SDK.
 2. **Produces a live English transcript** — both partial (live preview) and final (committed) text.
-3. **Translates English to Arabic** asynchronously in the background.
+3. **Optionally translates English to Arabic** asynchronously in the background.
 4. **Optionally provides AI coaching hints** based on what the interviewer just said.
 5. **Optionally tracks which interview topics** have been covered and for how long.
 
@@ -175,6 +175,8 @@ When the remote channel produces any speech activity, the local channel is suppr
 ### Async-first, priority-based
 
 Translation requests are placed into a queue. The pipeline processes them asynchronously. Final translation requests have higher priority than partial ones — because finals are committed text and matter more to the user.
+
+If `translation_enabled=false`, requests are not enqueued at all. English transcript, coach, and topics still run normally.
 
 ### Stale-guard: don't translate old partials
 

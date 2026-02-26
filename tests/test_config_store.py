@@ -44,6 +44,9 @@ class TestDefaults:
     def test_get_debug_false_by_default(self, tmp_path_store):
         assert tmp_path_store.get_debug() is False
 
+    def test_translation_enabled_true_by_default(self, tmp_path_store):
+        assert tmp_path_store.get().translation_enabled is True
+
 
 # ---------------------------------------------------------------------------
 # set / get round-trip

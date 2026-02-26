@@ -4,7 +4,7 @@
 Live interview translator that:
 - captures speech (single or dual input),
 - emits live EN transcript,
-- translates EN->AR asynchronously,
+- optionally translates EN->AR asynchronously,
 - optionally provides coach hints,
 - optionally tracks meeting topics through an agent.
 
@@ -36,8 +36,8 @@ Live interview translator that:
 ### Transcript + translation flow
 1. `POST /api/start` starts recognition.
 2. `SpeechService` emits `partial` and `final` events.
-3. `SessionManager` updates transcript state and schedules translation work.
-4. `TranslationPipeline` processes queue (`final` priority over `partial`).
+3. `SessionManager` updates transcript state and schedules translation work only when `translation_enabled=true`.
+4. `TranslationPipeline` processes queue (`final` priority over `partial`) when translation is enabled.
 5. `TranscriptStore` applies translation results and broadcasts:
    - `partial` updates,
    - `final_patch` updates,
@@ -72,6 +72,7 @@ Live interview translator that:
 
 ## Guardrails
 - Translation:
+  - runtime toggle (`translation_enabled`) to disable translation enqueueing,
   - per-speaker partial throttling,
   - queue priority (`final` before `partial`),
   - partial backlog collapse,

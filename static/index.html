@@ -106,11 +106,12 @@
             </details>
 
             <div class="timeline-shell">
-              <div class="timeline-head">
+              <div class="timeline-head" id="timelineHead">
                 <div class="timeline-cols">
                   <span>English</span>
-                  <span>Arabic</span>
+                  <span id="arColHeader">Arabic</span>
                 </div>
+                <div id="translationOffBadge" class="translation-off-badge hidden">Translation off — Arabic column hidden</div>
               </div>
               <div id="timeline" class="timeline show-ts"></div>
             </div>
@@ -547,6 +548,11 @@
                         </div>
 
                         <label class="check check-row">
+                          <input id="cfgTranslationEnabled" type="checkbox" checked />
+                          <span>Enable Arabic Translation</span>
+                        </label>
+
+                        <label class="check check-row">
                           <input id="showTs" type="checkbox" />
                           <span>Show Entry Timestamps</span>
                         </label>
@@ -622,7 +628,7 @@
         </div>
 
         <div id="timelineDivider" class="timeline-divider" title="Drag to resize live area"></div>
-        <section class="live-strip live-bottom">
+        <section class="live-strip live-bottom" id="liveStrip">
           <div class="live-card">
             <div class="card-label-row">
               <div id="enLiveLabel" class="card-label">Speaker</div>
@@ -631,7 +637,7 @@
             <div id="enInterim" class="live-text en"></div>
           </div>
 
-          <div class="live-card">
+          <div class="live-card" id="arLiveCard">
             <div class="card-label-row">
               <div id="arLiveLabel" class="card-label">Speaker</div>
               <span id="arLiveState" class="live-state-chip">Waiting</span>

@@ -145,3 +145,78 @@ def test_status_event_running_to_stopped_triggers_finalize():
     status_payload = broadcast_from_thread.call_args.args[0]
     assert status_payload["type"] == "status"
     assert status_payload["running"] is False
+
+
+# ---------------------------------------------------------------------------
+# translation_enabled guard
+# ---------------------------------------------------------------------------
+
+def _partial_payload():
+    return {"type": "partial", "speaker": "default", "speaker_label": "Speaker", "en": "hello"}
+
+
+def _final_payload():
+    return {
+        "type": "final", "speaker": "default", "speaker_label": "Speaker",
+        "en": "hello world", "ts": time.time(), "start_ts": None,
+        "segment_id": "seg-1", "revision": 1,
+    }
+
+
+def test_partial_does_not_enqueue_when_translation_disabled():
+    mgr, _, translation, _, _, _, _ = _make_session_manager()
+    mgr._get_config = lambda: RuntimeConfig(translation_enabled=False)
+    translation.prepare_partial_unlocked.return_value = (
+        {"type": "partial", "en": "hello", "ar": "", "speaker": "default", "speaker_label": "Speaker"},
+        {"kind": "partial"},  # non-None req
+    )
+    mgr._transcript.live_partials = {}
+
+    mgr._handle_partial_event(_partial_payload(), RuntimeConfig(translation_enabled=False))
+
+    translation.enqueue_from_thread.assert_not_called()
+
+
+def test_partial_enqueues_when_translation_enabled():
+    mgr, _, translation, _, _, _, _ = _make_session_manager()
+    req = {"kind": "partial"}
+    translation.prepare_partial_unlocked.return_value = (
+        {"type": "partial", "en": "hello", "ar": "", "speaker": "default", "speaker_label": "Speaker"},
+        req,
+    )
+    mgr._transcript.live_partials = {}
+
+    mgr._handle_partial_event(_partial_payload(), RuntimeConfig(translation_enabled=True))
+
+    translation.enqueue_from_thread.assert_called_once_with(req)
+
+
+def test_final_does_not_enqueue_when_translation_disabled():
+    mgr, _, translation, coach_orch, _, _, _ = _make_session_manager()
+    final_item = {
+        "type": "final", "en": "hello world", "ar": "", "speaker": "default",
+        "speaker_label": "Speaker", "segment_id": "seg-1", "revision": 1,
+        "ts": time.time(), "start_ts": time.time(),
+    }
+    translation.prepare_final_unlocked.return_value = (final_item, {"kind": "final"})
+    coach_orch.should_trigger_unlocked.return_value = False
+
+    mgr._handle_final_event(_final_payload(), RuntimeConfig(translation_enabled=False))
+
+    translation.enqueue_from_thread.assert_not_called()
+
+
+def test_final_enqueues_when_translation_enabled():
+    mgr, _, translation, coach_orch, _, _, _ = _make_session_manager()
+    req = {"kind": "final"}
+    final_item = {
+        "type": "final", "en": "hello world", "ar": "", "speaker": "default",
+        "speaker_label": "Speaker", "segment_id": "seg-1", "revision": 1,
+        "ts": time.time(), "start_ts": time.time(),
+    }
+    translation.prepare_final_unlocked.return_value = (final_item, req)
+    coach_orch.should_trigger_unlocked.return_value = False
+
+    mgr._handle_final_event(_final_payload(), RuntimeConfig(translation_enabled=True))
+
+    translation.enqueue_from_thread.assert_called_once_with(req)

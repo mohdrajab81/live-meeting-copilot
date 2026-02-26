@@ -61,7 +61,11 @@
   const cfgInitial = document.getElementById("cfgInitial");
   const cfgMaxFinals = document.getElementById("cfgMaxFinals");
   const cfgDebug = document.getElementById("cfgDebug");
+  const cfgTranslationEnabled = document.getElementById("cfgTranslationEnabled");
   const showTs = document.getElementById("showTs");
+  const timelineHead = document.getElementById("timelineHead");
+  const liveStrip = document.getElementById("liveStrip");
+  const translationOffBadge = document.getElementById("translationOffBadge");
   const cfgCoachEnabled = document.getElementById("cfgCoachEnabled");
   const cfgCoachTriggerSpeaker = document.getElementById("cfgCoachTriggerSpeaker");
   const cfgCoachCooldownSec = document.getElementById("cfgCoachCooldownSec");
@@ -1757,6 +1761,7 @@
     cfgInitial.value = Number(config.initial_silence_ms || 3000);
     cfgMaxFinals.value = Number(config.max_finals || 5000);
     cfgDebug.checked = !!config.debug;
+    if (cfgTranslationEnabled) cfgTranslationEnabled.checked = !!(config.translation_enabled ?? true);
     cfgCoachEnabled.checked = !!config.coach_enabled;
     const trigger = String(config.coach_trigger_speaker || "remote");
     cfgCoachTriggerSpeaker.value = trigger === "default" ? "remote" : trigger;
@@ -1787,6 +1792,7 @@
     syncAudioSourceUI();
     syncCoachControlsUI();
     setConfigDirty(false);
+    applyTranslationVisibility();
     renderSettingsSummary();
     validateSettingsInputs(true);
   }
@@ -2273,6 +2279,7 @@
     rows.push(state.configDirty ? "Pending changes are not yet applied." : "All settings are synced.");
     rows.push(`Capture mode: ${cfgCaptureMode?.value || "single"}`);
     rows.push(`Coach: ${cfgCoachEnabled?.checked ? "enabled" : "disabled"}`);
+    rows.push(`Translation: ${cfgTranslationEnabled?.checked !== false ? "enabled" : "off"}`);
     if (cfgAutoStopSilenceSec) {
       const mins = clampDecimal(cfgAutoStopSilenceSec.value, 0, 5, 1.25, 2);
       rows.push(mins > 0 ? `Auto-stop: ${mins} minute silence` : "Auto-stop: off");
@@ -2333,6 +2340,14 @@
     if (state.ui.showTs) timeline.classList.add("show-ts");
     else timeline.classList.remove("show-ts");
     showTs.checked = state.ui.showTs;
+  }
+
+  function applyTranslationVisibility() {
+    const enabled = !!(state.currentConfig.translation_enabled ?? true);
+    timeline.classList.toggle("translation-off", !enabled);
+    if (timelineHead) timelineHead.classList.toggle("translation-off", !enabled);
+    if (liveStrip) liveStrip.classList.toggle("translation-off", !enabled);
+    if (translationOffBadge) translationOffBadge.classList.toggle("hidden", enabled);
   }
 
   function clampLiveHeight(px) {
@@ -2537,6 +2552,7 @@
     renderTopics();
     setStatus(msg.status || "idle", msg.running ? "listening" : "connected");
     applyTimestampVisibility();
+    applyTranslationVisibility();
     renderSilenceGuardChip();
     renderTimeStrip();
     renderTelemetryHud();
@@ -2604,6 +2620,7 @@
       end_silence_ms: clampNumber(cfgEnd.value, 50, 10000, 250),
       initial_silence_ms: Number(cfgInitial.value),
       max_finals: Number(cfgMaxFinals.value),
+      translation_enabled: cfgTranslationEnabled ? cfgTranslationEnabled.checked : !!(existing.translation_enabled ?? true),
       debug: cfgDebug.checked,
     };
     const out = await request("/api/config", "PUT", payload);
@@ -3306,6 +3323,12 @@
     saveUiPrefs();
   });
 
+  if (cfgTranslationEnabled) {
+    cfgTranslationEnabled.addEventListener("change", () => {
+      setConfigDirty(true);
+    });
+  }
+
   if (fontFamilyEn) {
     fontFamilyEn.addEventListener("change", () => {
       state.ui.fontFamilyEn = fontFamilyEn.value;
@@ -3786,6 +3809,7 @@
   applyNavCollapsed();
   applyMobileNav();
   applyTimestampVisibility();
+  applyTranslationVisibility();
   applyFontSettings();
   if (coachAskPanel) coachAskPanel.open = false;
   applySettingsAccordionPrefs();

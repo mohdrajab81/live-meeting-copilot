@@ -248,7 +248,7 @@ class SessionManager:
         self._emit_trace_from_thread(
             out, channel="speech_partial", debug=config.debug
         )
-        if req:
+        if req and config.translation_enabled:
             self._translation.enqueue_from_thread(req)
 
     def _handle_final_event(
@@ -277,7 +277,7 @@ class SessionManager:
                     coach_call = self._coach_orch.prepare_call_unlocked(item, config)
         self._broadcast_from_thread(item)
         self._emit_trace_from_thread(item, channel="speech_final", debug=config.debug)
-        if req:
+        if req and config.translation_enabled:
             self._translation.enqueue_from_thread(req)
         self._coach_orch.schedule_from_thread(item, coach_call, queued_while_busy)
 

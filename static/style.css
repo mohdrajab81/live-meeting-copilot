@@ -652,6 +652,42 @@ body[data-theme="sand"] select {
   border-bottom: 1px solid var(--border);
 }
 
+.translation-off-badge {
+  margin-top: var(--space-2);
+  padding: 3px var(--space-3);
+  background: color-mix(in srgb, var(--warning, #f59e0b) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning, #f59e0b) 35%, transparent);
+  border-radius: var(--radius-xs, 4px);
+  color: var(--warning, #f59e0b);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Translation-off state: collapse Arabic column */
+.timeline-head.translation-off .timeline-cols {
+  grid-template-columns: 1fr;
+}
+
+.timeline-head.translation-off #arColHeader {
+  display: none;
+}
+
+.live-strip.translation-off {
+  grid-template-columns: 1fr;
+}
+
+.live-strip.translation-off #arLiveCard {
+  display: none;
+}
+
+.timeline.translation-off .row {
+  grid-template-columns: 1fr;
+}
+
+.timeline.translation-off .entry-card:nth-child(2) {
+  display: none;
+}
+
 .timeline-cols {
   display: grid;
   grid-template-columns: 1fr 1fr;

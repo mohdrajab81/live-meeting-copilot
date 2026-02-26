@@ -1,7 +1,7 @@
 # Live Interview Translator - Low-Level Design
 
 ## 1. Scope and goals
-The system captures live speech, produces EN transcript, translates EN->AR, broadcasts updates to the UI, and can invoke two optional agent features:
+The system captures live speech, produces EN transcript, optionally translates EN->AR, broadcasts updates to the UI, and can invoke two optional agent features:
 - interview coach hints,
 - meeting topic tracking.
 
@@ -105,6 +105,11 @@ Per speaker:
 - sample count,
 - translated char count,
 - optional estimated cost if `TRANSLATION_COST_PER_MILLION_USD` is set.
+
+### 5.4 Optional translation mode
+- `RuntimeConfig.translation_enabled` controls whether translation requests are enqueued.
+- When disabled, EN transcript flow continues unchanged while AR translation work is skipped.
+- Coach and topics continue to operate from EN transcript data.
 
 ## 6. Coach design details
 - Triggered on final turns based on `coach_trigger_speaker` and cooldown.

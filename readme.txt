@@ -2,11 +2,11 @@ Live Interview Translator
 =========================
 
 Real-time interview assistant built with FastAPI.
-It captures live speech, streams EN transcript + AR translation, supports optional AI coach hints, and tracks meeting topics with a dedicated topic-tracker agent.
+It captures live speech, streams EN transcript, optionally adds AR translation, supports optional AI coach hints, and tracks meeting topics with a dedicated topic-tracker agent.
 
 Features
 --------
-- Real-time speech recognition and EN->AR translation.
+- Real-time speech recognition with optional EN->AR translation.
 - Single and dual microphone capture modes.
 - WebSocket live updates for transcript, translation patches, telemetry, coach hints, and topics.
 - Config API with in-memory update + save/reload/reset.
@@ -151,6 +151,7 @@ Key fields:
 - `input_device_id`
 - `local_input_device_id`, `remote_input_device_id`
 - `local_speaker_label`, `remote_speaker_label`
+- `translation_enabled`
 - `coach_enabled`, `coach_trigger_speaker`, `coach_cooldown_sec`, `coach_max_turns`, `coach_instruction`
 - `partial_translate_min_interval_sec`
 - `auto_stop_silence_sec`
