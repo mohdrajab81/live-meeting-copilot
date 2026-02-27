@@ -22,18 +22,20 @@ This document explains every significant technical concept in the Live Interview
 14. [Watchdog Loop — Automated Session Management](#14-watchdog-loop)
 15. [Windows Audio Devices](#15-windows-audio-devices)
 16. [Design Trade-offs You Should Know](#16-design-trade-offs)
+17. [Summary Intelligence and From-File Analysis](#17-summary-intelligence-and-from-file-analysis)
 
 ---
 
 ## 1. Big Picture
 
-The system does five things simultaneously during a live interview:
+The system does six things during a live interview session:
 
 1. **Captures speech** from one or two microphones using Azure Speech SDK.
 2. **Produces a live English transcript** — both partial (live preview) and final (committed) text.
 3. **Optionally translates English to Arabic** asynchronously in the background.
 4. **Optionally provides AI coaching hints** based on what the interviewer just said.
 5. **Optionally tracks which interview topics** have been covered and for how long.
+6. **Optionally generates a structured meeting summary** (either from live session stop or uploaded transcript CSV).
 
 All of this streams to the browser in real time over a WebSocket connection.
 
@@ -325,6 +327,8 @@ The server sends structured JSON messages over WebSocket. Each message has a `ty
 | `telemetry` | After each translation | Latency, cost, character count |
 | `coach` | After AI coach responds | Hint text and metadata |
 | `topics_update` | After topic agent runs | Full topic state snapshot |
+| `summary` | After summary generation | Structured summary payload + topic coverage |
+| `summary_cleared` | After clear action | Resets summary state in UI |
 | `log` | Any time | System log entries (info, debug, error) |
 
 ### Snapshot on reconnect
@@ -349,13 +353,27 @@ Two modes:
 
 ### Rate limiting
 
-Two endpoints have rate limits to prevent abuse of the AI services (which cost money):
+Rate-limited endpoints protect AI-backed operations (which cost money):
 - **Coach ask**: 6 requests per minute per IP
 - **Topics analyze-now**: 4 requests per minute per IP
+- **Summary generate**: 2 requests per minute per IP
+- **Summary from-transcript**: shares the same 2/min pool as summary generate
 
 Implementation: a sliding window using a `deque` per IP address. Each request timestamp is appended. On each request, old timestamps (outside the 1-minute window) are removed. If the deque has >= limit entries, the request is rejected with HTTP 429.
 
 The cleanup happens at request time — no background timer needed. This keeps the code simple and the memory usage proportional to actual traffic.
+
+### Summary from-file endpoint
+
+`POST /api/summary/from-transcript` accepts:
+- an exported transcript CSV file,
+- optional topic definitions JSON from the current UI state.
+
+This route:
+- parses CSV rows into `[MM:SS] Speaker: text` transcript format,
+- prepends optional agenda definitions context when provided,
+- calls the same summary service used by live summaries,
+- returns summary output directly without mutating live session state.
 
 ### Why config changes are blocked during a running session
 
@@ -462,4 +480,29 @@ Both coach and topic agent calls are blocking HTTP requests (they call the Azure
 
 ---
 
-*Last updated: 2026-02-26*
+## 17. Summary Intelligence and From-File Analysis
+
+### Deterministic vs inferred topic timing
+
+There are two ways topic timing appears in summaries:
+
+1. **Deterministic (preferred)**:
+When live topic tracker data exists, the orchestrator computes `topic_breakdown` and `agenda_adherence_pct` in Python from tracked topic state.
+
+2. **Inferred (fallback)**:
+When deterministic topic tracking is unavailable, the model still returns `topic_key_points` (topic groups with estimated minutes). The orchestrator converts those into a fallback `topic_breakdown` with `status="inferred"` and no adherence score.
+
+### Why both are needed
+
+- Deterministic timing is more reliable when the user configured agenda/topics.
+- Inferred timing still gives useful structure for recordings and uploaded historical transcripts where no live topic tracker state exists.
+
+### Output fields to know
+
+- `topic_key_points`: grouped key points by topic, estimated minutes, origin (`Agenda` or `Inferred`).
+- `topic_breakdown`: UI timeline data (`name`, `planned_min`, `actual_min`, `status`, `over_under_min`).
+- `agenda_adherence_pct`: only meaningful when planned agenda timing exists.
+
+---
+
+*Last updated: 2026-02-27*

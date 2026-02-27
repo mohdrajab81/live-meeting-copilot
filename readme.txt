@@ -9,7 +9,11 @@ Features
 - Real-time speech recognition with optional EN->AR translation.
 - Single and dual microphone capture modes.
 - WebSocket live updates for transcript, translation patches, telemetry, coach hints, and topics.
-- Session summary generation (auto on stop or manual on demand).
+- Session summary generation (auto on stop or manual on demand) with:
+  - executive summary, key points, action items, decisions, risks, key terms, metadata,
+  - topic coverage timeline (`topic_breakdown`) with adherence when agenda timing exists,
+  - inferred topic timing fallback when deterministic topic tracking is unavailable.
+- "From File" summary analysis: upload exported transcript CSV and generate summary without mutating live session state.
 - Config API with in-memory update + save/reload/reset.
 - Optional coach agent (manual ask + auto-trigger on final turns).
 - Optional topic tracker agent (manual and scheduled analysis).
@@ -135,6 +139,7 @@ REST API
 - `POST /api/topics/analyze-now`
 - `POST /api/topics/clear`
 - `POST /api/summary/generate`
+- `POST /api/summary/from-transcript`
 - `POST /api/summary/clear`
 - `GET /api/summary`
 
@@ -142,6 +147,7 @@ Rate limits:
 - `/api/coach/ask`: 6 requests/minute per client IP.
 - `/api/topics/analyze-now`: 4 requests/minute per client IP.
 - `/api/summary/generate`: 2 requests/minute per client IP.
+- `/api/summary/from-transcript`: shares the same 2/minute pool as `/api/summary/generate`.
 
 WebSocket
 ---------
@@ -209,6 +215,8 @@ Troubleshooting
 - `conversations.create()` unsupported:
   - update dependencies:
   - `python -m pip install -U azure-ai-projects openai`
+- Upload endpoints fail with `Form data requires "python-multipart"`:
+  - `python -m pip install -r requirements.txt`
 
 Security
 --------

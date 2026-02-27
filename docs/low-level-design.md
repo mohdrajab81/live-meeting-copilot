@@ -42,6 +42,8 @@ Primary goals:
 - `app/controller/summary_orchestrator.py`:
   - builds transcript prompt from final turns,
   - runs summary generation (auto on stop/manual endpoint),
+  - computes deterministic topic breakdown + agenda adherence when topic tracker data exists,
+  - falls back to inferred topic breakdown from model topic groups when deterministic breakdown is unavailable,
   - stores summary pending/result/error state.
 - `app/controller/config_store.py`: runtime config persistence and validation.
 - `app/controller/broadcast_service.py`: websocket fanout and log buffering.
@@ -95,8 +97,15 @@ Primary goals:
 
 ### 4.4 Summary API contracts
 - `POST /api/summary/generate`: manual summary trigger.
+- `POST /api/summary/from-transcript`: upload exported transcript CSV and return summary result without mutating live session state.
 - `POST /api/summary/clear`: clears stored summary state.
 - `GET /api/summary`: returns current summary snapshot.
+
+Summary payload includes:
+- `executive_summary`, `key_points`, `action_items`,
+- `topic_key_points` (topic-grouped key points with estimated duration and origin),
+- `decisions_made`, `risks_and_blockers`, `key_terms_defined`, `metadata`,
+- `topic_breakdown`, `agenda_adherence_pct`.
 
 ## 5. Translation design details
 
@@ -168,7 +177,8 @@ Runs once per second:
 - Rate limits:
   - `/api/coach/ask`: 6/min/client IP,
   - `/api/topics/analyze-now`: 4/min/client IP,
-  - `/api/summary/generate`: 2/min/client IP.
+  - `/api/summary/generate`: 2/min/client IP,
+  - `/api/summary/from-transcript`: shares the same 2/min pool as `/api/summary/generate`.
 
 ## 10. Invariants
 - Shared runtime state changes under shared `RLock`.

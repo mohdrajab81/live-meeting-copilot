@@ -5,7 +5,9 @@ Live interview translator that:
 - captures speech (single or dual input),
 - emits live EN transcript,
 - optionally translates EN->AR asynchronously,
-- optionally generates session summary (executive summary, key points, action items),
+- optionally generates session summary (executive summary, key points, action items, decisions, risks, key terms, metadata),
+- includes topic coverage timeline and agenda adherence when deterministic topic data exists,
+- falls back to inferred topic timing groups when deterministic topic data is unavailable,
 - optionally provides coach hints,
 - optionally tracks meeting topics through an agent.
 
@@ -65,8 +67,11 @@ Live interview translator that:
 ### Summary flow
 1. Session stop (`stop_async`) triggers summary generation when `summary_enabled=true`.
 2. `SummaryOrchestrator` builds transcript text from final turns.
-3. `SummaryService` generates structured summary via Azure AI Foundry.
-4. Summary is broadcast as `summary` event; clear action broadcasts `summary_cleared`.
+3. If topic tracker coverage is available, orchestrator computes deterministic `topic_breakdown` and `agenda_adherence_pct`.
+4. `SummaryService` generates structured summary via Azure AI Foundry, including `topic_key_points`.
+5. If deterministic topic breakdown is missing, orchestrator derives fallback `topic_breakdown` from inferred `topic_key_points`.
+6. Summary is broadcast as `summary` event; clear action broadcasts `summary_cleared`.
+7. Separate file-analysis path: `/api/summary/from-transcript` parses exported CSV and returns summary payload without mutating live session state.
 
 ## WebSocket event families
 - `snapshot` (initial full state)
