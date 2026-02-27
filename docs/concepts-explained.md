@@ -1,6 +1,6 @@
 # Technical Concepts Explained — Plain English Guide
 
-This document explains every significant technical concept in the Live Interview Translator project in clear, plain language. It is intended to help you understand *why* the code is built the way it is, so you can explain it to others (e.g., in a technical interview) without needing to look at the code.
+This document explains every significant technical concept in the Live Meeting Copilot project in clear, plain language. It is intended to help you understand *why* the code is built the way it is, so you can explain it to others without needing to look at the code.
 
 ---
 
@@ -28,13 +28,13 @@ This document explains every significant technical concept in the Live Interview
 
 ## 1. Big Picture
 
-The system does six things during a live interview session:
+The system does six things during a live meeting session:
 
 1. **Captures speech** from one or two microphones using Azure Speech SDK.
 2. **Produces a live English transcript** — both partial (live preview) and final (committed) text.
 3. **Optionally translates English to Arabic** asynchronously in the background.
-4. **Optionally provides AI coaching hints** based on what the interviewer just said.
-5. **Optionally tracks which interview topics** have been covered and for how long.
+4. **Optionally provides AI coaching hints** based on what the remote speaker just said.
+5. **Optionally tracks which meeting topics** have been covered and for how long.
 6. **Optionally generates a structured meeting summary** (either from live session stop or uploaded transcript CSV).
 
 All of this streams to the browser in real time over a WebSocket connection.
@@ -82,7 +82,7 @@ speech detected
 
 ### Why one lock across all modules?
 
-The app has several modules that each manage a piece of state: the transcript store, the session manager, the coach orchestrator, the topic orchestrator. Many operations need to touch multiple modules at the same time — for example, when a final speech event arrives, you need to:
+The app has several modules that each manage a piece of state: the transcript store, the session manager, the coach orchestrator, the topic orchestrator, and the summary orchestrator. Many operations need to touch multiple modules at the same time — for example, when a final speech event arrives, you need to:
 
 - Append it to the transcript
 - Check if coach should trigger
@@ -138,13 +138,13 @@ Azure's speech recognition runs over a WebSocket connection from the SDK to Micr
 
 When the connection goes idle and then audio arrives again, the SDK's local audio buffer fills up faster than the stale connection can drain it. Eventually the buffer overflows, and Azure sends back a cancellation event with the error message: `"client buffer exceeded"`.
 
-**Before the fix**: The `on_canceled` callback treated all cancellations the same — it set the global stop event, ending the entire session. This is why transcription stopped during your interview.
+**Before the fix**: The `on_canceled` callback treated all cancellations the same — it set the global stop event, ending the entire session. This is why transcription stopped during live runs.
 
 **After the fix**: The callback inspects the error message. If it contains `"client buffer exceeded"`, it's a recoverable timeout. It signals only that channel's `restart_event` (a `threading.Event`). The monitor loop in the worker thread sees this flag and restarts just that one recognizer — the other channel continues uninterrupted.
 
 ### Per-channel restart in dual mode
 
-In dual mode (two microphones), if the "You" channel goes quiet while the interviewer is talking, only the "You" channel risks buffer overflow. The fix ensures that restarting the "You" channel never interrupts the "Remote" channel that is actively transcribing speech.
+In dual mode (two microphones), if the "You" channel goes quiet while the remote side is talking, only the "You" channel risks buffer overflow. The fix ensures that restarting the "You" channel never interrupts the "Remote" channel that is actively transcribing speech.
 
 Each channel carries its own `restart_event`. The monitoring loop checks both independently every 200ms.
 
@@ -231,7 +231,7 @@ This gives the user a clear error message before starting rather than failing si
 
 ### What it does
 
-After each sentence the interviewer says (a "final" speech event), the coach orchestrator decides whether to ask the AI coach for a hint. If yes, it builds a prompt from recent transcript, sends it to Azure AI Foundry, and streams the result back to the UI.
+After each sentence the remote speaker says (a "final" speech event), the coach orchestrator decides whether to ask the AI coach for a hint. If yes, it builds a prompt from recent transcript, sends it to Azure AI Foundry, and streams the result back to the UI.
 
 ### Trigger conditions
 
@@ -256,13 +256,13 @@ After the current hint is done, the system checks if something is queued. If yes
 
 ### Conversation continuity
 
-The coach service keeps a `conversation_id` and `previous_response_id`. This means the AI model genuinely remembers earlier exchanges in the session — it's not reconstructing context from the transcript alone. This is more efficient and produces more contextually relevant hints.
+The coach service keeps a `conversation_id` (with `previous_response_id` as fallback when needed). This means the AI model genuinely remembers earlier exchanges in the session — it's not reconstructing context from the transcript alone. This is more efficient and produces more contextually relevant hints.
 
 ---
 
 ## 10. Topic Orchestrator
 
-This is the most complex module (~1660 lines). It tracks which topics from the interview agenda have been discussed and for how long.
+This is the most complex module (~1660 lines). It tracks which topics from the meeting agenda have been discussed and for how long.
 
 ### The three topic statuses
 
@@ -498,6 +498,8 @@ This removes dependence on model-side time math and makes durations reproducible
 - `topic_key_points`: grouped key points by topic, `utterance_ids`, origin (`Agenda` or `Inferred`), with `estimated_duration_minutes` resolved deterministically in backend.
 - `topic_breakdown`: UI timeline data (`name`, `planned_min`, `actual_min`, `status`, `over_under_min`).
 - `agenda_adherence_pct`: computed when planned minutes exist, using continuous adherence formula `sum(min(actual, planned)) / sum(planned)`.
+- `meeting_insights`: deterministic analytics from transcript turns (speaking balance, turn-taking, pace, and health score).
+- `keyword_index`: merged/deduplicated keyword list from model keywords, key terms, entities, and transcript usage counts.
 
 ---
 

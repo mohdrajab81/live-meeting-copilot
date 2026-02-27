@@ -434,20 +434,6 @@ This means a failed agent call never corrupts stored topic state. ✓
 
 ---
 
-## Known Minor Code Note
-
-In `_apply_merge_unlocked`, the `covered→active` reopen branch has a duplicate
-assignment (no functional impact):
-
-```python
-if prev_status == "covered" and incoming_presence and incoming_confidence >= threshold:
-    next_status = "active"
-    next_status = "active"   # ← duplicate, harmless
-    status_reason = "reopened"
-```
-
----
-
 ## Design Decisions (Intentional Behaviours)
 
 | Behaviour | Reason |

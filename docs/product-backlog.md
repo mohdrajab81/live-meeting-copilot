@@ -41,7 +41,7 @@ We already extract `key_terms_defined` from the LLM. Add discoverability.
 
 - Deduplicated keyword list from transcript + defined terms in summary runs. ✅ v1 shipped
 - Click a keyword to jump to matching transcript lines (timestamp anchor). ✅ v1 shipped
-- Searchable filter box on the Transcript tab.
+- Searchable filter box on the Transcript tab. ✅ v1 shipped
 - Export keyword list with definitions in summary JSON/TXT. ✅ v1 shipped
 
 ### 3. Voice recording

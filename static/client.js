@@ -2441,7 +2441,7 @@
     if (cfgCoachTriggerSpeaker) {
       cfgCoachTriggerSpeaker.disabled = disableTriggerSpeaker;
       cfgCoachTriggerSpeaker.title = disableAllCoachInputs
-        ? "Enable Auto Interview Coach to edit this."
+        ? "Enable Auto Coach to edit this."
         : (!isDual ? "In Single Input mode, trigger speaker selection is not used." : "");
     }
     if (cfgCoachCooldownSec) cfgCoachCooldownSec.disabled = disableAllCoachInputs;

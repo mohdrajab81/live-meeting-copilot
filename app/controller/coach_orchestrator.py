@@ -148,11 +148,11 @@ class CoachOrchestrator:
         if session_start:
             return "\n".join(
                 [
-                    "You are my live interview copilot.",
+                    "You are my live meeting copilot.",
                     "Use my stored profile knowledge from the connected agent tools.",
                     instruction,
                     "",
-                    "Latest interviewer utterance:",
+                    "Latest remote-speaker utterance:",
                     f"{trigger_label}: {trigger_en}",
                     "",
                     "Session transcript update:",
@@ -167,7 +167,7 @@ class CoachOrchestrator:
             )
         return "\n".join(
             [
-                "Latest interviewer utterance:",
+                "Latest remote-speaker utterance:",
                 f"{trigger_label}: {trigger_en}",
                 "",
                 "Session transcript update:",

@@ -1,8 +1,8 @@
-Live Interview Translator
-=========================
+Live Meeting Copilot
+====================
 
-Real-time interview assistant built with FastAPI.
-It captures live speech, streams EN transcript, optionally adds AR translation, supports optional AI coach hints, and tracks meeting topics with a dedicated topic-tracker agent.
+Real-time meeting intelligence assistant built with FastAPI.
+It captures live speech, streams EN transcript, optionally adds AR translation, supports optional AI coaching hints, and tracks meeting topics with a dedicated topic-tracker agent.
 
 Features
 --------
@@ -21,6 +21,23 @@ Features
 - Optional coach agent (manual ask + auto-trigger on final turns).
 - Optional topic tracker agent (manual and scheduled analysis).
 
+Core Guides
+-----------
+- Quick start: `docs/QUICK_START_GUIDE.md`
+- Azure setup: `docs/AZURE_PROVISIONING.md`
+- System definition + agent instruction ownership: `docs/SYSTEM_DEFINITION.md`
+- Dual-channel routing (mic + remote): `docs/DUAL_MODE_SETUP.md`
+- Packaging: `docs/deployment-package.md`
+
+Distribution Artifacts
+----------------------
+- Slim package (internet install on target machine):
+  - `dist\live-meeting-copilot-deploy.zip`
+- Offline package (no internet install on target machine):
+  - `dist\live-meeting-copilot-offline.zip`
+- Portable EXE package (no Python install on target machine):
+  - `dist\live-meeting-copilot-exe.zip`
+
 Current Architecture (at a glance)
 ----------------------------------
 - `app/main.py`: app bootstrap/lifespan, router + websocket mounting.
@@ -28,6 +45,7 @@ Current Architecture (at a glance)
 - `app/controller/session_manager.py`: session lifecycle, speech event handling, watchdog.
 - `app/controller/coach_orchestrator.py`: coach trigger/prompt scheduling and async runs.
 - `app/controller/topic_orchestrator.py`: topic configuration/state, agent calls, merge logic.
+- `app/controller/summary_orchestrator.py`: summary generation state, orchestration, and broadcasting.
 - `app/controller/transcript_store.py`: transcript state + translation telemetry aggregation.
 - `app/controller/config_store.py`: runtime config load/save/reset/reload.
 - `app/controller/broadcast_service.py`: websocket connections + logs + debug traces.
@@ -36,6 +54,8 @@ Current Architecture (at a glance)
 - `app/services/coach.py`: Azure AI Foundry coach client.
 - `app/services/topic_tracker.py`: Azure AI Foundry topic tracker client.
 - `app/services/summary.py`: Azure AI Foundry summary client.
+- `app/services/meeting_insights.py`: deterministic speaking-balance/pace/health + keyword index.
+- `app/services/topic_summary.py`: deterministic topic duration resolution + breakdown builders.
 
 Prerequisites
 -------------
@@ -65,6 +85,9 @@ TRANSLATOR_REGION="eastus"
 TRANSLATOR_ENDPOINT="https://api.cognitive.microsofttranslator.com"
 TRANSLATION_COST_PER_MILLION_USD="10.0"
 ```
+Notes:
+- `TRANSLATION_COST_PER_MILLION_USD` is optional.
+- If omitted/empty, translation cost estimate stays disabled.
 
 Optional coach agent:
 
@@ -156,6 +179,7 @@ WebSocket
 ---------
 - Endpoint: `ws://127.0.0.1:8000/ws`
 - Sends snapshot immediately on connect, then incremental events:
+  - `snapshot`
   - `status`
   - `partial`
   - `final`
@@ -166,6 +190,8 @@ WebSocket
   - `summary`
   - `summary_cleared`
   - `log`
+Snapshot notes:
+- Includes `recording` status payload from session state for UI controls/indicators.
 
 Runtime Config (`PUT /api/config`)
 ----------------------------------
@@ -179,6 +205,7 @@ Key fields:
 - `translation_enabled`
 - `summary_enabled`
 - `coach_enabled`, `coach_trigger_speaker`, `coach_cooldown_sec`, `coach_max_turns`, `coach_instruction`
+  - `coach_trigger_speaker` valid values: `remote|local|default|any`
 - `partial_translate_min_interval_sec`
 - `auto_stop_silence_sec`
 - `max_session_sec`
@@ -212,6 +239,9 @@ Troubleshooting
 - Audio device errors:
   - verify Windows microphone permissions
   - test default input first, then explicit device IDs
+  - for dual mode routing, follow `docs/DUAL_MODE_SETUP.md`
+  - if remote audio is not audible on speakers/headset, follow the monitoring fix in `docs/DUAL_MODE_SETUP.md`
+  - if local/remote bleed appears, apply the audio-enhancement disable guidance in `docs/DUAL_MODE_SETUP.md`
 - Azure auth issues (coach/topics):
   - `az logout`
   - `az login --tenant "<tenant-id>" --scope "https://ai.azure.com/.default"`

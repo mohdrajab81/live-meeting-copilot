@@ -1,8 +1,8 @@
-# Live Interview Translator - Low-Level Design
+# Live Meeting Copilot - Low-Level Design
 
 ## 1. Scope and goals
 The system captures live speech, produces EN transcript, optionally translates EN->AR, broadcasts updates to the UI, and can invoke three optional agent features:
-- interview coach hints,
+- conversation coach hints,
 - meeting topic tracking,
 - session summary generation.
 
@@ -16,7 +16,7 @@ Primary goals:
 
 ### 2.1 Entry, API, and auth
 - `app/main.py`: creates FastAPI app, wires lifespan, starts translation worker, starts watchdog.
-- `app/api/routes.py`: authenticated REST endpoints for config, session, coach, topics.
+- `app/api/routes.py`: authenticated REST endpoints for config, session, coach, topics, and summary.
 - `app/api/websocket.py`: authenticated websocket endpoint; sends snapshot on connect.
 - `app/api/auth.py`: loopback-only fallback or token-based auth (`API_AUTH_TOKEN`).
 
@@ -54,11 +54,13 @@ Primary goals:
 - `app/services/coach.py`: Azure AI Foundry coach client with conversation continuity.
 - `app/services/topic_tracker.py`: Azure AI Foundry topic tracker client with retry + JSON extraction.
 - `app/services/summary.py`: Azure AI Foundry summary client with structured JSON extraction.
+- `app/services/meeting_insights.py`: deterministic analytics + keyword index computation.
+- `app/services/topic_summary.py`: deterministic summary-topic duration and breakdown helpers.
 
 ## 3. Concurrency and lock model
 
 ### 3.1 Shared state lock
-`SessionManager`, `TranscriptStore`, `CoachOrchestrator`, and `TopicOrchestrator` share one `threading.RLock` from `AppController`.
+`SessionManager`, `TranscriptStore`, `CoachOrchestrator`, `TopicOrchestrator`, and `SummaryOrchestrator` share one `threading.RLock` from `AppController`.
 
 ### 3.2 Independent state
 - `BroadcastService` is loop-owned (connection mutations on event loop).
@@ -105,7 +107,8 @@ Summary payload includes:
 - `executive_summary`, `key_points`, `action_items`,
 - `topic_key_points` (topic-grouped key points with `utterance_ids`, backend-computed estimated duration, and origin),
 - `decisions_made`, `risks_and_blockers`, `key_terms_defined`, `metadata`,
-- `topic_breakdown`, `agenda_adherence_pct`.
+- `topic_breakdown`, `agenda_adherence_pct`,
+- `meeting_insights`, `keyword_index`.
 
 ## 5. Translation design details
 
@@ -136,7 +139,7 @@ Per speaker:
 ## 6. Coach design details
 - Triggered on final turns based on `coach_trigger_speaker` and cooldown.
 - Prompt built from transcript delta (`coach_last_sent_final_idx -> end`), trimmed by `coach_max_turns`.
-- Uses conversation continuity (`conversations.create()`).
+- Uses conversation continuity via carried `conversation_id` (with `previous_response_id` fallback when needed).
 - If a trigger arrives while busy, only latest trigger is kept.
 - Manual asks (`/api/coach/ask`) run in same conversation session.
 
@@ -200,4 +203,6 @@ Runs once per second:
 - Stop/reset during heavy partial load (stale translation guard).
 - Coach enabled/disabled, cooldown, queue-latest behavior.
 - Topics manual + auto runs, allow-new on/off, context resets.
+- Summary auto-on-stop, manual `/api/summary/generate`, and `/api/summary/from-transcript`.
+- Deterministic topic duration resolution from `utterance_ids` and adherence computation.
 - Auth modes: loopback-only and token-required.

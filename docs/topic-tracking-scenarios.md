@@ -47,7 +47,7 @@ previous session's timeline, inflating `chunk_seconds` with the inter-session ga
 - `topics_session_started_ts` set on Start
 - `topics_last_run_ts = 0 < topics_session_started_ts` → first chunk clamped to session start
 - Periodic runs use `prev_ts` boundary as normal
-- **Stop**: `stop_async()` → final flush → `finalize_on_stop_unlocked()` → active→covered
+- **Stop**: `stop_async()` → final topic flush → summary run → `finalize_on_stop_unlocked()` → active→covered
 
 ### 2. Single-statement first chunk (was broken)
 **Bug**: `chunk_seconds = last_ts − first_ts = 0` for a single-statement chunk.
@@ -121,8 +121,8 @@ calling it on an already-finalised session is a no-op.
 
 | Trigger | Path to `_do_finalize()` |
 |---|---|
-| User presses Stop (API) | `POST /stop` → `controller.stop_async()` → `session_manager.stop_async()` → `_do_finalize()` |
-| Watchdog auto-stop | `watchdog_loop` → `await self.stop_async()` → `_do_finalize()` |
+| User presses Stop (API) | `POST /stop` → `controller.stop_async()` → `session_manager.stop_async()` → final topic flush → `run_summary()` → `_do_finalize()` |
+| Watchdog auto-stop | `watchdog_loop` → `await self.stop_async()` → final topic flush → `run_summary()` → `_do_finalize()` |
 | SDK stops itself | `handle_speech_event("status", running=False)` → `_do_finalize()` |
 
 **Note**: on a user-pressed Stop, `_do_finalize()` is called twice — once from
@@ -132,9 +132,9 @@ with identical data.
 
 ---
 
-## Final Flush on Stop (`stop_async`)
+## Final Flush + Summary on Stop (`stop_async`)
 
-`stop_async()` runs one final agent call before `_do_finalize()` to capture any
+`stop_async()` runs one final topic-agent call before summary/finalize to capture any
 transcript turns that arrived after the last periodic run:
 
 ```python
@@ -151,12 +151,16 @@ async def stop_async(self) -> bool:
             await asyncio.wait_for(run_update(topic_call), timeout=30.0)
         except Exception:
             pass  # flush failure must not block cleanup
+    try:
+        await asyncio.wait_for(run_summary(), timeout=60.0)
+    except Exception:
+        pass  # summary failure must not block cleanup
     self._do_finalize()
     return True
 ```
 
 If no new finals exist since the last run, `prepare_call_unlocked` returns `None` and
-the stop is instant (same latency as before this change).
+the topic-flush step is skipped. Summary still runs when enabled and configured.
 
 ---
 

@@ -1,7 +1,7 @@
 # Architecture Summary
 
 ## Purpose
-Live interview translator that:
+Live meeting copilot that:
 - captures speech (single or dual input),
 - emits live EN transcript,
 - optionally translates EN->AR asynchronously,
@@ -37,6 +37,8 @@ Live interview translator that:
 - `app/services/coach.py`: Azure AI Foundry coach agent client.
 - `app/services/topic_tracker.py`: Azure AI Foundry topic tracker agent client.
 - `app/services/summary.py`: Azure AI Foundry summary agent client.
+- `app/services/meeting_insights.py`: deterministic meeting insights and keyword index builders.
+- `app/services/topic_summary.py`: deterministic topic duration/breakdown helpers for summary flows.
 
 ## Runtime flows
 
@@ -99,9 +101,13 @@ Live interview translator that:
 - Coach:
   - trigger policy + cooldown,
   - queue-latest while busy.
+  - API rate limit on manual ask endpoint.
 - Topics:
   - confidence threshold and merge controls in orchestrator,
   - API rate limit on manual analyze-now endpoint.
+- Summary:
+  - API rate limit on generate/from-file endpoints.
+  - deterministic post-processing for durations, topic breakdown, and adherence.
 
 ## Concurrency model
 - Speech SDK callbacks run on background threads.
@@ -114,5 +120,7 @@ Live interview translator that:
 1. `app/controller/__init__.py`
 2. `app/controller/session_manager.py`
 3. `app/controller/topic_orchestrator.py`
-4. `app/services/translation_pipeline.py`
-5. `docs/low-level-design.md`
+4. `app/controller/summary_orchestrator.py`
+5. `app/controller/broadcast_service.py`
+6. `app/services/translation_pipeline.py`
+7. `docs/low-level-design.md`

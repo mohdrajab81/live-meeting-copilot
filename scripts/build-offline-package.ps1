@@ -1,5 +1,6 @@
 param(
-  [string]$OutputZip = "dist/live-meeting-copilot-deploy.zip"
+  [string]$OutputZip = "dist/live-meeting-copilot-offline.zip",
+  [string]$PythonCmd = "python"
 )
 
 $ErrorActionPreference = "Stop"
@@ -7,7 +8,8 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $outputPath = Join-Path $repoRoot $OutputZip
 $distDir = Split-Path -Parent $outputPath
-$stageDir = Join-Path $distDir "_stage"
+$stageDir = Join-Path $distDir "_stage_offline"
+$wheelhouseDir = Join-Path $stageDir "wheelhouse"
 $legacyZip = Join-Path $distDir "live-interview-translator-deploy.zip"
 
 if (-not (Test-Path $distDir)) {
@@ -23,8 +25,8 @@ if (Test-Path $stageDir) {
   Remove-Item -Recurse -Force $stageDir
 }
 New-Item -ItemType Directory -Path $stageDir | Out-Null
+New-Item -ItemType Directory -Path $wheelhouseDir | Out-Null
 
-# Keep default package slim (internet install path).
 $items = @(
   "app",
   "static",
@@ -69,6 +71,10 @@ Get-ChildItem -Path $stageDir -Recurse -Directory -Filter "__pycache__" -ErrorAc
 Get-ChildItem -Path $stageDir -Recurse -Include *.pyc,*.pyo -File -ErrorAction SilentlyContinue |
   Remove-Item -Force -ErrorAction SilentlyContinue
 
+$requirementsPath = Join-Path $repoRoot "requirements.txt"
+Write-Host "Downloading dependency wheels for offline install..." -ForegroundColor Cyan
+& $PythonCmd -m pip download --dest $wheelhouseDir --requirement $requirementsPath --prefer-binary
+
 if (Test-Path $outputPath) {
   Remove-Item -Force $outputPath
 }
@@ -76,4 +82,4 @@ if (Test-Path $outputPath) {
 Compress-Archive -Path (Join-Path $stageDir "*") -DestinationPath $outputPath -CompressionLevel Optimal
 Remove-Item -Recurse -Force $stageDir
 
-Write-Host "Deployment package created: $outputPath"
+Write-Host "Offline deployment package created: $outputPath"
