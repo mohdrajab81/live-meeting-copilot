@@ -133,6 +133,169 @@ def test_normalize_action_items_due_date_none_when_blank():
 
 
 # ---------------------------------------------------------------------------
+# _normalize_string_list
+# ---------------------------------------------------------------------------
+
+def test_normalize_string_list_strips_and_filters():
+    svc = _make_service()
+    result = svc._normalize_string_list(["  decision 1  ", "", "  ", "decision 2"])
+    assert result == ["decision 1", "decision 2"]
+
+
+def test_normalize_string_list_skips_none_and_empty():
+    svc = _make_service()
+    # None coerces to "" and is filtered; integers stringify to non-empty so are kept
+    result = svc._normalize_string_list([None, "", "  ", "valid"])
+    assert result == ["valid"]
+
+
+def test_normalize_string_list_empty_input():
+    svc = _make_service()
+    assert svc._normalize_string_list([]) == []
+
+
+# ---------------------------------------------------------------------------
+# _normalize_key_terms
+# ---------------------------------------------------------------------------
+
+def test_normalize_key_terms_full():
+    svc = _make_service()
+    items = [{"term": "API", "definition": "Application Programming Interface"}]
+    result = svc._normalize_key_terms(items)
+    assert len(result) == 1
+    assert result[0]["term"] == "API"
+    assert result[0]["definition"] == "Application Programming Interface"
+
+
+def test_normalize_key_terms_skips_empty_term():
+    svc = _make_service()
+    result = svc._normalize_key_terms([{"term": "", "definition": "something"}])
+    assert result == []
+
+
+def test_normalize_key_terms_skips_non_dict():
+    svc = _make_service()
+    result = svc._normalize_key_terms(["not a dict", 42])
+    assert result == []
+
+
+def test_normalize_key_terms_allows_empty_definition():
+    svc = _make_service()
+    result = svc._normalize_key_terms([{"term": "MVP", "definition": ""}])
+    assert len(result) == 1
+    assert result[0]["definition"] == ""
+
+
+# ---------------------------------------------------------------------------
+# _normalize_topic_key_points
+# ---------------------------------------------------------------------------
+
+def test_normalize_topic_key_points_full():
+    svc = _make_service()
+    items = [
+        {
+            "topic_name": "Intro",
+            "estimated_duration_minutes": "3.25",
+            "origin": "Agenda",
+            "key_points": ["A", "B"],
+        }
+    ]
+    result = svc._normalize_topic_key_points(items)
+    assert len(result) == 1
+    assert result[0]["topic_name"] == "Intro"
+    assert result[0]["estimated_duration_minutes"] == 3.2
+    assert result[0]["origin"] == "Agenda"
+    assert result[0]["key_points"] == ["A", "B"]
+
+
+def test_normalize_topic_key_points_defaults_origin_inferred():
+    svc = _make_service()
+    items = [{"topic_name": "Deep Dive", "estimated_duration_minutes": 5, "key_points": []}]
+    result = svc._normalize_topic_key_points(items)
+    assert result[0]["origin"] == "Inferred"
+
+
+def test_normalize_topic_key_points_skips_missing_topic_name():
+    svc = _make_service()
+    result = svc._normalize_topic_key_points([{"topic_name": "", "key_points": ["x"]}])
+    assert result == []
+
+
+# ---------------------------------------------------------------------------
+# _normalize_metadata
+# ---------------------------------------------------------------------------
+
+def test_normalize_metadata_extracts_valid_fields():
+    svc = _make_service()
+    result = svc._normalize_metadata({"meeting_type": "Interview", "sentiment_arc": "Positive"})
+    assert result["meeting_type"] == "Interview"
+    assert result["sentiment_arc"] == "Positive"
+
+
+def test_normalize_metadata_rejects_invalid_meeting_type():
+    svc = _make_service()
+    result = svc._normalize_metadata({"meeting_type": "Unknown Type", "sentiment_arc": None})
+    assert result["meeting_type"] == ""
+
+
+def test_normalize_metadata_handles_empty_dict():
+    svc = _make_service()
+    result = svc._normalize_metadata({})
+    assert result.get("meeting_type") == ""
+    assert result.get("sentiment_arc") is None
+
+
+def test_normalize_metadata_handles_non_dict():
+    svc = _make_service()
+    result = svc._normalize_metadata(None)
+    assert result.get("meeting_type") == ""
+
+
+def test_normalize_metadata_strips_whitespace_from_sentiment():
+    svc = _make_service()
+    result = svc._normalize_metadata({"meeting_type": "General", "sentiment_arc": "  calm  "})
+    assert result["sentiment_arc"] == "calm"
+
+
+# ---------------------------------------------------------------------------
+# _extract_structured — new fields
+# ---------------------------------------------------------------------------
+
+def test_extract_structured_new_fields_all_present():
+    svc = _make_service()
+    payload = {
+        "executive_summary": "Good meeting.",
+        "key_points": ["p1"],
+        "topic_key_points": [
+            {"topic_name": "Intro", "estimated_duration_minutes": 2, "origin": "Inferred", "key_points": ["p1"]}
+        ],
+        "action_items": [],
+        "decisions_made": ["Approved budget"],
+        "risks_and_blockers": ["Timeline tight"],
+        "key_terms_defined": [{"term": "MVP", "definition": "Minimum Viable Product"}],
+        "metadata": {"meeting_type": "Project Management", "sentiment_arc": "Positive"},
+    }
+    result = svc._extract_structured(json.dumps(payload))
+    assert result["decisions_made"] == ["Approved budget"]
+    assert result["risks_and_blockers"] == ["Timeline tight"]
+    assert result["key_terms_defined"][0]["term"] == "MVP"
+    assert result["metadata"]["meeting_type"] == "Project Management"
+    assert result["topic_key_points"][0]["topic_name"] == "Intro"
+
+
+def test_extract_structured_new_fields_absent_does_not_raise():
+    svc = _make_service()
+    payload = {"executive_summary": "Summary.", "key_points": [], "action_items": []}
+    result = svc._extract_structured(json.dumps(payload))
+    # Missing new fields must not raise — they'll be handled as None in generate()
+    assert result.get("decisions_made") is None
+    assert result.get("risks_and_blockers") is None
+    assert result.get("key_terms_defined") is None
+    assert result.get("metadata") is None
+    assert result.get("topic_key_points") is None
+
+
+# ---------------------------------------------------------------------------
 # from_environment
 # ---------------------------------------------------------------------------
 

@@ -12,24 +12,60 @@ class SummaryResult:
     executive_summary: str
     key_points: list[str]
     action_items: list[dict[str, Any]]
+    topic_key_points: list[dict[str, Any]]
+    decisions_made: list[str]
+    risks_and_blockers: list[str]
+    key_terms_defined: list[dict[str, Any]]
+    metadata: dict[str, Any]
     total_ms: int
     response_id: str | None
 
 
 _PROMPT_TEMPLATE = """\
-You are a meeting summarizer. Analyze the following interview or meeting transcript and \
-respond with ONLY a JSON object — no markdown, no commentary — matching this schema exactly:
+You are a meeting intelligence analyst. Analyze the meeting transcript below. \
+Timestamps show elapsed time from session start in [MM:SS] format. \
+Respond with ONLY a valid JSON object — no markdown, no commentary.
+
+Schema:
 {{
-  "executive_summary": "<one concise paragraph summarizing what was discussed>",
+  "metadata": {{
+    "meeting_type": "<one of: Interview, Project Management, Training, Executive, General>",
+    "sentiment_arc": "<one sentence describing tone progression, or null>"
+  }},
+  "executive_summary": "<one concise paragraph summarizing the core outcome>",
   "key_points": ["<point 1>", "<point 2>"],
+  "topic_key_points": [
+    {{
+      "topic_name": "<topic title>",
+      "estimated_duration_minutes": "<number or null>",
+      "origin": "<Agenda or Inferred>",
+      "key_points": ["<point 1>", "<point 2>"]
+    }}
+  ],
   "action_items": [
-    {{"item": "<action description>", "owner": "<name or role>", "due_date": "<YYYY-MM-DD or null>"}}
+    {{"item": "<action>", "owner": "<name or role, or null>", "due_date": "<YYYY-MM-DD or null>"}}
+  ],
+  "decisions_made": ["<explicit decision 1>"],
+  "risks_and_blockers": ["<explicit risk or blocker 1>"],
+  "key_terms_defined": [
+    {{"term": "<term>", "definition": "<definition as stated in the transcript>"}}
   ]
 }}
 
 Rules:
 - key_points: max 10 items, each a single sentence.
-- action_items: only include explicit commitments or follow-ups mentioned. Empty array if none.
+- topic_key_points: always return an array (or []). Group key points under major topics.
+- If AGENDA COVERAGE is present, use those topic names and durations where possible.
+- If AGENDA COVERAGE is not present, infer topics from timestamp flow and estimate duration per topic in minutes.
+- action_items: only explicit commitments or follow-ups. Empty array [] if none.
+- decisions_made: only finalized decisions explicitly stated. Empty array [] if none.
+- risks_and_blockers: only explicitly mentioned risks, blockers, or concerns. Empty array [] if none.
+- key_terms_defined: only terms explicitly explained or defined in the transcript. Empty array [] if none.
+- metadata.sentiment_arc: one sentence max, or null if transcript is too short.
+- NO hallucinations: do not invent items not present in the transcript text.
+- If an AGENDA COVERAGE section precedes the transcript, use it to inform the executive_summary \
+and key_points (e.g. note over-time topics or skipped items). Do not recompute durations — \
+treat the section as verified facts.
 - Respond with valid JSON only — no surrounding text.
 
 TRANSCRIPT:
@@ -103,6 +139,13 @@ class SummaryService:
             executive_summary=str(structured.get("executive_summary", "") or ""),
             key_points=[str(p) for p in (structured.get("key_points") or []) if p],
             action_items=self._normalize_action_items(structured.get("action_items") or []),
+            topic_key_points=self._normalize_topic_key_points(
+                structured.get("topic_key_points") or []
+            ),
+            decisions_made=self._normalize_string_list(structured.get("decisions_made") or []),
+            risks_and_blockers=self._normalize_string_list(structured.get("risks_and_blockers") or []),
+            key_terms_defined=self._normalize_key_terms(structured.get("key_terms_defined") or []),
+            metadata=self._normalize_metadata(structured.get("metadata") or {}),
             total_ms=total_ms,
             response_id=response_id,
         )
@@ -142,6 +185,68 @@ class SummaryService:
                     "item": action_text,
                     "owner": str(item.get("owner", "") or "").strip(),
                     "due_date": str(item.get("due_date", "") or "").strip() or None,
+                }
+            )
+        return result
+
+    def _normalize_string_list(self, items: list[Any]) -> list[str]:
+        result = []
+        for item in items:
+            text = " ".join(str(item or "").split()).strip()
+            if text:
+                result.append(text)
+        return result
+
+    def _normalize_key_terms(self, items: list[Any]) -> list[dict[str, Any]]:
+        result = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            term = " ".join(str(item.get("term", "") or "").split()).strip()
+            if not term:
+                continue
+            definition = " ".join(str(item.get("definition", "") or "").split()).strip()
+            result.append({"term": term, "definition": definition})
+        return result
+
+    def _normalize_metadata(self, raw: Any) -> dict[str, Any]:
+        if not isinstance(raw, dict):
+            return {"meeting_type": "", "sentiment_arc": None}
+        valid_types = {"Interview", "Project Management", "Training", "Executive", "General"}
+        meeting_type = str(raw.get("meeting_type", "") or "").strip()
+        if meeting_type not in valid_types:
+            meeting_type = ""
+        sentiment = raw.get("sentiment_arc")
+        sentiment_arc = " ".join(str(sentiment or "").split()).strip() or None
+        return {"meeting_type": meeting_type, "sentiment_arc": sentiment_arc}
+
+    def _normalize_topic_key_points(self, items: list[Any]) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            topic_name = " ".join(str(item.get("topic_name", "") or "").split()).strip()
+            if not topic_name:
+                continue
+            est_raw = item.get("estimated_duration_minutes")
+            estimated_duration_minutes: float | None = None
+            if est_raw is not None and str(est_raw).strip() != "":
+                try:
+                    estimated_duration_minutes = max(0.0, round(float(est_raw), 1))
+                except (TypeError, ValueError):
+                    estimated_duration_minutes = None
+            origin = " ".join(str(item.get("origin", "") or "").split()).strip().lower()
+            if origin == "agenda":
+                origin_value = "Agenda"
+            else:
+                origin_value = "Inferred"
+            key_points = self._normalize_string_list(list(item.get("key_points") or []))
+            result.append(
+                {
+                    "topic_name": topic_name,
+                    "estimated_duration_minutes": estimated_duration_minutes,
+                    "origin": origin_value,
+                    "key_points": key_points,
                 }
             )
         return result

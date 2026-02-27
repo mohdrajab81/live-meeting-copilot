@@ -587,3 +587,158 @@ class TestGetSummary:
         tc, ctrl = client
         tc.get("/api/summary")
         ctrl.summary_snapshot.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# POST /api/summary/from-transcript
+# ---------------------------------------------------------------------------
+
+_VALID_CSV = (
+    "index,speaker,speaker_label,time_local,time_unix_sec,bookmarked,bookmark_note,english,arabic\n"
+    "0,A,Interviewer,2024-01-01 10:00:00,1704067200.0,False,,Hello world,\n"
+    "1,B,Candidate,2024-01-01 10:01:00,1704067260.0,False,,Thank you for having me,\n"
+)
+
+_MOCK_RESULT = MagicMock(
+    executive_summary="Good meeting.",
+    key_points=["Point A"],
+    action_items=[],
+    topic_key_points=[{"topic_name": "Intro", "estimated_duration_minutes": 2.0, "origin": "Inferred", "key_points": ["Point A"]}],
+    decisions_made=["Decision 1"],
+    risks_and_blockers=[],
+    key_terms_defined=[],
+    metadata={"meeting_type": "interview", "sentiment_arc": None},
+    total_ms=1234,
+)
+
+
+class TestSummaryFromTranscript:
+    def _post(self, tc, csv_text=_VALID_CSV, filename="transcript.csv"):
+        return tc.post(
+            "/api/summary/from-transcript",
+            files={"file": (filename, csv_text.encode(), "text/csv")},
+        )
+
+    def test_returns_200_on_valid_csv(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, ctrl = client
+        ctrl.summary_service.generate = MagicMock(return_value=_MOCK_RESULT)
+        r = self._post(tc)
+        assert r.status_code == 200
+
+    def test_response_shape(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, ctrl = client
+        ctrl.summary_service.generate = MagicMock(return_value=_MOCK_RESULT)
+        data = self._post(tc).json()
+        assert data.get("ok") is True
+        result = data.get("result", {})
+        for key in ("executive_summary", "key_points", "action_items",
+                    "topic_key_points", "topic_breakdown", "agenda_adherence_pct",
+                    "decisions_made", "risks_and_blockers", "key_terms_defined",
+                    "metadata", "total_ms"):
+            assert key in result, f"missing key: {key}"
+
+    def test_returns_412_when_not_configured(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, ctrl = client
+        ctrl.summary_service.is_configured = False
+        r = self._post(tc)
+        assert r.status_code == 412
+
+    def test_returns_413_when_file_too_large(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, ctrl = client
+        big = "x" * (5 * 1024 * 1024 + 2)
+        r = self._post(tc, csv_text=big)
+        assert r.status_code == 413
+
+    def test_returns_400_on_empty_transcript(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, ctrl = client
+        # CSV with headers but no usable rows
+        empty_csv = "index,speaker,speaker_label,time_local,time_unix_sec,bookmarked,bookmark_note,english,arabic\n"
+        r = self._post(tc, csv_text=empty_csv)
+        assert r.status_code == 400
+
+    def test_returns_400_on_non_utf8(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, ctrl = client
+        r = tc.post(
+            "/api/summary/from-transcript",
+            files={"file": ("t.csv", b"\xff\xfe invalid latin1", "text/csv")},
+        )
+        assert r.status_code == 400
+
+    def test_returns_502_when_generate_raises(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, ctrl = client
+        ctrl.summary_service.generate = MagicMock(side_effect=RuntimeError("Azure down"))
+        r = self._post(tc)
+        assert r.status_code == 502
+
+    def test_rate_limit_returns_429(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, ctrl = client
+        ctrl.summary_service.generate = MagicMock(return_value=_MOCK_RESULT)
+        self._post(tc)
+        self._post(tc)
+        r = self._post(tc)
+        assert r.status_code == 429
+
+    def test_shares_rate_limit_pool_with_generate(self, client, monkeypatch):
+        """Consuming the pool via /generate should block /from-transcript."""
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, ctrl = client
+        ctrl.summary_service.generate = MagicMock(return_value=_MOCK_RESULT)
+        tc.post("/api/summary/generate")
+        tc.post("/api/summary/generate")
+        r = self._post(tc)
+        assert r.status_code == 429
+
+    def test_does_not_mutate_session_summary(self, client, monkeypatch):
+        """from-transcript must NOT call generate_summary on the controller."""
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, ctrl = client
+        ctrl.summary_service.generate = MagicMock(return_value=_MOCK_RESULT)
+        self._post(tc)
+        ctrl.generate_summary.assert_not_called()
+
+    def test_strips_bom_from_utf8_sig(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, ctrl = client
+        ctrl.summary_service.generate = MagicMock(return_value=_MOCK_RESULT)
+        bom_csv = b"\xef\xbb\xbf" + _VALID_CSV.encode()
+        r = tc.post(
+            "/api/summary/from-transcript",
+            files={"file": ("t.csv", bom_csv, "text/csv")},
+        )
+        assert r.status_code == 200
+
+    def test_accepts_topics_definitions_json_and_passes_context(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, ctrl = client
+        ctrl.summary_service.generate = MagicMock(return_value=_MOCK_RESULT)
+        defs = '[{"name":"Introduction","expected_duration_min":5}]'
+        r = tc.post(
+            "/api/summary/from-transcript",
+            files={"file": ("t.csv", _VALID_CSV.encode(), "text/csv")},
+            data={"topics_definitions_json": defs},
+        )
+        assert r.status_code == 200
+        ctrl.summary_service.generate.assert_called_once()
+        arg = ctrl.summary_service.generate.call_args.args[0]
+        assert "EXPECTED AGENDA TOPICS (user-defined):" in arg
+        assert "Introduction (5 min planned)" in arg

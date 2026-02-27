@@ -89,6 +89,10 @@ class AppController:
             broadcast_log=self.broadcast_svc.broadcast_log,
             get_finals=self.transcript_store.get_finals,
             get_config=self.config_store.get,
+            get_topics=lambda: (
+                [dict(d) for d in self.topic_orch.topics_definitions],
+                [dict(i) for i in self.topic_orch.topics_items],
+            ),
         )
 
         self.session_mgr = SessionManager(

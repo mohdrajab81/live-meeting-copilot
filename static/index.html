@@ -326,6 +326,7 @@
                 </div>
                 <div class="control-row summary-controls">
                   <button id="summaryGenerateBtn" class="btn" type="button">Generate Now</button>
+                  <button id="summaryFromFileBtn" class="btn btn-dim" type="button" title="Analyse a previously exported transcript CSV">From File</button>
                   <button id="summaryClearBtn" class="btn btn-soft-danger" type="button">Clear</button>
                   <div class="export-menu-wrap" data-export-menu-wrapper>
                     <button id="summaryExportMenuBtn" class="btn" type="button" aria-expanded="false" aria-controls="summaryExportMenu" disabled>Export</button>
@@ -342,6 +343,7 @@
               <div id="summaryError" class="summary-error hidden"></div>
               <div id="summaryEmpty" class="summary-empty-state">No summary yet. Summary is generated automatically when a session stops.</div>
               <div id="summaryBody" class="summary-body hidden">
+                <div id="summaryMetaRow" class="summary-meta-row hidden"></div>
                 <div class="card-shell summary-section">
                   <h3 class="summary-section-title">Executive Summary</h3>
                   <p id="summaryExecutiveText" class="summary-executive-text"></p>
@@ -353,6 +355,33 @@
                 <div class="card-shell summary-section">
                   <h3 class="summary-section-title">Action Items</h3>
                   <div id="summaryActionItemsList" class="summary-action-items-list"></div>
+                </div>
+                <div id="summaryDecisionsSection" class="card-shell summary-section hidden">
+                  <h3 class="summary-section-title">Decisions Made</h3>
+                  <ul id="summaryDecisionsList" class="summary-decisions-list"></ul>
+                </div>
+                <div id="summaryRisksSection" class="card-shell summary-section hidden">
+                  <h3 class="summary-section-title">Risks &amp; Blockers</h3>
+                  <ul id="summaryRisksList" class="summary-risks-list"></ul>
+                </div>
+                <div id="summaryTermsSection" class="card-shell summary-section hidden">
+                  <h3 class="summary-section-title">
+                    <button id="summaryTermsToggle" class="summary-section-toggle" type="button" aria-expanded="false">
+                      <span>Key Terms Defined</span>
+                      <span class="summary-toggle-icon" aria-hidden="true">&#9656;</span>
+                    </button>
+                  </h3>
+                  <div id="summaryTermsBody" class="summary-terms-body hidden">
+                    <dl id="summaryTermsList" class="summary-terms-list"></dl>
+                  </div>
+                </div>
+                <div id="summaryTopicSection" class="card-shell summary-section">
+                  <div class="summary-topic-header">
+                    <h3 class="summary-section-title">Topic Coverage</h3>
+                    <span id="summaryAdherenceChip" class="summary-meta-chip hidden"></span>
+                  </div>
+                  <div id="summaryTopicTimeline" class="summary-topic-timeline"></div>
+                  <p id="summaryTopicPlaceholder" class="summary-empty-state-inline">No agenda defined. Configure Topics Settings to enable coverage.</p>
                 </div>
               </div>
             </div>
@@ -720,6 +749,41 @@
   </div>
 
   <div id="toastHost" class="toast-host" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- File Analysis Modal -->
+  <dialog id="fileAnalysisModal" class="file-analysis-modal" aria-labelledby="fileModalTitle">
+    <div class="file-modal-inner">
+      <header class="file-modal-head">
+        <div>
+          <h2 id="fileModalTitle" class="file-modal-title">Analyse Saved Transcript</h2>
+          <p class="file-modal-subtitle">Upload an exported transcript CSV to generate a summary.</p>
+        </div>
+        <button id="fileModalCloseBtn" class="btn file-modal-close" type="button" aria-label="Close dialog">&#x2715;</button>
+      </header>
+
+      <div class="file-modal-upload-area">
+        <label id="fileDropZone" class="file-drop-zone" for="transcriptFileInput">
+          <span class="file-drop-icon" aria-hidden="true">&#128196;</span>
+          <span class="file-drop-text">Drop transcript CSV here or <span class="file-drop-link">browse</span></span>
+          <span class="file-drop-hint">Exported from this app &mdash; up to 5 MB</span>
+        </label>
+        <input id="transcriptFileInput" type="file" accept=".csv" class="file-input-hidden" aria-describedby="fileModalTitle">
+        <div id="fileModalFilename" class="file-modal-filename hidden"></div>
+      </div>
+
+      <div class="file-modal-analyse-row">
+        <button id="fileModalAnalyseBtn" class="btn" type="button" disabled>Analyse</button>
+      </div>
+
+      <div id="fileModalPending" class="summary-pending hidden">Analysing transcript&hellip;</div>
+      <div id="fileModalError" class="summary-error hidden"></div>
+      <div id="fileModalResults" class="file-modal-results hidden"></div>
+      <div id="fileModalExportRow" class="file-modal-export-row hidden">
+        <button id="fileModalExportJson" class="btn" type="button">Export JSON</button>
+        <button id="fileModalExportTxt" class="btn" type="button">Export TXT</button>
+      </div>
+    </div>
+  </dialog>
   <script src="/client.js?v=20260217s"></script>
 </body>
 </html>

@@ -1,10 +1,13 @@
 import asyncio
+import csv
+import io
+import json
 import threading
 import time
 from collections import deque
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from app.api.auth import require_http_auth
@@ -322,3 +325,178 @@ async def clear_summary(request: Request) -> dict:
 def get_summary(request: Request) -> dict:
     controller = request.app.state.controller
     return {"ok": True, "summary": controller.summary_snapshot()}
+
+
+@router.post("/summary/from-transcript")
+async def summary_from_transcript(
+    request: Request,
+    file: UploadFile,
+    topics_definitions_json: str | None = Form(default=None),
+) -> dict:
+    """Generate a summary from an uploaded transcript CSV (exported by this app).
+
+    Shares the same rate-limit pool as /summary/generate.
+    Does NOT mutate session state — result is returned directly in the response.
+    """
+    _enforce_rate_limit(
+        request,
+        lock=_summary_rate_lock,
+        buckets=_summary_rate_buckets,
+        window_sec=_summary_rate_window_sec,
+        limit=_summary_rate_limit,
+        detail="Rate limit exceeded. Try again in about a minute.",
+    )
+    controller = request.app.state.controller
+    if not controller.summary_service.is_configured:
+        raise HTTPException(
+            status_code=412,
+            detail="Summary agent not configured. Set SUMMARY_AGENT_ID and related env vars.",
+        )
+
+    _MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+    raw = await file.read(_MAX_BYTES + 1)
+    if len(raw) > _MAX_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 5 MB).")
+    try:
+        text = raw.decode("utf-8-sig")  # strips BOM if present
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded.")
+
+    try:
+        transcript_text = _parse_transcript_csv(text)
+    except Exception as ex:
+        raise HTTPException(status_code=400, detail=f"Could not parse CSV: {ex}")
+
+    if not transcript_text.strip():
+        raise HTTPException(status_code=400, detail="Transcript is empty after parsing.")
+
+    topic_defs = _parse_topics_definitions_json(topics_definitions_json)
+    agenda_context = _build_topics_definitions_context(topic_defs)
+    if agenda_context:
+        transcript_text = agenda_context + "\n\nTRANSCRIPT:\n" + transcript_text
+
+    try:
+        result = await asyncio.to_thread(
+            controller.summary_service.generate, transcript_text
+        )
+    except Exception as ex:
+        raise HTTPException(status_code=502, detail=f"Summary generation failed: {ex}")
+
+    return {
+        "ok": True,
+        "result": {
+            "executive_summary": result.executive_summary,
+            "key_points": result.key_points,
+            "action_items": result.action_items,
+            "topic_key_points": result.topic_key_points,
+            "decisions_made": result.decisions_made,
+            "risks_and_blockers": result.risks_and_blockers,
+            "key_terms_defined": result.key_terms_defined,
+            "metadata": result.metadata,
+            "topic_breakdown": _topic_breakdown_from_topic_groups(result.topic_key_points),
+            "agenda_adherence_pct": None,
+            "total_ms": result.total_ms,
+        },
+    }
+
+
+def _parse_topics_definitions_json(raw: str | None) -> list[dict[str, object]]:
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+    cleaned: list[dict[str, object]] = []
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "").strip()
+        if not name:
+            continue
+        try:
+            expected = max(0, int(row.get("expected_duration_min") or 0))
+        except (TypeError, ValueError):
+            expected = 0
+        cleaned.append({"name": name, "expected_duration_min": expected})
+    return cleaned
+
+
+def _build_topics_definitions_context(topic_defs: list[dict[str, object]]) -> str:
+    if not topic_defs:
+        return ""
+    lines = ["EXPECTED AGENDA TOPICS (user-defined):"]
+    for row in topic_defs:
+        name = str(row.get("name") or "").strip()
+        expected = int(row.get("expected_duration_min") or 0)
+        if expected > 0:
+            lines.append(f"- {name} ({expected} min planned)")
+        else:
+            lines.append(f"- {name}")
+    return "\n".join(lines)
+
+
+def _topic_breakdown_from_topic_groups(
+    topic_groups: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    breakdown: list[dict[str, object]] = []
+    for row in topic_groups:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("topic_name") or "").strip()
+        if not name:
+            continue
+        est_raw = row.get("estimated_duration_minutes")
+        actual_min = 0.0
+        if est_raw is not None and str(est_raw).strip() != "":
+            try:
+                actual_min = max(0.0, round(float(est_raw), 1))
+            except (TypeError, ValueError):
+                actual_min = 0.0
+        breakdown.append(
+            {
+                "name": name,
+                "planned_min": None,
+                "actual_min": actual_min,
+                "status": "inferred",
+                "over_under_min": None,
+            }
+        )
+    return breakdown
+
+
+def _parse_transcript_csv(text: str) -> str:
+    """Convert exported transcript CSV to the [MM:SS] Speaker: text format.
+
+    Expects columns: time_unix_sec, speaker_label, english.
+    Sorts by time_unix_sec, caps at 500 rows, computes elapsed from first row.
+    """
+    reader = csv.DictReader(io.StringIO(text))
+    rows: list[tuple[float, str, str]] = []
+    for row in reader:
+        english = (row.get("english") or "").strip()
+        ts_raw = (row.get("time_unix_sec") or "").strip()
+        label = (row.get("speaker_label") or "Speaker").strip()
+        if not english or not ts_raw:
+            continue
+        try:
+            ts = float(ts_raw)
+        except ValueError:
+            continue
+        rows.append((ts, label, english))
+
+    if not rows:
+        return ""
+
+    rows.sort(key=lambda r: r[0])
+    rows = rows[-500:]
+    baseline = rows[0][0]
+    lines = []
+    for ts, label, english in rows:
+        elapsed = max(0.0, ts - baseline)
+        mins = int(elapsed // 60)
+        secs = int(elapsed % 60)
+        lines.append(f"[{mins:02d}:{secs:02d}] {label}: {english}")
+    return "\n".join(lines)

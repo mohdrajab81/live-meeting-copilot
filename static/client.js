@@ -180,7 +180,35 @@
   const summaryExecutiveText = document.getElementById("summaryExecutiveText");
   const summaryKeyPointsList = document.getElementById("summaryKeyPointsList");
   const summaryActionItemsList = document.getElementById("summaryActionItemsList");
+  const summaryMetaRow = document.getElementById("summaryMetaRow");
+  const summaryDecisionsSection = document.getElementById("summaryDecisionsSection");
+  const summaryDecisionsList = document.getElementById("summaryDecisionsList");
+  const summaryRisksSection = document.getElementById("summaryRisksSection");
+  const summaryRisksList = document.getElementById("summaryRisksList");
+  const summaryTermsSection = document.getElementById("summaryTermsSection");
+  const summaryTermsToggle = document.getElementById("summaryTermsToggle");
+  const summaryTermsBody = document.getElementById("summaryTermsBody");
+  const summaryTermsList = document.getElementById("summaryTermsList");
+  const summaryTopicSection = document.getElementById("summaryTopicSection");
+  const summaryAdherenceChip = document.getElementById("summaryAdherenceChip");
+  const summaryTopicTimeline = document.getElementById("summaryTopicTimeline");
+  const summaryTopicPlaceholder = document.getElementById("summaryTopicPlaceholder");
+  const summaryFromFileBtn = document.getElementById("summaryFromFileBtn");
   const cfgSummaryEnabled = document.getElementById("cfgSummaryEnabled");
+
+  // File analysis modal
+  const fileAnalysisModal = document.getElementById("fileAnalysisModal");
+  const fileModalCloseBtn = document.getElementById("fileModalCloseBtn");
+  const fileDropZone = document.getElementById("fileDropZone");
+  const transcriptFileInput = document.getElementById("transcriptFileInput");
+  const fileModalFilename = document.getElementById("fileModalFilename");
+  const fileModalAnalyseBtn = document.getElementById("fileModalAnalyseBtn");
+  const fileModalPending = document.getElementById("fileModalPending");
+  const fileModalError = document.getElementById("fileModalError");
+  const fileModalResults = document.getElementById("fileModalResults");
+  const fileModalExportRow = document.getElementById("fileModalExportRow");
+  const fileModalExportJson = document.getElementById("fileModalExportJson");
+  const fileModalExportTxt = document.getElementById("fileModalExportTxt");
 
   const logsCompactToggle = document.getElementById("logsCompactToggle");
   const logsPinnedList = document.getElementById("logsPinnedList");
@@ -331,6 +359,13 @@
       executive_summary: "",
       key_points: [],
       action_items: [],
+      topic_key_points: [],
+      decisions_made: [],
+      risks_and_blockers: [],
+      key_terms_defined: [],
+      metadata: {},
+      topic_breakdown: [],
+      agenda_adherence_pct: null,
       error: "",
     },
   };
@@ -1770,7 +1805,13 @@
 
   function renderSummary() {
     const s = state.summary;
-    const hasSummary = !!(s.executive_summary || (s.key_points && s.key_points.length) || (s.action_items && s.action_items.length));
+    const hasSummary = !!(
+      s.executive_summary
+      || (s.key_points && s.key_points.length)
+      || (s.action_items && s.action_items.length)
+      || (s.topic_breakdown && s.topic_breakdown.length)
+      || (s.topic_key_points && s.topic_key_points.length)
+    );
     const summaryChip = summaryKpiStatus ? summaryKpiStatus.closest(".ops-kpi-chip") : null;
 
     if (summaryKpiStatus) {
@@ -1831,14 +1872,184 @@
         });
       }
     }
+
+    // Metadata row (meeting type chip + sentiment arc)
+    if (summaryMetaRow) {
+      const meta = s.metadata || {};
+      const meetingType = String(meta.meeting_type || "").trim();
+      const sentiment = String(meta.sentiment_arc || "").trim();
+      const hasMeta = !!(meetingType || sentiment);
+      summaryMetaRow.classList.toggle("hidden", !hasMeta);
+      summaryMetaRow.innerHTML = "";
+      if (meetingType) {
+        const chip = document.createElement("span");
+        chip.className = "summary-meta-chip";
+        chip.textContent = meetingType;
+        summaryMetaRow.appendChild(chip);
+      }
+      if (sentiment) {
+        const text = document.createElement("span");
+        text.className = "summary-meta-sentiment";
+        text.textContent = sentiment;
+        summaryMetaRow.appendChild(text);
+      }
+    }
+
+    // Decisions made
+    if (summaryDecisionsSection && summaryDecisionsList) {
+      const decisions = s.decisions_made || [];
+      summaryDecisionsSection.classList.toggle("hidden", decisions.length === 0);
+      summaryDecisionsList.innerHTML = "";
+      decisions.forEach((d) => {
+        const li = document.createElement("li");
+        li.textContent = String(d);
+        summaryDecisionsList.appendChild(li);
+      });
+    }
+
+    // Risks & blockers
+    if (summaryRisksSection && summaryRisksList) {
+      const risks = s.risks_and_blockers || [];
+      summaryRisksSection.classList.toggle("hidden", risks.length === 0);
+      summaryRisksList.innerHTML = "";
+      risks.forEach((r) => {
+        const li = document.createElement("li");
+        li.className = "summary-risk-item";
+        li.textContent = String(r);
+        summaryRisksList.appendChild(li);
+      });
+    }
+
+    // Key terms (collapsible — preserve open/closed state across re-renders)
+    if (summaryTermsSection && summaryTermsList) {
+      const terms = s.key_terms_defined || [];
+      summaryTermsSection.classList.toggle("hidden", terms.length === 0);
+      summaryTermsList.innerHTML = "";
+      terms.forEach((t) => {
+        const dt = document.createElement("dt");
+        dt.className = "summary-term-name";
+        dt.textContent = String(t.term || "");
+        const dd = document.createElement("dd");
+        dd.className = "summary-term-def";
+        dd.textContent = String(t.definition || "");
+        summaryTermsList.appendChild(dt);
+        summaryTermsList.appendChild(dd);
+      });
+    }
+
+    renderTopicCoverage();
+  }
+
+  function renderTopicCoverage() {
+    if (!summaryTopicSection || !summaryTopicTimeline || !summaryTopicPlaceholder) return;
+    const breakdown = state.summary.topic_breakdown || [];
+    const adherence = state.summary.agenda_adherence_pct;
+
+    if (breakdown.length === 0) {
+      summaryTopicTimeline.innerHTML = "";
+      summaryTopicPlaceholder.classList.remove("hidden");
+      if (summaryAdherenceChip) summaryAdherenceChip.classList.add("hidden");
+      return;
+    }
+
+    summaryTopicPlaceholder.classList.add("hidden");
+
+    // Adherence chip
+    if (summaryAdherenceChip) {
+      if (adherence !== null && adherence !== undefined) {
+        summaryAdherenceChip.textContent = `Adherence ${adherence.toFixed(1)}%`;
+        summaryAdherenceChip.classList.remove("hidden");
+      } else {
+        summaryAdherenceChip.classList.add("hidden");
+      }
+    }
+
+    // Scale: max of all actual_min and planned_min values for proportional bars.
+    const maxVal = Math.max(
+      1,
+      ...breakdown.map((t) => Math.max(t.actual_min || 0, t.planned_min || 0))
+    );
+
+    summaryTopicTimeline.innerHTML = "";
+    breakdown.forEach((t) => {
+      const actualMin = t.actual_min || 0;
+      const plannedMin = t.planned_min || null;
+      const overUnder = t.over_under_min;
+      const status = t.status || "not_started";
+
+      // Determine bar colour class.
+      let barClass = "status-" + status;
+      if (status === "covered" && overUnder !== null && overUnder > 0) {
+        barClass = "status-over";
+      }
+
+      const row = document.createElement("div");
+      row.className = "topic-row";
+
+      // Label
+      const label = document.createElement("div");
+      label.className = "topic-row-label";
+      label.textContent = t.name || "";
+      label.title = t.name || "";
+
+      // Bar wrap + bar + optional planned marker
+      const barWrap = document.createElement("div");
+      barWrap.className = "topic-row-bar-wrap";
+
+      const bar = document.createElement("div");
+      bar.className = `topic-row-bar ${barClass}`;
+      bar.style.width = `${Math.max(0, Math.min(100, (actualMin / maxVal) * 100)).toFixed(1)}%`;
+      barWrap.appendChild(bar);
+
+      if (plannedMin !== null) {
+        const marker = document.createElement("div");
+        marker.className = "topic-planned-marker";
+        marker.style.left = `${Math.max(0, Math.min(100, (plannedMin / maxVal) * 100)).toFixed(1)}%`;
+        marker.title = `Planned: ${plannedMin} min`;
+        barWrap.appendChild(marker);
+      }
+
+      // Stats text
+      const stats = document.createElement("div");
+      stats.className = "topic-row-stats";
+      if (plannedMin !== null) {
+        const sign = overUnder > 0 ? "+" : "";
+        const overEl = document.createElement("span");
+        overEl.textContent = `${actualMin} / ${plannedMin} min`;
+        if (overUnder !== null && overUnder !== 0) {
+          overEl.className = overUnder > 0 ? "stat-over" : "";
+          stats.appendChild(overEl);
+          const extra = document.createElement("span");
+          extra.className = overUnder > 0 ? "stat-over" : "";
+          extra.textContent = ` (${sign}${overUnder})`;
+          stats.appendChild(extra);
+        } else {
+          stats.appendChild(overEl);
+        }
+      } else {
+        stats.textContent = `${actualMin} min`;
+      }
+
+      row.appendChild(label);
+      row.appendChild(barWrap);
+      row.appendChild(stats);
+      summaryTopicTimeline.appendChild(row);
+    });
   }
 
   function exportSummaryJson() {
     const s = state.summary;
     const blob = new Blob([JSON.stringify({
+      metadata: s.metadata,
       executive_summary: s.executive_summary,
       key_points: s.key_points,
       action_items: s.action_items,
+      topic_key_points: s.topic_key_points,
+      decisions_made: s.decisions_made,
+      risks_and_blockers: s.risks_and_blockers,
+      key_terms_defined: s.key_terms_defined,
+      topic_breakdown: s.topic_breakdown,
+      agenda_adherence_pct: s.agenda_adherence_pct,
       generated_ts: s.generated_ts,
     }, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -1852,6 +2063,12 @@
   function exportSummaryTxt() {
     const s = state.summary;
     const lines = [];
+    if (s.metadata && (s.metadata.meeting_type || s.metadata.sentiment_arc)) {
+      lines.push("SESSION METADATA", "=".repeat(40));
+      if (s.metadata.meeting_type) lines.push(`Meeting Type: ${s.metadata.meeting_type}`);
+      if (s.metadata.sentiment_arc) lines.push(`Sentiment Arc: ${s.metadata.sentiment_arc}`);
+      lines.push("");
+    }
     if (s.executive_summary) {
       lines.push("EXECUTIVE SUMMARY", "=".repeat(40), s.executive_summary, "");
     }
@@ -1868,6 +2085,36 @@
         if (ai.due_date) line += ` [Due: ${ai.due_date}]`;
         lines.push(line);
       });
+      lines.push("");
+    }
+    if (s.decisions_made && s.decisions_made.length) {
+      lines.push("DECISIONS MADE", "=".repeat(40));
+      s.decisions_made.forEach((d, i) => lines.push(`${i + 1}. ${d}`));
+      lines.push("");
+    }
+    if (s.risks_and_blockers && s.risks_and_blockers.length) {
+      lines.push("RISKS & BLOCKERS", "=".repeat(40));
+      s.risks_and_blockers.forEach((r, i) => lines.push(`${i + 1}. ${r}`));
+      lines.push("");
+    }
+    if (s.key_terms_defined && s.key_terms_defined.length) {
+      lines.push("KEY TERMS DEFINED", "=".repeat(40));
+      s.key_terms_defined.forEach((t) => lines.push(`${t.term || ""}: ${t.definition || ""}`));
+      lines.push("");
+    }
+    if (s.topic_breakdown && s.topic_breakdown.length) {
+      lines.push("TOPIC COVERAGE", "=".repeat(40));
+      if (s.agenda_adherence_pct !== null && s.agenda_adherence_pct !== undefined) {
+        lines.push(`Agenda Adherence: ${s.agenda_adherence_pct.toFixed(1)}%`);
+      }
+      s.topic_breakdown.forEach((t) => {
+        const planned = t.planned_min !== null ? ` / ${t.planned_min} min planned` : "";
+        const delta = (t.over_under_min !== null && t.over_under_min !== 0)
+          ? ` (${t.over_under_min > 0 ? "+" : ""}${t.over_under_min})`
+          : "";
+        lines.push(`- ${t.name}: ${t.status}, ${t.actual_min} min actual${planned}${delta}`);
+      });
+      lines.push("");
     }
     const blob = new Blob([lines.join("\n")], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
@@ -2600,6 +2847,40 @@
     saveUiPrefs();
   }
 
+  function applySummarySnapshot(summarySnap) {
+    const snap = summarySnap || {};
+    const summaryResult = snap.result || {};
+    state.summary.pending = !!snap.pending;
+    state.summary.generated_ts = snap.generated_ts || null;
+    state.summary.executive_summary = String(
+      snap.executive_summary || summaryResult.executive_summary || ""
+    );
+    state.summary.key_points = Array.isArray(snap.key_points)
+      ? snap.key_points
+      : (Array.isArray(summaryResult.key_points) ? summaryResult.key_points : []);
+    state.summary.action_items = Array.isArray(snap.action_items)
+      ? snap.action_items
+      : (Array.isArray(summaryResult.action_items) ? summaryResult.action_items : []);
+    state.summary.topic_key_points = Array.isArray(snap.topic_key_points)
+      ? snap.topic_key_points
+      : (Array.isArray(summaryResult.topic_key_points) ? summaryResult.topic_key_points : []);
+    state.summary.decisions_made = Array.isArray(snap.decisions_made)
+      ? snap.decisions_made
+      : (Array.isArray(summaryResult.decisions_made) ? summaryResult.decisions_made : []);
+    state.summary.risks_and_blockers = Array.isArray(snap.risks_and_blockers)
+      ? snap.risks_and_blockers
+      : (Array.isArray(summaryResult.risks_and_blockers) ? summaryResult.risks_and_blockers : []);
+    state.summary.key_terms_defined = Array.isArray(snap.key_terms_defined)
+      ? snap.key_terms_defined
+      : (Array.isArray(summaryResult.key_terms_defined) ? summaryResult.key_terms_defined : []);
+    state.summary.metadata = (snap.metadata && typeof snap.metadata === "object")
+      ? snap.metadata
+      : ((summaryResult.metadata && typeof summaryResult.metadata === "object") ? summaryResult.metadata : {});
+    state.summary.topic_breakdown = Array.isArray(snap.topic_breakdown) ? snap.topic_breakdown : [];
+    state.summary.agenda_adherence_pct = (typeof snap.agenda_adherence_pct === "number") ? snap.agenda_adherence_pct : null;
+    state.summary.error = String(snap.error || "");
+  }
+
   function renderSnapshot(msg) {
     state.finals = (msg.finals || []).map((f) => ({
       en: f.en || "",
@@ -2681,20 +2962,7 @@
     state.telemetry.estimatedCostUsd = telemetry.estimated_cost_usd ?? null;
     setRecording(msg.recording || null);
 
-    const summarySnap = msg.summary || {};
-    const summaryResult = summarySnap.result || {};
-    state.summary.pending = !!summarySnap.pending;
-    state.summary.generated_ts = summarySnap.generated_ts || null;
-    state.summary.executive_summary = String(
-      summarySnap.executive_summary || summaryResult.executive_summary || ""
-    );
-    state.summary.key_points = Array.isArray(summarySnap.key_points)
-      ? summarySnap.key_points
-      : (Array.isArray(summaryResult.key_points) ? summaryResult.key_points : []);
-    state.summary.action_items = Array.isArray(summarySnap.action_items)
-      ? summarySnap.action_items
-      : (Array.isArray(summaryResult.action_items) ? summaryResult.action_items : []);
-    state.summary.error = String(summarySnap.error || "");
+    applySummarySnapshot(msg.summary || {});
 
     renderFinals();
     renderLogs();
@@ -3315,6 +3583,13 @@
       state.summary.executive_summary = String(msg.executive_summary || "");
       state.summary.key_points = Array.isArray(msg.key_points) ? msg.key_points : [];
       state.summary.action_items = Array.isArray(msg.action_items) ? msg.action_items : [];
+      state.summary.topic_key_points = Array.isArray(msg.topic_key_points) ? msg.topic_key_points : [];
+      state.summary.decisions_made = Array.isArray(msg.decisions_made) ? msg.decisions_made : [];
+      state.summary.risks_and_blockers = Array.isArray(msg.risks_and_blockers) ? msg.risks_and_blockers : [];
+      state.summary.key_terms_defined = Array.isArray(msg.key_terms_defined) ? msg.key_terms_defined : [];
+      state.summary.metadata = (msg.metadata && typeof msg.metadata === "object") ? msg.metadata : {};
+      state.summary.topic_breakdown = Array.isArray(msg.topic_breakdown) ? msg.topic_breakdown : [];
+      state.summary.agenda_adherence_pct = (typeof msg.agenda_adherence_pct === "number") ? msg.agenda_adherence_pct : null;
       renderSummary();
       if (!msg.error) {
         setActiveTab("summaryTab");
@@ -3330,6 +3605,13 @@
         executive_summary: "",
         key_points: [],
         action_items: [],
+        topic_key_points: [],
+        decisions_made: [],
+        risks_and_blockers: [],
+        key_terms_defined: [],
+        metadata: {},
+        topic_breakdown: [],
+        agenda_adherence_pct: null,
         error: "",
       };
       renderSummary();
@@ -3418,6 +3700,273 @@
       toggleExportMenu(summaryExportMenuBtn, summaryExportMenu);
     });
   }
+  if (summaryTermsToggle && summaryTermsBody) {
+    summaryTermsToggle.addEventListener("click", () => {
+      const expanded = summaryTermsToggle.getAttribute("aria-expanded") === "true";
+      summaryTermsToggle.setAttribute("aria-expanded", String(!expanded));
+      summaryTermsBody.classList.toggle("hidden", expanded);
+      const icon = summaryTermsToggle.querySelector(".summary-toggle-icon");
+      if (icon) icon.textContent = expanded ? "\u25B6" : "\u25BE";
+    });
+  }
+  // ── File Analysis Modal ──────────────────────────────────────────────────
+
+  let fileModalResult = null;
+  let fileModalSelectedFile = null;
+
+  function openFileModal() {
+    if (!fileAnalysisModal) return;
+    fileModalResult = null;
+    fileModalSelectedFile = null;
+    if (fileModalFilename) { fileModalFilename.textContent = ""; fileModalFilename.classList.add("hidden"); }
+    if (fileModalAnalyseBtn) fileModalAnalyseBtn.disabled = true;
+    if (fileModalPending) fileModalPending.classList.add("hidden");
+    if (fileModalError) { fileModalError.textContent = ""; fileModalError.classList.add("hidden"); }
+    if (fileModalResults) { fileModalResults.innerHTML = ""; fileModalResults.classList.add("hidden"); }
+    if (fileModalExportRow) fileModalExportRow.classList.add("hidden");
+    if (transcriptFileInput) transcriptFileInput.value = "";
+    fileAnalysisModal.showModal();
+  }
+
+  function closeFileModal() {
+    if (fileAnalysisModal) fileAnalysisModal.close();
+  }
+
+  function setFileModalFile(f) {
+    fileModalSelectedFile = f || null;
+    if (!fileModalSelectedFile) return;
+    if (fileModalFilename) {
+      fileModalFilename.textContent = fileModalSelectedFile.name;
+      fileModalFilename.classList.remove("hidden");
+    }
+    if (fileModalAnalyseBtn) fileModalAnalyseBtn.disabled = false;
+    // Clear previous results when a new file is chosen.
+    if (fileModalError) { fileModalError.textContent = ""; fileModalError.classList.add("hidden"); }
+    if (fileModalResults) { fileModalResults.innerHTML = ""; fileModalResults.classList.add("hidden"); }
+    if (fileModalExportRow) fileModalExportRow.classList.add("hidden");
+  }
+
+  function renderFileModalResults(result) {
+    if (!fileModalResults) return;
+    fileModalResults.innerHTML = "";
+
+    function card(title, content) {
+      const wrap = document.createElement("div");
+      wrap.className = "card-shell summary-section";
+      const h = document.createElement("h3");
+      h.className = "summary-section-title";
+      h.textContent = title;
+      wrap.appendChild(h);
+      wrap.appendChild(content);
+      fileModalResults.appendChild(wrap);
+    }
+
+    // Metadata chip row
+    const meta = result.metadata || {};
+    if (meta.meeting_type || meta.sentiment_arc) {
+      const row = document.createElement("div");
+      row.className = "summary-meta-row";
+      if (meta.meeting_type) {
+        const chip = document.createElement("span");
+        chip.className = "summary-meta-chip";
+        chip.textContent = meta.meeting_type;
+        row.appendChild(chip);
+      }
+      if (meta.sentiment_arc) {
+        const sent = document.createElement("span");
+        sent.className = "summary-meta-sentiment";
+        sent.textContent = meta.sentiment_arc;
+        row.appendChild(sent);
+      }
+      fileModalResults.appendChild(row);
+    }
+
+    // Executive summary
+    if (result.executive_summary) {
+      const p = document.createElement("p");
+      p.className = "summary-executive-text";
+      p.textContent = result.executive_summary;
+      card("Executive Summary", p);
+    }
+
+    // Key points
+    if (result.key_points && result.key_points.length) {
+      const ul = document.createElement("ul");
+      ul.className = "summary-key-points-list";
+      result.key_points.forEach((pt) => { const li = document.createElement("li"); li.textContent = pt; ul.appendChild(li); });
+      card("Key Points", ul);
+    }
+
+    // Action items
+    if (result.action_items && result.action_items.length) {
+      const wrap = document.createElement("div");
+      wrap.className = "summary-action-items-list";
+      result.action_items.forEach((ai) => {
+        const row = document.createElement("div");
+        row.className = "summary-action-item";
+        const t = document.createElement("span");
+        t.className = "action-item-text";
+        t.textContent = ai.item || "";
+        row.appendChild(t);
+        if (ai.owner) { const o = document.createElement("span"); o.className = "action-item-owner"; o.textContent = ai.owner; row.appendChild(o); }
+        if (ai.due_date) { const d = document.createElement("span"); d.className = "action-item-due"; d.textContent = ai.due_date; row.appendChild(d); }
+        wrap.appendChild(row);
+      });
+      card("Action Items", wrap);
+    }
+
+    // Decisions
+    if (result.decisions_made && result.decisions_made.length) {
+      const ul = document.createElement("ul");
+      ul.className = "summary-decisions-list";
+      result.decisions_made.forEach((d) => { const li = document.createElement("li"); li.textContent = d; ul.appendChild(li); });
+      card("Decisions Made", ul);
+    }
+
+    // Topic coverage (inferred or agenda-guided)
+    if (result.topic_breakdown && result.topic_breakdown.length) {
+      const ul = document.createElement("ul");
+      ul.className = "summary-decisions-list";
+      result.topic_breakdown.forEach((t) => {
+        const li = document.createElement("li");
+        const mins = (t.actual_min !== null && t.actual_min !== undefined) ? `${t.actual_min} min` : "n/a";
+        li.textContent = `${t.name || "Topic"} (${mins})`;
+        ul.appendChild(li);
+      });
+      card("Topic Coverage", ul);
+    }
+
+    // Risks
+    if (result.risks_and_blockers && result.risks_and_blockers.length) {
+      const ul = document.createElement("ul");
+      ul.className = "summary-risks-list";
+      result.risks_and_blockers.forEach((r) => { const li = document.createElement("li"); li.className = "summary-risk-item"; li.textContent = r; ul.appendChild(li); });
+      card("Risks & Blockers", ul);
+    }
+
+    // Key terms
+    if (result.key_terms_defined && result.key_terms_defined.length) {
+      const dl = document.createElement("dl");
+      dl.className = "summary-terms-list";
+      result.key_terms_defined.forEach((t) => {
+        const dt = document.createElement("dt"); dt.className = "summary-term-name"; dt.textContent = t.term || ""; dl.appendChild(dt);
+        const dd = document.createElement("dd"); dd.className = "summary-term-def"; dd.textContent = t.definition || ""; dl.appendChild(dd);
+      });
+      card("Key Terms Defined", dl);
+    }
+
+    fileModalResults.classList.remove("hidden");
+    if (fileModalExportRow) fileModalExportRow.classList.remove("hidden");
+  }
+
+  function exportFileModalJson() {
+    if (!fileModalResult) return;
+    const blob = new Blob([JSON.stringify(fileModalResult, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "summary-from-file.json"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportFileModalTxt() {
+    if (!fileModalResult) return;
+    const r = fileModalResult;
+    const lines = [];
+    const meta = r.metadata || {};
+    if (meta.meeting_type || meta.sentiment_arc) {
+      lines.push("SESSION METADATA", "=".repeat(40));
+      if (meta.meeting_type) lines.push(`Meeting Type: ${meta.meeting_type}`);
+      if (meta.sentiment_arc) lines.push(`Sentiment Arc: ${meta.sentiment_arc}`);
+      lines.push("");
+    }
+    if (r.executive_summary) lines.push("EXECUTIVE SUMMARY", "=".repeat(40), r.executive_summary, "");
+    if (r.key_points && r.key_points.length) { lines.push("KEY POINTS", "=".repeat(40)); r.key_points.forEach((p, i) => lines.push(`${i + 1}. ${p}`)); lines.push(""); }
+    if (r.action_items && r.action_items.length) {
+      lines.push("ACTION ITEMS", "=".repeat(40));
+      r.action_items.forEach((ai, i) => { let l = `${i + 1}. ${ai.item || ""}`; if (ai.owner) l += ` [Owner: ${ai.owner}]`; if (ai.due_date) l += ` [Due: ${ai.due_date}]`; lines.push(l); });
+      lines.push("");
+    }
+    if (r.decisions_made && r.decisions_made.length) { lines.push("DECISIONS MADE", "=".repeat(40)); r.decisions_made.forEach((d, i) => lines.push(`${i + 1}. ${d}`)); lines.push(""); }
+    if (r.risks_and_blockers && r.risks_and_blockers.length) { lines.push("RISKS & BLOCKERS", "=".repeat(40)); r.risks_and_blockers.forEach((d, i) => lines.push(`${i + 1}. ${d}`)); lines.push(""); }
+    if (r.key_terms_defined && r.key_terms_defined.length) { lines.push("KEY TERMS DEFINED", "=".repeat(40)); r.key_terms_defined.forEach((t) => lines.push(`${t.term || ""}: ${t.definition || ""}`)); lines.push(""); }
+    if (r.topic_breakdown && r.topic_breakdown.length) {
+      lines.push("TOPIC COVERAGE", "=".repeat(40));
+      r.topic_breakdown.forEach((t) => lines.push(`- ${t.name || "Topic"}: ${t.actual_min ?? 0} min`));
+      lines.push("");
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "summary-from-file.txt"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Wire modal event listeners
+  if (summaryFromFileBtn) summaryFromFileBtn.addEventListener("click", openFileModal);
+  if (fileModalCloseBtn) fileModalCloseBtn.addEventListener("click", closeFileModal);
+  if (fileAnalysisModal) fileAnalysisModal.addEventListener("click", (e) => { if (e.target === fileAnalysisModal) closeFileModal(); });
+
+  if (transcriptFileInput) {
+    transcriptFileInput.addEventListener("change", () => {
+      setFileModalFile(transcriptFileInput.files && transcriptFileInput.files[0]);
+    });
+  }
+
+  // Drag-and-drop onto the drop zone
+  if (fileDropZone) {
+    fileDropZone.addEventListener("dragover", (e) => { e.preventDefault(); fileDropZone.classList.add("dragover"); });
+    fileDropZone.addEventListener("dragleave", () => fileDropZone.classList.remove("dragover"));
+    fileDropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      fileDropZone.classList.remove("dragover");
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) setFileModalFile(f);
+    });
+  }
+
+  if (fileModalAnalyseBtn) {
+    fileModalAnalyseBtn.addEventListener("click", async () => {
+      if (!fileModalSelectedFile) return;
+      fileModalAnalyseBtn.disabled = true;
+      if (fileModalPending) fileModalPending.classList.remove("hidden");
+      if (fileModalError) { fileModalError.textContent = ""; fileModalError.classList.add("hidden"); }
+      if (fileModalResults) { fileModalResults.innerHTML = ""; fileModalResults.classList.add("hidden"); }
+      if (fileModalExportRow) fileModalExportRow.classList.add("hidden");
+
+      try {
+        const form = new FormData();
+        form.append("file", fileModalSelectedFile);
+        const defs = Array.isArray(state.topics?.definitions) ? state.topics.definitions : [];
+        form.append("topics_definitions_json", JSON.stringify(defs));
+        const token = String(state.apiToken || "").trim();
+        const headers = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const resp = await fetch("/api/summary/from-transcript", {
+          method: "POST",
+          headers: Object.keys(headers).length ? headers : undefined,
+          body: form,
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          throw new Error(data.detail || `Server error ${resp.status}`);
+        }
+        fileModalResult = data.result || null;
+        if (fileModalResult) {
+          renderFileModalResults(fileModalResult);
+        }
+      } catch (err) {
+        if (fileModalError) {
+          fileModalError.textContent = String(err.message || err);
+          fileModalError.classList.remove("hidden");
+        }
+      } finally {
+        if (fileModalPending) fileModalPending.classList.add("hidden");
+        fileModalAnalyseBtn.disabled = false;
+      }
+    });
+  }
+
+  if (fileModalExportJson) fileModalExportJson.addEventListener("click", exportFileModalJson);
+  if (fileModalExportTxt) fileModalExportTxt.addEventListener("click", exportFileModalTxt);
+
   if (coachRecoPrevBtn) {
     coachRecoPrevBtn.addEventListener("click", () => {
       state.ui.coachView.activeIndex = Math.max(0, Number(state.ui.coachView.activeIndex || 0) - 1);
@@ -3523,9 +4072,27 @@
 
   if (summaryGenerateBtn) {
     summaryGenerateBtn.addEventListener("click", () => withBusy(summaryGenerateBtn, "Generating", async () => {
+      const hasTranscript = (state.finals || []).some((f) => {
+        const en = String(f?.en || "").trim();
+        const ar = String(f?.ar || "").trim();
+        return !!(en || ar);
+      });
+      if (!hasTranscript) {
+        state.summary.pending = false;
+        renderSummary();
+        showToast("No transcript yet. Start speaking before generating a summary.", "info");
+        return;
+      }
+
       state.summary.pending = true;
       renderSummary();
-      await request("/api/summary/generate", "POST");
+      const out = await request("/api/summary/generate", "POST");
+      if (out?.summary) {
+        applySummarySnapshot(out.summary);
+      } else {
+        state.summary.pending = false;
+      }
+      renderSummary();
     }).catch((err) => {
       state.summary.pending = false;
       renderSummary();

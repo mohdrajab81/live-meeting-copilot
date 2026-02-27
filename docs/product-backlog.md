@@ -1,98 +1,147 @@
 # Product Backlog
 
 ## Goal
+
 Turn the app into a public-ready meeting intelligence platform with clear value beyond live translation.
 
-## Phase 0 (Stability + Packaging)
-1. Reliability hardening
-- Keep topic/coach pipelines resilient to malformed model output.
-- Improve run labeling (`success` vs `no_effect` vs `error`) for observability.
+---
 
-2. Deployment package
-- Maintain self-hosted deployment zip and documented install flow.
-- Keep startup validation clear for all required environment settings.
+## ✅ Shipped
 
-3. Cross-platform runtime
-- Validate Linux support (service startup, audio setup guidance, docs).
-- Keep Windows and Linux runbooks aligned.
+| Feature | Notes |
+| --- | --- |
+| Stability + reliability hardening | Malformed model output handling, run labeling |
+| Deployment package | Self-hosted zip, startup validation, runbooks |
+| Full conversation summary | Executive summary, key points, action items, decisions, risks, key terms, metadata |
+| Topic key points (LLM) | Per-topic key point grouping with duration estimate and Agenda/Inferred origin |
+| Agenda-aware analysis | Deterministic topic breakdown, adherence %, skipped detection, timeline bar |
+| Sentiment arc | Session-level tone progression in summary metadata |
+| Optional translation mode | Toggle transcript-only mode for same-language meetings |
+| Summary from file | Upload past transcript CSV → summary modal, does not mutate session state |
 
-## Phase 1 (Core Meeting Intelligence)
-1. Voice recording
-- Save session audio per speaker/session.
-- Support start/stop and export.
+---
 
-2. Full conversation summary
-- Session-level summary after stop.
-- Include concise executive summary and detailed breakdown.
+## Phase 1 — Core Intelligence
 
-3. Action items extraction
-- Extract owner, task, due date (if present), and confidence.
-- Export as JSON/CSV.
+### 1. Meeting performance insights
 
-4. Agenda-aware analysis
-- Compare meeting flow against configured agenda.
-- Show covered/missed/off-agenda sections and coverage score.
+Compute purely from existing transcript data — no new agents or services needed.
 
-5. Meeting performance insights
-- Speaking balance, interruptions, topic drift, pace.
-- "Meeting health" score with practical recommendations.
+- **Speaking balance**: per-speaker word count, sentence count, and share of total talk time. Show as bar chart.
+- **Turn-taking**: number of speaker turns, average turn length, longest monologue.
+- **Pace**: words per minute per speaker (timestamps already in transcript).
+- **Topic drift**: flag segments where coach/topic agent detected off-agenda content.
+- **Meeting health score**: composite 0–100 score with short recommendations (e.g. "One speaker dominated 80% of airtime").
+- Export in JSON and TXT summary.
 
-## Phase 2 (Advanced Analytics)
-1. Sentiment and tone analysis (optional module)
-- Per-topic and session-level sentiment trend.
-- Keep opt-in due to domain/language variability.
+### 2. Keyword / searchable index
 
-2. Keyword and keyphrase extraction
-- Dynamic extraction from transcript (no fixed backend keyword list).
-- Add searchable keyword index for recap/exploration.
+We already extract `key_terms_defined` from the LLM. Add discoverability.
 
-3. Optional translation mode
-- Implemented on February 26, 2026: users can disable translation and run transcript-only intelligence mode.
-- Reduce cost and support same-language meetings.
+- Deduplicated keyword list from all summary runs in session.
+- Click a keyword to jump to matching transcript lines (timestamp anchor).
+- Searchable filter box on the Transcript tab.
+- Export keyword list with definitions in summary JSON/TXT.
 
-## Phase 3 (Platform + Market Expansion)
-1. Multilingual support
-- Expand beyond English-centric assumptions in analysis and UX.
-- Validate quality per language and locale.
+### 3. Voice recording
 
-2. STT provider/model flexibility
-- Add support path for additional STT engines (including Nova-3 class models).
-- Preserve common event contract across providers.
+Product-critical: audio replay validates analytics quality and supports post-meeting review.
 
-3. Public trial flow
-- Invitation code onboarding.
-- 10-minute trial cap with visible countdown and controlled auto-stop.
-- Per-code usage limits, expiration, and basic abuse controls.
+- Capture raw audio per session (not per speaker initially).
+- Start recording when session starts; stop on session stop.
+- Export as WAV/MP3 from the UI.
+- Store locally (no cloud upload in v1).
 
-## Phase 4 (Knowledge-Aware Copilot)
-1. Workspace connectors
-- Start with SharePoint read-only connector.
-- Add scheduled sync + incremental updates (not full live crawl first).
+---
 
-2. Multi-datasource selection
-- Let users choose data scope per meeting:
-  - no datasource
-  - default workspace
-  - selected datasource
+## ⚙️ Cross-cutting gate: E2E browser smoke tests
 
-3. Retrieval trust and controls
-- Enforce tenant/workspace permission boundaries.
-- Include source citations in coach outputs.
-- Add admin visibility into indexed content and sync status.
+**Must be complete before Phase 2 begins.**
 
-## Go-To-Market Backlog
-1. Narrow ICP-first rollout
-- Target one segment first (for example recruiting/interview coaching teams).
+- Automated browser tests (Playwright or Selenium) covering the critical user path:
+  start session → transcript appears → stop → summary generated → export works.
+- Cover modal flows: from-file upload, coach ask, topic configure.
+- Run in CI on every PR.
 
-2. Trial-to-paid funnel
-- Invite-only trial, clear value moment (summary + actions + agenda score).
+---
+
+## Phase 2 — Launch Readiness
+
+### 4. Public trial flow
+
+Required before sharing the app with external users.
+
+- Invitation code onboarding (codes stored in env/config, not a full user DB).
+- 10-minute session cap with visible countdown and controlled auto-stop.
+- Per-code usage limits and expiration date.
+- Basic abuse controls: rate limiting already exists; add IP-level session cap.
+- Friendly expired/over-limit error page.
+
+### 5. Proof assets
+
+Needed to attract first external users.
+
+- 2–3 minute product demo video (screen recording of a live session → summary flow).
+- Before/after example: raw transcript vs generated summary.
+- One-page outcome-focused product brief for target ICP.
+
+---
+
+## Phase 3 — Platform Expansion
+
+### 6. STT provider / model flexibility
+
+- Abstract speech provider behind a common event contract.
+- Add support path for Nova-3 class models (higher accuracy, lower latency).
+- Keep Azure Speech SDK as default; new providers are additive.
+
+### 7. Multilingual support
+
+- Expand analysis prompts beyond English-centric assumptions.
+- Validate summary quality per language/locale (Arabic, French, Spanish as first targets).
+- UI language detection hint — show language badge in transcript.
+
+---
+
+## Phase 4 — Knowledge-Aware Copilot
+
+### 8. Workspace connectors
+
+- SharePoint read-only connector as the first integration.
+- Scheduled sync + incremental updates (no full live crawl in v1).
+- Coach can retrieve relevant documents during a meeting.
+
+### 9. Multi-datasource selection
+
+- Per-meeting scope selection: no datasource / default workspace / selected source.
+- UI dropdown in the Coach panel before or during a session.
+
+### 10. Retrieval trust and controls
+
+- Tenant/workspace permission boundaries enforced server-side.
+- Source citations included in coach outputs.
+- Admin view: indexed content list, sync status, last-updated timestamps.
+
+---
+
+## Phase 5 — Go-To-Market
+
+### 11. Narrow ICP-first rollout
+
+- Target one segment first (recruiting/interview coaching teams is the strongest fit).
+- Collect structured feedback from first 10 users before broadening.
+
+### 12. Trial-to-paid funnel
+
+- Invite-only trial with a clear value moment: summary + action items + agenda score.
 - Simple pricing tiers and usage boundaries.
+- Upgrade prompt triggered at trial cap or on export of premium features.
 
-3. Proof assets
-- Short product demos, before/after examples, and outcome-focused messaging.
+---
 
 ## Engineering Notes
-1. Keep summary/insight pipelines asynchronous to avoid blocking live translation.
-2. Add feature flags so new analytics can be rolled out gradually.
-3. Add smoke tests for critical end-to-end flows before public launch.
-4. Keep schema/contract checks between agents and orchestrators strict and versioned.
+
+1. Keep summary/insight pipelines asynchronous — never block live translation.
+2. Use feature flags to roll out new analytics incrementally.
+3. Keep schema/contract checks between agents and orchestrators strict and versioned.
+4. E2E smoke tests must pass before any Phase 2 work ships to external users.
