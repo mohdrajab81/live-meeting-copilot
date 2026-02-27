@@ -356,6 +356,23 @@
                   <h3 class="summary-section-title">Action Items</h3>
                   <div id="summaryActionItemsList" class="summary-action-items-list"></div>
                 </div>
+                <div id="summaryInsightsSection" class="card-shell summary-section hidden">
+                  <div class="summary-topic-header">
+                    <h3 class="summary-section-title">Meeting Insights</h3>
+                    <span id="summaryHealthChip" class="summary-meta-chip hidden"></span>
+                  </div>
+                  <div id="summaryInsightsBody" class="summary-insights-grid"></div>
+                </div>
+                <div id="summaryKeywordsSection" class="card-shell summary-section hidden">
+                  <div class="summary-topic-header">
+                    <h3 class="summary-section-title">Keyword Index</h3>
+                    <span id="summaryKeywordsMeta" class="summary-meta-chip hidden"></span>
+                  </div>
+                  <div class="summary-keyword-toolbar">
+                    <input id="summaryKeywordSearch" class="search-input" type="text" placeholder="Filter keywords..." />
+                  </div>
+                  <div id="summaryKeywordsList" class="summary-keyword-list"></div>
+                </div>
                 <div id="summaryDecisionsSection" class="card-shell summary-section hidden">
                   <h3 class="summary-section-title">Decisions Made</h3>
                   <ul id="summaryDecisionsList" class="summary-decisions-list"></ul>
@@ -756,7 +773,7 @@
       <header class="file-modal-head">
         <div>
           <h2 id="fileModalTitle" class="file-modal-title">Analyse Saved Transcript</h2>
-          <p class="file-modal-subtitle">Upload an exported transcript CSV to generate a summary.</p>
+          <p class="file-modal-subtitle">Upload an exported transcript CSV and load its summary into this Summary tab.</p>
         </div>
         <button id="fileModalCloseBtn" class="btn file-modal-close" type="button" aria-label="Close dialog">&#x2715;</button>
       </header>
@@ -777,11 +794,6 @@
 
       <div id="fileModalPending" class="summary-pending hidden">Analysing transcript&hellip;</div>
       <div id="fileModalError" class="summary-error hidden"></div>
-      <div id="fileModalResults" class="file-modal-results hidden"></div>
-      <div id="fileModalExportRow" class="file-modal-export-row hidden">
-        <button id="fileModalExportJson" class="btn" type="button">Export JSON</button>
-        <button id="fileModalExportTxt" class="btn" type="button">Export TXT</button>
-      </div>
     </div>
   </dialog>
   <script src="/client.js?v=20260217s"></script>

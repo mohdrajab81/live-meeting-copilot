@@ -66,6 +66,8 @@ def _make_result(**kwargs) -> SummaryResult:
         key_points=["point A", "point B"],
         action_items=[{"item": "Follow up", "owner": "Alice", "due_date": None}],
         topic_key_points=[],
+        keywords=[],
+        entities=[],
         decisions_made=[],
         risks_and_blockers=[],
         key_terms_defined=[],
@@ -89,6 +91,8 @@ def test_clear_unlocked_resets_all_state():
     orch.summary_error = "prev error"
     orch.topic_breakdown = [{"name": "Intro"}]
     orch.agenda_adherence_pct = 80.0
+    orch.meeting_insights = {"health": {"score_0_100": 90}}
+    orch.keyword_index = [{"keyword": "alpha", "occurrences": 2}]
 
     orch.clear_unlocked()
 
@@ -98,6 +102,8 @@ def test_clear_unlocked_resets_all_state():
     assert orch.summary_error == ""
     assert orch.topic_breakdown == []
     assert orch.agenda_adherence_pct is None
+    assert orch.meeting_insights == {}
+    assert orch.keyword_index == []
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +121,9 @@ def test_snapshot_unlocked_returns_correct_keys():
     assert "executive_summary" in snap
     assert "key_points" in snap
     assert "action_items" in snap
+    assert "entities" in snap
+    assert "meeting_insights" in snap
+    assert "keyword_index" in snap
 
 
 def test_snapshot_unlocked_configured_reflects_service():
@@ -185,8 +194,8 @@ def test_build_transcript_text_uses_elapsed_timestamps():
     ]
     orch, _, _, _ = _make_orch(finals=finals)
     text = orch._build_transcript_text_unlocked()
-    assert "[00:00] You: Hello" in text
-    assert "[01:30] Remote: Hi" in text
+    assert "[00:00] [id:U0001] You: Hello" in text
+    assert "[01:30] [id:U0002] Remote: Hi" in text
 
 
 def test_build_transcript_text_falls_back_to_ts_when_no_start_ts():
@@ -197,8 +206,8 @@ def test_build_transcript_text_falls_back_to_ts_when_no_start_ts():
     ]
     orch, _, _, _ = _make_orch(finals=finals)
     text = orch._build_transcript_text_unlocked()
-    assert "[00:00] You: Hello" in text
-    assert "[01:00] Remote: Hi" in text
+    assert "[00:00] [id:U0001] You: Hello" in text
+    assert "[01:00] [id:U0002] Remote: Hi" in text
 
 
 def test_build_transcript_text_sorts_by_start_ts_for_dual_channel():
@@ -216,8 +225,8 @@ def test_build_transcript_text_sorts_by_start_ts_for_dual_channel():
     remote_pos = text.index("Second speaker")
     assert local_pos < remote_pos, "Local (earlier start_ts) must appear before Remote in prompt"
     # Timestamps: baseline=7, local=[00:00], remote=[00:02] — must be distinct
-    assert "[00:00] Local: First speaker" in text
-    assert "[00:02] Remote: Second speaker" in text
+    assert "[00:00] [id:U0001] Local: First speaker" in text
+    assert "[00:02] [id:U0002] Remote: Second speaker" in text
 
 
 def test_build_transcript_text_returns_empty_for_no_finals():
@@ -235,12 +244,15 @@ def test_snapshot_unlocked_includes_new_fields():
         "executive_summary": "Good.",
         "key_points": [],
         "action_items": [],
+        "entities": [{"type": "PERSON", "text": "Alice", "mentions": 1}],
         "decisions_made": ["Go ahead with plan"],
         "risks_and_blockers": ["Budget uncertain"],
         "key_terms_defined": [{"term": "RAG", "definition": "Retrieval Augmented Generation"}],
         "metadata": {"meeting_type": "Project Management", "sentiment_arc": "Positive"},
     }
     snap = orch.snapshot_unlocked()
+    assert len(snap["entities"]) == 1
+    assert snap["entities"][0]["type"] == "PERSON"
     assert snap["decisions_made"] == ["Go ahead with plan"]
     assert snap["risks_and_blockers"] == ["Budget uncertain"]
     assert len(snap["key_terms_defined"]) == 1
@@ -251,10 +263,13 @@ def test_snapshot_unlocked_includes_new_fields():
 def test_snapshot_unlocked_new_fields_default_empty_when_no_result():
     orch, _, _, _ = _make_orch()
     snap = orch.snapshot_unlocked()
+    assert snap["entities"] == []
     assert snap["decisions_made"] == []
     assert snap["risks_and_blockers"] == []
     assert snap["key_terms_defined"] == []
     assert snap["metadata"] == {}
+    assert snap["meeting_insights"] == {}
+    assert snap["keyword_index"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -322,6 +337,8 @@ async def test_run_summary_success_broadcasts_and_updates_state():
     assert payload["executive_summary"] == "Good meeting."
     assert payload["key_points"] == ["point A", "point B"]
     assert len(payload["action_items"]) == 1
+    assert isinstance(payload["meeting_insights"], dict)
+    assert isinstance(payload["keyword_index"], list)
 
 
 @pytest.mark.asyncio
@@ -330,6 +347,8 @@ async def test_run_summary_success_broadcasts_new_fields():
     finals = [{"ts": ts, "speaker_label": "You", "en": "Hello world"}]
     orch, svc, broadcast, _ = _make_orch(finals=finals)
     result = _make_result(
+        keywords=["education"],
+        entities=[{"type": "PERSON", "text": "Alice", "mentions": 2}],
         decisions_made=["Deploy by Friday"],
         risks_and_blockers=["Team capacity low"],
         key_terms_defined=[{"term": "CI", "definition": "Continuous Integration"}],
@@ -340,6 +359,8 @@ async def test_run_summary_success_broadcasts_new_fields():
     await orch.run_summary()
 
     payload = broadcast.await_args.args[0]
+    assert payload["keywords"] == ["education"]
+    assert payload["entities"][0]["text"] == "Alice"
     assert payload["decisions_made"] == ["Deploy by Friday"]
     assert payload["risks_and_blockers"] == ["Team capacity low"]
     assert len(payload["key_terms_defined"]) == 1
@@ -358,6 +379,46 @@ async def test_run_summary_success_logs_info():
     log_calls = [c.args for c in broadcast_log.await_args_list]
     levels = [c[0] for c in log_calls]
     assert "info" in levels
+
+
+@pytest.mark.asyncio
+async def test_run_summary_builds_keyword_index_from_terms_and_transcript():
+    ts = time.time()
+    finals = [
+        {"ts": ts, "speaker_label": "You", "en": "We should improve communication."},
+        {"ts": ts + 4, "speaker_label": "Remote", "en": "Communication quality matters."},
+    ]
+    orch, svc, broadcast, _ = _make_orch(finals=finals)
+    svc.generate.return_value = _make_result(
+        key_terms_defined=[{"term": "Communication", "definition": "Exchange of ideas"}],
+    )
+
+    await orch.run_summary()
+
+    payload = broadcast.await_args.args[0]
+    keywords = payload["keyword_index"]
+    assert any(str(row.get("keyword", "")).lower() == "communication" for row in keywords)
+
+
+@pytest.mark.asyncio
+async def test_run_summary_builds_keyword_index_from_entities_and_transcript():
+    ts = time.time()
+    finals = [
+        {"ts": ts, "speaker_label": "You", "en": "Alice discussed rollout in London."},
+        {"ts": ts + 3, "speaker_label": "Remote", "en": "London risks were reviewed by Alice."},
+    ]
+    orch, svc, broadcast, _ = _make_orch(finals=finals)
+    svc.generate.return_value = _make_result(
+        key_terms_defined=[],
+        keywords=[],
+        entities=[{"type": "PERSON", "text": "Alice", "mentions": 2}],
+    )
+
+    await orch.run_summary()
+
+    payload = broadcast.await_args.args[0]
+    keywords = payload["keyword_index"]
+    assert any(str(row.get("keyword", "")).lower() == "alice" for row in keywords)
 
 
 # ---------------------------------------------------------------------------
@@ -675,7 +736,16 @@ async def test_run_summary_broadcasts_topic_breakdown():
     defs = [{"name": "Intro", "expected_duration_min": 5}]
     items = [{"name": "Intro", "status": "covered", "time_seconds": 600}]
     orch, svc, broadcast, _ = _make_orch(finals=finals, topic_defs=defs, topic_items=items)
-    svc.generate.return_value = _make_result()
+    svc.generate.return_value = _make_result(
+        topic_key_points=[
+            {
+                "topic_name": "Intro",
+                "estimated_duration_minutes": 5.0,
+                "origin": "Agenda",
+                "key_points": [],
+            }
+        ]
+    )
 
     await orch.run_summary()
 
@@ -685,7 +755,7 @@ async def test_run_summary_broadcasts_topic_breakdown():
     assert "topic_breakdown" in payload
     assert len(payload["topic_breakdown"]) == 1
     assert payload["topic_breakdown"][0]["name"] == "Intro"
-    assert payload["agenda_adherence_pct"] == 100.0
+    assert payload["agenda_adherence_pct"] == 0.0
 
 
 @pytest.mark.asyncio
@@ -727,8 +797,50 @@ async def test_run_summary_fallbacks_to_topic_groups_when_no_tracked_topics():
     assert len(payload["topic_breakdown"]) == 1
     assert payload["topic_breakdown"][0]["name"] == "Introduction"
     assert payload["topic_breakdown"][0]["status"] == "inferred"
-    assert payload["topic_breakdown"][0]["actual_min"] == 3.5
+    assert payload["topic_breakdown"][0]["actual_min"] == 0.0
     assert payload["agenda_adherence_pct"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_summary_computes_topic_minutes_from_utterance_ids():
+    base = time.time()
+    finals = [
+        {
+            "ts": base + 5.0,
+            "start_ts": base + 0.0,
+            "end_ts": base + 30.0,
+            "duration_sec": 30.0,
+            "speaker_label": "You",
+            "en": "First point",
+        },
+        {
+            "ts": base + 95.0,
+            "start_ts": base + 30.0,
+            "end_ts": base + 120.0,
+            "duration_sec": 90.0,
+            "speaker_label": "Remote",
+            "en": "Second point",
+        },
+    ]
+    orch, svc, broadcast, _ = _make_orch(finals=finals)
+    svc.generate.return_value = _make_result(
+        topic_key_points=[
+            {
+                "topic_name": "Main Discussion",
+                "estimated_duration_minutes": None,
+                "utterance_ids": ["U0001", "U0002"],
+                "origin": "Inferred",
+                "key_points": ["k1"],
+            }
+        ]
+    )
+
+    await orch.run_summary()
+
+    payload = broadcast.await_args.args[0]
+    assert payload["topic_key_points"][0]["estimated_duration_minutes"] == 2.0
+    assert payload["topic_breakdown"][0]["name"] == "Main Discussion"
+    assert payload["topic_breakdown"][0]["actual_min"] == 2.0
 
 
 # ---------------------------------------------------------------------------

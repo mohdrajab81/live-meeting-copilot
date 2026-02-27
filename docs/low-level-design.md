@@ -42,8 +42,8 @@ Primary goals:
 - `app/controller/summary_orchestrator.py`:
   - builds transcript prompt from final turns,
   - runs summary generation (auto on stop/manual endpoint),
-  - computes deterministic topic breakdown + agenda adherence when topic tracker data exists,
-  - falls back to inferred topic breakdown from model topic groups when deterministic breakdown is unavailable,
+  - resolves summary topic durations deterministically from `utterance_ids`,
+  - computes topic breakdown + agenda adherence from topic definitions + resolved summary topic groups,
   - stores summary pending/result/error state.
 - `app/controller/config_store.py`: runtime config persistence and validation.
 - `app/controller/broadcast_service.py`: websocket fanout and log buffering.
@@ -103,7 +103,7 @@ Primary goals:
 
 Summary payload includes:
 - `executive_summary`, `key_points`, `action_items`,
-- `topic_key_points` (topic-grouped key points with estimated duration and origin),
+- `topic_key_points` (topic-grouped key points with `utterance_ids`, backend-computed estimated duration, and origin),
 - `decisions_made`, `risks_and_blockers`, `key_terms_defined`, `metadata`,
 - `topic_breakdown`, `agenda_adherence_pct`.
 

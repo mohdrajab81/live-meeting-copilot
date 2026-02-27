@@ -6,8 +6,10 @@ Live interview translator that:
 - emits live EN transcript,
 - optionally translates EN->AR asynchronously,
 - optionally generates session summary (executive summary, key points, action items, decisions, risks, key terms, metadata),
-- includes topic coverage timeline and agenda adherence when deterministic topic data exists,
-- falls back to inferred topic timing groups when deterministic topic data is unavailable,
+- optionally extracts structured entities in summary output (PERSON/ORG/LOCATION/DATE_TIME/PRODUCT/EVENT/MONEY/PERCENT),
+- computes deterministic meeting insights and keyword index from transcript turns for both live and from-file summary paths,
+- builds topic coverage timeline from agenda definitions + one-shot transcript topic grouping with deterministic duration allocation from utterance IDs,
+- computes agenda adherence when planned minutes exist in definitions,
 - optionally provides coach hints,
 - optionally tracks meeting topics through an agent.
 
@@ -67,11 +69,12 @@ Live interview translator that:
 ### Summary flow
 1. Session stop (`stop_async`) triggers summary generation when `summary_enabled=true`.
 2. `SummaryOrchestrator` builds transcript text from final turns.
-3. If topic tracker coverage is available, orchestrator computes deterministic `topic_breakdown` and `agenda_adherence_pct`.
-4. `SummaryService` generates structured summary via Azure AI Foundry, including `topic_key_points`.
-5. If deterministic topic breakdown is missing, orchestrator derives fallback `topic_breakdown` from inferred `topic_key_points`.
-6. Summary is broadcast as `summary` event; clear action broadcasts `summary_cleared`.
-7. Separate file-analysis path: `/api/summary/from-transcript` parses exported CSV and returns summary payload without mutating live session state.
+3. If agenda definitions exist, orchestrator prepends expected agenda context to the prompt.
+4. `SummaryService` generates structured summary via Azure AI Foundry, including `topic_key_points` with `utterance_ids`.
+5. Orchestrator resolves `topic_key_points[*].estimated_duration_minutes` deterministically from transcript utterance durations, then computes `topic_breakdown` and `agenda_adherence_pct` from agenda definitions + resolved topic groups.
+6. Orchestrator computes deterministic `meeting_insights` and `keyword_index` from the same 500-turn transcript window used for prompting, where `keyword_index` merges GPT keywords, key terms, and entities.
+7. Summary is broadcast as `summary` event; clear action broadcasts `summary_cleared`.
+8. Separate file-analysis path: `/api/summary/from-transcript` uses the same prompt + deterministic post-processing path and returns the same summary + insights + keyword payload shape; frontend applies it to the main Summary tab view.
 
 ## WebSocket event families
 - `snapshot` (initial full state)

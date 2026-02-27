@@ -126,6 +126,20 @@ class SpeechService:
         speaker_label: str,
         restart_event: threading.Event,
     ) -> None:
+        timing_state: dict[str, Any] = {
+            "anchor_ts": time.time(),
+            "session_id": "",
+        }
+
+        def _safe_float(value: Any) -> float | None:
+            try:
+                parsed = float(value)
+            except Exception:
+                return None
+            if parsed < 0:
+                return None
+            return parsed
+
         def on_recognizing(evt: Any) -> None:
             result = evt.result
             if not result or result.reason != speech_sdk.ResultReason.RecognizingSpeech:
@@ -167,15 +181,42 @@ class SpeechService:
             if not en_text:
                 return
             now_ts = time.time()
+            offset_sec: float | None = None
+            duration_sec = 0.0
             start_ts = now_ts
-            # SDK duration is in 100ns ticks; use it to estimate utterance start.
-            try:
-                duration_ticks = float(getattr(result, "duration", 0) or 0)
-                duration_sec = max(0.0, duration_ticks / 10_000_000.0)
+            end_ts = now_ts
+            timing_source = "event_only"
+
+            raw_offset_ticks = _safe_float(getattr(result, "offset", None))
+            if raw_offset_ticks is not None:
+                offset_sec = raw_offset_ticks / 10_000_000.0
+            raw_duration_ticks = _safe_float(getattr(result, "duration", None))
+            if raw_duration_ticks is not None:
+                duration_sec = max(0.0, raw_duration_ticks / 10_000_000.0)
+
+            anchor_ts = _safe_float(timing_state.get("anchor_ts")) or now_ts
+            if offset_sec is not None:
+                timing_source = "offset"
+                start_ts = max(0.0, anchor_ts + offset_sec)
                 if duration_sec > 0:
-                    start_ts = max(0.0, now_ts - duration_sec)
-            except Exception:
+                    end_ts = start_ts + duration_sec
+                else:
+                    end_ts = start_ts
+            elif duration_sec > 0:
+                timing_source = "duration_backfill"
+                start_ts = max(0.0, now_ts - duration_sec)
+                end_ts = now_ts
+
+            # Guard against local clock jitter and callback ordering.
+            if start_ts > now_ts:
                 start_ts = now_ts
+            if end_ts > now_ts:
+                end_ts = now_ts
+            if end_ts < start_ts:
+                end_ts = start_ts
+            if duration_sec <= 0.0:
+                duration_sec = max(0.0, end_ts - start_ts)
+
             self._emit(
                 {
                     "type": "final",
@@ -184,7 +225,13 @@ class SpeechService:
                     "en": en_text,
                     "ar": "",
                     "ts": now_ts,
-                    "start_ts": min(start_ts, now_ts),
+                    "start_ts": start_ts,
+                    "end_ts": end_ts,
+                    "duration_sec": duration_sec,
+                    "offset_sec": offset_sec,
+                    "timing_source": timing_source,
+                    "recognizer_session_id": str(timing_state.get("session_id") or ""),
+                    "recognizer_anchor_ts": anchor_ts,
                 }
             )
             if cfg.debug:
@@ -193,6 +240,21 @@ class SpeechService:
                         "type": "log",
                         "level": "debug",
                         "message": f"[{speaker_label}] Final recognized: EN='{en_text}'",
+                    }
+                )
+
+        def on_session_started(evt: Any) -> None:
+            timing_state["anchor_ts"] = time.time()
+            timing_state["session_id"] = str(getattr(evt, "session_id", "") or "")
+            if cfg.debug:
+                self._emit(
+                    {
+                        "type": "log",
+                        "level": "debug",
+                        "message": (
+                            f"[{speaker_label}] Session started: "
+                            f"session_id={timing_state['session_id'] or '-'}"
+                        ),
                     }
                 )
 
@@ -227,6 +289,7 @@ class SpeechService:
 
         recognizer.recognizing.connect(on_recognizing)
         recognizer.recognized.connect(on_recognized)
+        recognizer.session_started.connect(on_session_started)
         recognizer.canceled.connect(on_canceled)
 
     def _start_single_mode(self, cfg: RuntimeConfig) -> list[dict]:

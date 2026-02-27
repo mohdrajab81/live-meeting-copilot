@@ -11,9 +11,12 @@ Features
 - WebSocket live updates for transcript, translation patches, telemetry, coach hints, and topics.
 - Session summary generation (auto on stop or manual on demand) with:
   - executive summary, key points, action items, decisions, risks, key terms, metadata,
-  - topic coverage timeline (`topic_breakdown`) with adherence when agenda timing exists,
-  - inferred topic timing fallback when deterministic topic tracking is unavailable.
-- "From File" summary analysis: upload exported transcript CSV and generate summary without mutating live session state.
+  - optional structured entities (`entities`) from GPT (PERSON/ORG/LOCATION/DATE_TIME/PRODUCT/EVENT/MONEY/PERCENT),
+  - deterministic meeting insights (`meeting_insights`) for speaking balance, turn-taking, pace, and health score,
+  - deterministic keyword index (`keyword_index`) with occurrences and time span, combining keywords + key terms + entities in one searchable list,
+  - topic coverage timeline (`topic_breakdown`) built from agenda definitions + one-shot transcript topic grouping,
+  - agenda adherence (`agenda_adherence_pct`) when planned minutes are provided in definitions.
+- "From File" summary analysis: upload exported transcript CSV and load the generated result into the main Summary tab (including insights + keyword index) using the same definition-driven topic breakdown approach; backend generation does not mutate transcript/topic runtime state.
 - Config API with in-memory update + save/reload/reset.
 - Optional coach agent (manual ask + auto-trigger on final turns).
 - Optional topic tracker agent (manual and scheduled analysis).

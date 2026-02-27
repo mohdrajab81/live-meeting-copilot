@@ -207,6 +207,32 @@ class SessionManager:
             start_ts = final_ts
         if start_ts <= 0:
             start_ts = final_ts
+        try:
+            end_ts = float(payload.get("end_ts", final_ts) or final_ts)
+        except Exception:
+            end_ts = final_ts
+        if end_ts <= 0:
+            end_ts = final_ts
+        if end_ts > final_ts:
+            end_ts = final_ts
+        if end_ts < start_ts:
+            end_ts = start_ts
+        duration_sec = payload.get("duration_sec")
+        try:
+            normalized_duration_sec = max(0.0, float(duration_sec))
+        except Exception:
+            normalized_duration_sec = max(0.0, end_ts - start_ts)
+        offset_sec = payload.get("offset_sec")
+        try:
+            normalized_offset_sec = max(0.0, float(offset_sec))
+        except Exception:
+            normalized_offset_sec = None
+        timing_source = str(payload.get("timing_source", "event_only") or "event_only")
+        recognizer_session_id = str(payload.get("recognizer_session_id", "") or "")
+        try:
+            recognizer_anchor_ts = float(payload.get("recognizer_anchor_ts", 0.0) or 0.0)
+        except Exception:
+            recognizer_anchor_ts = 0.0
         speaker = str(payload.get("speaker", "default") or "default")
         fallback_segment_id = f"{speaker}-raw-{int(final_ts * 1000)}"
         return {
@@ -221,6 +247,12 @@ class SessionManager:
             "revision": max(0, int(payload.get("revision", 0) or 0)),
             "ts": final_ts,
             "start_ts": min(start_ts, final_ts),
+            "end_ts": end_ts,
+            "duration_sec": normalized_duration_sec,
+            "offset_sec": normalized_offset_sec,
+            "timing_source": timing_source,
+            "recognizer_session_id": recognizer_session_id,
+            "recognizer_anchor_ts": recognizer_anchor_ts,
         }
 
     def _handle_partial_event(
@@ -260,6 +292,13 @@ class SessionManager:
         coach_call: tuple[str, str, float, int] | None = None
         queued_while_busy = False
         item = self._create_final_item(payload)
+        original_start_ts = float(item.get("start_ts") or item.get("ts") or time.time())
+        original_end_ts = float(item.get("end_ts") or item.get("ts") or original_start_ts)
+        original_duration = float(item.get("duration_sec") or max(0.0, original_end_ts - original_start_ts))
+        original_offset = item.get("offset_sec")
+        original_timing_source = str(item.get("timing_source", "event_only") or "event_only")
+        original_session_id = str(item.get("recognizer_session_id", "") or "")
+        original_anchor_ts = float(item.get("recognizer_anchor_ts") or 0.0)
         with self._lock:
             item, req = self._translation.prepare_final_unlocked(
                 speaker=item["speaker"],
@@ -268,6 +307,17 @@ class SessionManager:
                 ts=float(item["ts"]),
                 debug=bool(config.debug),
             )
+            # Keep Speech SDK timing as the source of truth for final-utterance timing.
+            item["start_ts"] = min(original_start_ts, float(item.get("ts") or original_start_ts))
+            item["end_ts"] = max(
+                item["start_ts"],
+                min(original_end_ts, float(item.get("ts") or original_end_ts)),
+            )
+            item["duration_sec"] = max(0.0, original_duration)
+            item["offset_sec"] = original_offset
+            item["timing_source"] = original_timing_source
+            item["recognizer_session_id"] = original_session_id
+            item["recognizer_anchor_ts"] = original_anchor_ts
             self._transcript.append_final_unlocked(item, max_finals=config.max_finals)
             is_candidate = self._coach_orch.should_trigger_unlocked(
                 item, config, ignore_busy=True

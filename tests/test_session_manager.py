@@ -167,6 +167,34 @@ def _final_payload():
     }
 
 
+def test_create_final_item_preserves_sdk_timing_fields():
+    mgr, _, _, _, _, _, _ = _make_session_manager()
+    now = time.time()
+    payload = {
+        "type": "final",
+        "speaker": "remote",
+        "speaker_label": "Remote",
+        "en": "timed utterance",
+        "ts": now,
+        "start_ts": now - 2.0,
+        "end_ts": now - 0.4,
+        "duration_sec": 1.6,
+        "offset_sec": 42.5,
+        "timing_source": "offset",
+        "recognizer_session_id": "session-xyz",
+        "recognizer_anchor_ts": now - 100.0,
+    }
+    item = mgr._create_final_item(payload)
+    assert item["speaker"] == "remote"
+    assert item["start_ts"] == pytest.approx(now - 2.0)
+    assert item["end_ts"] == pytest.approx(now - 0.4)
+    assert item["duration_sec"] == pytest.approx(1.6)
+    assert item["offset_sec"] == pytest.approx(42.5)
+    assert item["timing_source"] == "offset"
+    assert item["recognizer_session_id"] == "session-xyz"
+    assert item["recognizer_anchor_ts"] == pytest.approx(now - 100.0)
+
+
 def test_partial_does_not_enqueue_when_translation_disabled():
     mgr, _, translation, _, _, _, _ = _make_session_manager()
     mgr._get_config = lambda: RuntimeConfig(translation_enabled=False)

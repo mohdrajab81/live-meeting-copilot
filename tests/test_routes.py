@@ -598,12 +598,19 @@ _VALID_CSV = (
     "0,A,Interviewer,2024-01-01 10:00:00,1704067200.0,False,,Hello world,\n"
     "1,B,Candidate,2024-01-01 10:01:00,1704067260.0,False,,Thank you for having me,\n"
 )
+_VALID_ENRICHED_CSV = (
+    "index,speaker,speaker_label,time_local,time_unix_sec,start_unix_sec,end_unix_sec,duration_sec,offset_sec,timing_source,recognizer_session_id,bookmarked,bookmark_note,english,arabic\n"
+    "0,A,Interviewer,2024-01-01 10:00:00,1704067200.0,1704067195.0,1704067200.0,5.0,0.0,offset,session-a,False,,Hello world,\n"
+    "1,B,Candidate,2024-01-01 10:01:00,1704067260.0,1704067205.0,1704067212.0,7.0,10.0,offset,session-b,False,,Thank you for having me,\n"
+)
 
 _MOCK_RESULT = MagicMock(
     executive_summary="Good meeting.",
     key_points=["Point A"],
     action_items=[],
     topic_key_points=[{"topic_name": "Intro", "estimated_duration_minutes": 2.0, "origin": "Inferred", "key_points": ["Point A"]}],
+    keywords=["education", "creativity"],
+    entities=[{"type": "PERSON", "text": "Alice", "mentions": 1}],
     decisions_made=["Decision 1"],
     risks_and_blockers=[],
     key_terms_defined=[],
@@ -636,8 +643,9 @@ class TestSummaryFromTranscript:
         assert data.get("ok") is True
         result = data.get("result", {})
         for key in ("executive_summary", "key_points", "action_items",
-                    "topic_key_points", "topic_breakdown", "agenda_adherence_pct",
-                    "decisions_made", "risks_and_blockers", "key_terms_defined",
+                    "topic_key_points", "keywords", "topic_breakdown", "agenda_adherence_pct",
+                    "entities", "decisions_made", "risks_and_blockers", "key_terms_defined",
+                    "meeting_insights", "keyword_index",
                     "metadata", "total_ms"):
             assert key in result, f"missing key: {key}"
 
@@ -741,4 +749,50 @@ class TestSummaryFromTranscript:
         ctrl.summary_service.generate.assert_called_once()
         arg = ctrl.summary_service.generate.call_args.args[0]
         assert "EXPECTED AGENDA TOPICS (user-defined):" in arg
-        assert "Introduction (5 min planned)" in arg
+        assert "- Introduction" in arg
+        assert "5 min planned" not in arg
+
+    def test_enriched_csv_uses_start_time_for_elapsed_timeline(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, ctrl = client
+        ctrl.summary_service.generate = MagicMock(return_value=_MOCK_RESULT)
+        r = self._post(tc, csv_text=_VALID_ENRICHED_CSV)
+        assert r.status_code == 200
+        arg = ctrl.summary_service.generate.call_args.args[0]
+        assert "[00:00] [id:U0001] Interviewer: Hello world" in arg
+        # start_unix_sec delta: 1704067205 - 1704067195 = 10 seconds
+        assert "[00:10] [id:U0002] Candidate: Thank you for having me" in arg
+        assert "[id:U0001]" in arg
+        assert "[id:U0002]" in arg
+
+    def test_from_transcript_computes_topic_minutes_from_utterance_ids(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod, "_summary_rate_buckets", {})
+        tc, ctrl = client
+        result = MagicMock(
+            executive_summary="Good meeting.",
+            key_points=["Point A"],
+            action_items=[],
+            topic_key_points=[
+                {
+                    "topic_name": "Intro",
+                    "estimated_duration_minutes": None,
+                    "utterance_ids": ["U0001", "U0002"],
+                    "origin": "Inferred",
+                    "key_points": ["Point A"],
+                }
+            ],
+            keywords=[],
+            entities=[],
+            decisions_made=[],
+            risks_and_blockers=[],
+            key_terms_defined=[],
+            metadata={"meeting_type": "Training", "sentiment_arc": None},
+            total_ms=123,
+        )
+        ctrl.summary_service.generate = MagicMock(return_value=result)
+        data = self._post(tc, csv_text=_VALID_ENRICHED_CSV).json()
+        topic = data["result"]["topic_key_points"][0]
+        # duration_sec = 5 + 7 = 12 sec -> 0.2 min
+        assert topic["estimated_duration_minutes"] == 0.2

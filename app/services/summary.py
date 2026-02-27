@@ -13,6 +13,8 @@ class SummaryResult:
     key_points: list[str]
     action_items: list[dict[str, Any]]
     topic_key_points: list[dict[str, Any]]
+    keywords: list[str]
+    entities: list[dict[str, Any]]
     decisions_made: list[str]
     risks_and_blockers: list[str]
     key_terms_defined: list[dict[str, Any]]
@@ -37,9 +39,17 @@ Schema:
   "topic_key_points": [
     {{
       "topic_name": "<topic title>",
-      "estimated_duration_minutes": "<number or null>",
+      "utterance_ids": ["<U0001>", "<U0002>"],
       "origin": "<Agenda or Inferred>",
       "key_points": ["<point 1>", "<point 2>"]
+    }}
+  ],
+  "keywords": ["<high-signal keyword or phrase>"],
+  "entities": [
+    {{
+      "type": "<one of: PERSON, ORG, LOCATION, DATE_TIME, PRODUCT, EVENT, MONEY, PERCENT>",
+      "text": "<entity text as stated in transcript>",
+      "mentions": "<integer count or null>"
     }}
   ],
   "action_items": [
@@ -53,20 +63,27 @@ Schema:
 }}
 
 Rules:
-- key_points: max 10 items, each a single sentence.
-- topic_key_points: always return an array (or []). Group key points under major topics.
-- If AGENDA COVERAGE is present, use those topic names and durations where possible.
-- If AGENDA COVERAGE is not present, infer topics from timestamp flow and estimate duration per topic in minutes.
-- action_items: only explicit commitments or follow-ups. Empty array [] if none.
-- decisions_made: only finalized decisions explicitly stated. Empty array [] if none.
-- risks_and_blockers: only explicitly mentioned risks, blockers, or concerns. Empty array [] if none.
-- key_terms_defined: only terms explicitly explained or defined in the transcript. Empty array [] if none.
-- metadata.sentiment_arc: one sentence max, or null if transcript is too short.
-- NO hallucinations: do not invent items not present in the transcript text.
-- If an AGENDA COVERAGE section precedes the transcript, use it to inform the executive_summary \
-and key_points (e.g. note over-time topics or skipped items). Do not recompute durations — \
-treat the section as verified facts.
-- Respond with valid JSON only — no surrounding text.
+- Respond with valid JSON only. No prose outside the JSON object.
+- key_points: max 10 items, one sentence each.
+- topic_key_points:
+  - Always return an array (or []).
+  - Each item must include topic_name, origin, key_points, and utterance_ids.
+  - utterance_ids must come only from transcript markers [id:UXXXX].
+  - Use only ids inside VALID_UTTERANCE_ID_RANGES below; never invent, offset, or renumber ids.
+  - COVERAGE: every transcript id must appear in exactly one topic's utterance_ids.
+  - No skipped ids, no duplicated ids across topics.
+  - If an utterance is ambiguous, assign it to the nearest related topic.
+- If EXPECTED AGENDA TOPICS are present, map matching content to those names when appropriate, but keep meaningful inferred topics not represented by agenda names.
+- keywords: max 20 high-signal terms/phrases; exclude generic filler words.
+- entities:
+  - max 30 items; allowed types only: PERSON, ORG, LOCATION, DATE_TIME, PRODUCT, EVENT, MONEY, PERCENT.
+  - extract only explicit mentions from transcript text (no inferred entities).
+  - keep canonical deduplicated forms.
+- action_items, decisions_made, risks_and_blockers, key_terms_defined: include only explicit evidence from transcript; use [] when none.
+- metadata.sentiment_arc: one sentence max, or null if too short.
+
+VALID_UTTERANCE_ID_RANGES:
+{valid_utterance_id_ranges}
 
 TRANSCRIPT:
 {transcript}
@@ -90,7 +107,9 @@ class SummaryService:
 
     @property
     def is_configured(self) -> bool:
-        return bool(self._project_endpoint and self._model_deployment and self._agent_ref)
+        return bool(
+            self._project_endpoint and self._model_deployment and self._agent_ref
+        )
 
     def _ensure_client(self) -> Any:
         with self._state_lock:
@@ -112,6 +131,23 @@ class SummaryService:
             self._openai_client = project_client.get_openai_client()
             return self._openai_client
 
+    def _create_new_conversation_id(self, client: Any) -> str | None:
+        conversations = getattr(client, "conversations", None)
+        create_fn = (
+            getattr(conversations, "create", None)
+            if conversations is not None
+            else None
+        )
+        if not callable(create_fn):
+            return None
+        conversation = create_fn()
+        conversation_id = getattr(conversation, "id", None) or getattr(
+            conversation, "conversation_id", None
+        )
+        if not conversation_id:
+            return None
+        return str(conversation_id)
+
     def generate(self, transcript_text: str) -> SummaryResult:
         if not self.is_configured:
             raise RuntimeError(
@@ -119,18 +155,29 @@ class SummaryService:
                 "Set PROJECT_ENDPOINT, MODEL_DEPLOYMENT_NAME, and SUMMARY_AGENT_ID."
             )
         client = self._ensure_client()
-        prompt = _PROMPT_TEMPLATE.format(transcript=transcript_text)
+        valid_utterance_id_ranges = self._extract_valid_utterance_id_ranges(
+            transcript_text
+        )
+        prompt = _PROMPT_TEMPLATE.format(
+            transcript=transcript_text,
+            valid_utterance_id_ranges=valid_utterance_id_ranges,
+        )
+        request_conversation_id = self._create_new_conversation_id(client)
         total_start = time.perf_counter()
-        response = client.responses.create(
-            model=self._model_deployment,
-            input=prompt,
-            extra_body={
+        params: dict[str, Any] = {
+            "model": self._model_deployment,
+            "input": prompt,
+            "extra_body": {
                 "agent": {
                     self._agent_key: self._agent_ref,
                     "type": "agent_reference",
                 }
             },
-        )
+        }
+        if request_conversation_id:
+            # Force a fresh conversation per summary run for trace isolation.
+            params["conversation"] = request_conversation_id
+        response = client.responses.create(**params)
         total_ms = int((time.perf_counter() - total_start) * 1000)
         response_id = getattr(response, "id", None)
         output_text = getattr(response, "output_text", None) or ""
@@ -138,17 +185,63 @@ class SummaryService:
         return SummaryResult(
             executive_summary=str(structured.get("executive_summary", "") or ""),
             key_points=[str(p) for p in (structured.get("key_points") or []) if p],
-            action_items=self._normalize_action_items(structured.get("action_items") or []),
+            action_items=self._normalize_action_items(
+                structured.get("action_items") or []
+            ),
             topic_key_points=self._normalize_topic_key_points(
                 structured.get("topic_key_points") or []
             ),
-            decisions_made=self._normalize_string_list(structured.get("decisions_made") or []),
-            risks_and_blockers=self._normalize_string_list(structured.get("risks_and_blockers") or []),
-            key_terms_defined=self._normalize_key_terms(structured.get("key_terms_defined") or []),
+            keywords=self._normalize_keywords(structured.get("keywords") or []),
+            entities=self._normalize_entities(structured.get("entities") or []),
+            decisions_made=self._normalize_string_list(
+                structured.get("decisions_made") or []
+            ),
+            risks_and_blockers=self._normalize_string_list(
+                structured.get("risks_and_blockers") or []
+            ),
+            key_terms_defined=self._normalize_key_terms(
+                structured.get("key_terms_defined") or []
+            ),
             metadata=self._normalize_metadata(structured.get("metadata") or {}),
             total_ms=total_ms,
             response_id=response_id,
         )
+
+    def _extract_valid_utterance_id_ranges(self, transcript_text: str) -> str:
+        found = re.findall(r"\[id:(U\d{1,6})\]", str(transcript_text or ""), flags=re.IGNORECASE)
+        unique_nums: list[int] = []
+        seen_nums: set[int] = set()
+        for raw in found:
+            uid = str(raw or "").upper()
+            try:
+                num = int(uid[1:])
+            except Exception:
+                continue
+            if num <= 0 or num in seen_nums:
+                continue
+            seen_nums.add(num)
+            unique_nums.append(num)
+        if not unique_nums:
+            return "None"
+        nums = sorted(unique_nums)
+        ranges: list[str] = []
+        start = nums[0]
+        prev = nums[0]
+        for current in nums[1:]:
+            if current == prev + 1:
+                prev = current
+                continue
+            if start == prev:
+                ranges.append(f"U{start:04d}")
+            else:
+                ranges.append(f"U{start:04d}-U{prev:04d}")
+            start = current
+            prev = current
+        if start == prev:
+            ranges.append(f"U{start:04d}")
+        else:
+            ranges.append(f"U{start:04d}-U{prev:04d}")
+        return ", ".join(ranges)
 
     def _extract_structured(self, text: str) -> dict[str, Any]:
         cleaned = text.strip()
@@ -160,7 +253,9 @@ class SummaryService:
         brace_start = cleaned.find("{")
         brace_end = cleaned.rfind("}")
         if brace_start == -1 or brace_end == -1:
-            raise ValueError(f"No JSON object found in summary response: {cleaned[:200]!r}")
+            raise ValueError(
+                f"No JSON object found in summary response: {cleaned[:200]!r}"
+            )
         json_str = cleaned[brace_start : brace_end + 1]
         try:
             data = json.loads(json_str)
@@ -169,7 +264,9 @@ class SummaryService:
         if not isinstance(data, dict):
             raise ValueError("Summary response JSON is not an object.")
         if "executive_summary" not in data:
-            raise ValueError("Summary response missing required key 'executive_summary'.")
+            raise ValueError(
+                "Summary response missing required key 'executive_summary'."
+            )
         return data
 
     def _normalize_action_items(self, items: list[Any]) -> list[dict[str, Any]]:
@@ -212,7 +309,13 @@ class SummaryService:
     def _normalize_metadata(self, raw: Any) -> dict[str, Any]:
         if not isinstance(raw, dict):
             return {"meeting_type": "", "sentiment_arc": None}
-        valid_types = {"Interview", "Project Management", "Training", "Executive", "General"}
+        valid_types = {
+            "Interview",
+            "Project Management",
+            "Training",
+            "Executive",
+            "General",
+        }
         meeting_type = str(raw.get("meeting_type", "") or "").strip()
         if meeting_type not in valid_types:
             meeting_type = ""
@@ -228,28 +331,110 @@ class SummaryService:
             topic_name = " ".join(str(item.get("topic_name", "") or "").split()).strip()
             if not topic_name:
                 continue
-            est_raw = item.get("estimated_duration_minutes")
-            estimated_duration_minutes: float | None = None
-            if est_raw is not None and str(est_raw).strip() != "":
-                try:
-                    estimated_duration_minutes = max(0.0, round(float(est_raw), 1))
-                except (TypeError, ValueError):
-                    estimated_duration_minutes = None
             origin = " ".join(str(item.get("origin", "") or "").split()).strip().lower()
             if origin == "agenda":
                 origin_value = "Agenda"
             else:
                 origin_value = "Inferred"
             key_points = self._normalize_string_list(list(item.get("key_points") or []))
+            utterance_ids = self._normalize_utterance_ids(item.get("utterance_ids"))
             result.append(
                 {
                     "topic_name": topic_name,
-                    "estimated_duration_minutes": estimated_duration_minutes,
+                    # Deterministic-only durations: backend computes this from utterance_ids.
+                    "estimated_duration_minutes": None,
+                    "utterance_ids": utterance_ids,
                     "origin": origin_value,
                     "key_points": key_points,
                 }
             )
         return result
+
+    def _normalize_utterance_ids(self, raw: Any) -> list[str]:
+        if isinstance(raw, list):
+            source = raw
+        elif isinstance(raw, str):
+            source = raw.replace(",", " ").split()
+        else:
+            source = []
+        out: list[str] = []
+        seen: set[str] = set()
+        for item in source:
+            uid = " ".join(str(item or "").split()).strip().upper()
+            if not uid:
+                continue
+            if not re.fullmatch(r"U\d{1,6}", uid):
+                continue
+            if uid in seen:
+                continue
+            seen.add(uid)
+            out.append(uid)
+        return out[:500]
+
+    def _normalize_keywords(self, items: list[Any]) -> list[str]:
+        blocked = {
+            "think",
+            "know",
+            "really",
+            "good",
+            "said",
+            "like",
+            "just",
+            "well",
+            "yeah",
+            "okay",
+            "ok",
+        }
+        out: list[str] = []
+        seen: set[str] = set()
+        for item in items:
+            text = " ".join(str(item or "").split()).strip()
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen or key in blocked:
+                continue
+            if len(key) < 3:
+                continue
+            seen.add(key)
+            out.append(text)
+        return out[:20]
+
+    def _normalize_entities(self, items: list[Any]) -> list[dict[str, Any]]:
+        allowed_types = {
+            "PERSON",
+            "ORG",
+            "LOCATION",
+            "DATE_TIME",
+            "PRODUCT",
+            "EVENT",
+            "MONEY",
+            "PERCENT",
+        }
+        out: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            type_raw = " ".join(str(item.get("type", "") or "").split()).strip().upper()
+            if type_raw not in allowed_types:
+                continue
+            text_raw = " ".join(str(item.get("text", "") or "").split()).strip()
+            if not text_raw or len(text_raw) < 2:
+                continue
+            key = (type_raw, text_raw.lower())
+            if key in seen:
+                continue
+            mentions_raw = item.get("mentions")
+            mentions: int | None = None
+            if mentions_raw is not None and str(mentions_raw).strip() != "":
+                try:
+                    mentions = max(1, int(mentions_raw))
+                except (TypeError, ValueError):
+                    mentions = None
+            seen.add(key)
+            out.append({"type": type_raw, "text": text_raw, "mentions": mentions})
+        return out[:30]
 
     def close(self) -> None:
         with self._state_lock:
@@ -275,7 +460,9 @@ class SummaryService:
     @classmethod
     def from_environment(cls) -> "SummaryService":
         project_endpoint = (
-            os.getenv("PROJECT_ENDPOINT") or os.getenv("AZURE_AI_PROJECT_ENDPOINT") or ""
+            os.getenv("PROJECT_ENDPOINT")
+            or os.getenv("AZURE_AI_PROJECT_ENDPOINT")
+            or ""
         )
         model_deployment = (
             os.getenv("SUMMARY_MODEL_DEPLOYMENT_NAME")
@@ -283,7 +470,9 @@ class SummaryService:
             or os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME")
             or ""
         )
-        agent_ref = os.getenv("SUMMARY_AGENT_ID") or os.getenv("SUMMARY_AGENT_NAME") or ""
+        agent_ref = (
+            os.getenv("SUMMARY_AGENT_ID") or os.getenv("SUMMARY_AGENT_NAME") or ""
+        )
         return cls(
             project_endpoint=project_endpoint,
             model_deployment=model_deployment,

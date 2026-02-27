@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services.summary import SummaryResult, SummaryService
+from app.services.summary import _PROMPT_TEMPLATE, SummaryResult, SummaryService
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +196,7 @@ def test_normalize_topic_key_points_full():
         {
             "topic_name": "Intro",
             "estimated_duration_minutes": "3.25",
+            "utterance_ids": ["u0001", "U0002", "bad-id", "U0002"],
             "origin": "Agenda",
             "key_points": ["A", "B"],
         }
@@ -203,7 +204,8 @@ def test_normalize_topic_key_points_full():
     result = svc._normalize_topic_key_points(items)
     assert len(result) == 1
     assert result[0]["topic_name"] == "Intro"
-    assert result[0]["estimated_duration_minutes"] == 3.2
+    assert result[0]["estimated_duration_minutes"] is None
+    assert result[0]["utterance_ids"] == ["U0001", "U0002"]
     assert result[0]["origin"] == "Agenda"
     assert result[0]["key_points"] == ["A", "B"]
 
@@ -213,12 +215,19 @@ def test_normalize_topic_key_points_defaults_origin_inferred():
     items = [{"topic_name": "Deep Dive", "estimated_duration_minutes": 5, "key_points": []}]
     result = svc._normalize_topic_key_points(items)
     assert result[0]["origin"] == "Inferred"
+    assert result[0]["utterance_ids"] == []
 
 
 def test_normalize_topic_key_points_skips_missing_topic_name():
     svc = _make_service()
     result = svc._normalize_topic_key_points([{"topic_name": "", "key_points": ["x"]}])
     assert result == []
+
+
+def test_normalize_utterance_ids_from_string():
+    svc = _make_service()
+    ids = svc._normalize_utterance_ids("u1, U2 bad U003")
+    assert ids == ["U1", "U2", "U003"]
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +278,8 @@ def test_extract_structured_new_fields_all_present():
         "topic_key_points": [
             {"topic_name": "Intro", "estimated_duration_minutes": 2, "origin": "Inferred", "key_points": ["p1"]}
         ],
+        "keywords": ["education", "creativity"],
+        "entities": [{"type": "PERSON", "text": "Alice", "mentions": 2}],
         "action_items": [],
         "decisions_made": ["Approved budget"],
         "risks_and_blockers": ["Timeline tight"],
@@ -281,6 +292,8 @@ def test_extract_structured_new_fields_all_present():
     assert result["key_terms_defined"][0]["term"] == "MVP"
     assert result["metadata"]["meeting_type"] == "Project Management"
     assert result["topic_key_points"][0]["topic_name"] == "Intro"
+    assert result["keywords"] == ["education", "creativity"]
+    assert result["entities"][0]["type"] == "PERSON"
 
 
 def test_extract_structured_new_fields_absent_does_not_raise():
@@ -293,6 +306,42 @@ def test_extract_structured_new_fields_absent_does_not_raise():
     assert result.get("key_terms_defined") is None
     assert result.get("metadata") is None
     assert result.get("topic_key_points") is None
+    assert result.get("keywords") is None
+    assert result.get("entities") is None
+
+
+def test_normalize_keywords_dedup_and_blocked_words():
+    svc = _make_service()
+    items = ["Education", "education", "think", "Creativity", "", "AI strategy"]
+    out = svc._normalize_keywords(items)
+    assert out == ["Education", "Creativity", "AI strategy"]
+
+
+def test_normalize_entities_filters_type_dedup_and_mentions():
+    svc = _make_service()
+    items = [
+        {"type": "person", "text": "Alice", "mentions": "2"},
+        {"type": "PERSON", "text": "alice", "mentions": 3},  # duplicate (case-insensitive text)
+        {"type": "ORG", "text": "Contoso", "mentions": 1},
+        {"type": "UNKNOWN", "text": "x", "mentions": 1},
+        {"type": "LOCATION", "text": "", "mentions": 1},
+    ]
+    out = svc._normalize_entities(items)
+    assert out == [
+        {"type": "PERSON", "text": "Alice", "mentions": 2},
+        {"type": "ORG", "text": "Contoso", "mentions": 1},
+    ]
+
+
+def test_prompt_template_formats_with_transcript_placeholder():
+    out = _PROMPT_TEMPLATE.format(
+        transcript="[00:00] You: hello",
+        valid_utterance_id_ranges="U0001-U0002",
+    )
+    assert "TRANSCRIPT:" in out
+    assert "[00:00] You: hello" in out
+    assert "VALID_UTTERANCE_ID_RANGES" in out
+    assert "U0001-U0002" in out
 
 
 # ---------------------------------------------------------------------------
@@ -363,3 +412,89 @@ def test_close_calls_client_close_methods():
     mock_project.close.assert_called_once()
     assert svc._openai_client is None
     assert svc._project_client is None
+
+
+def test_create_new_conversation_id_from_id():
+    svc = _make_service()
+    client = MagicMock()
+    client.conversations.create.return_value = MagicMock(id="conv_123")
+    assert svc._create_new_conversation_id(client) == "conv_123"
+
+
+def test_create_new_conversation_id_returns_none_when_unsupported():
+    svc = _make_service()
+    assert svc._create_new_conversation_id(object()) is None
+
+
+def test_generate_passes_new_conversation_id_when_available():
+    svc = _make_service()
+    fake_client = MagicMock()
+    fake_client.conversations.create.return_value = MagicMock(id="conv_abc")
+    fake_client.responses.create.return_value = MagicMock(
+        id="resp_1",
+        output_text=json.dumps(
+            {
+                "executive_summary": "Summary.",
+                "key_points": [],
+                "action_items": [],
+            }
+        ),
+    )
+    with patch.object(svc, "_ensure_client", return_value=fake_client):
+        result = svc.generate("hello")
+    assert result.response_id == "resp_1"
+    kwargs = fake_client.responses.create.call_args.kwargs
+    assert kwargs.get("conversation") == "conv_abc"
+
+
+def test_generate_omits_conversation_when_unavailable():
+    svc = _make_service()
+    fake_client = MagicMock()
+    fake_client.conversations = None
+    fake_client.responses.create.return_value = MagicMock(
+        id="resp_2",
+        output_text=json.dumps(
+            {
+                "executive_summary": "Summary.",
+                "key_points": [],
+                "action_items": [],
+            }
+        ),
+    )
+    with patch.object(svc, "_ensure_client", return_value=fake_client):
+        svc.generate("hello")
+    kwargs = fake_client.responses.create.call_args.kwargs
+    assert "conversation" not in kwargs
+
+
+def test_extract_valid_utterance_id_ranges_compacts_contiguous_ids():
+    svc = _make_service()
+    text = (
+        "[00:00] Remote: A [id:U0003]\n"
+        "[00:01] Remote: B [id:U0001]\n"
+        "[00:02] Remote: C [id:U0002]\n"
+        "[00:03] Remote: D [id:U0005]\n"
+    )
+    assert svc._extract_valid_utterance_id_ranges(text) == "U0001-U0003, U0005"
+
+
+def test_generate_prompt_includes_valid_utterance_id_ranges_guard():
+    svc = _make_service()
+    fake_client = MagicMock()
+    fake_client.conversations = None
+    fake_client.responses.create.return_value = MagicMock(
+        id="resp_guard",
+        output_text=json.dumps(
+            {
+                "executive_summary": "Summary.",
+                "key_points": [],
+                "action_items": [],
+            }
+        ),
+    )
+    with patch.object(svc, "_ensure_client", return_value=fake_client):
+        svc.generate("[00:00] Remote: x [id:U0001]\n[00:02] Remote: y [id:U0002]")
+    kwargs = fake_client.responses.create.call_args.kwargs
+    prompt = kwargs.get("input") or ""
+    assert "VALID_UTTERANCE_ID_RANGES:" in prompt
+    assert "U0001-U0002" in prompt

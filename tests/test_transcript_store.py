@@ -57,6 +57,28 @@ class TestAppendFinal:
         for field in ("en", "ar", "speaker", "speaker_label", "segment_id", "revision", "ts", "start_ts"):
             assert field in item
 
+    def test_stores_enriched_timing_fields(self, store):
+        ts = time.time()
+        payload = _final(ts=ts)
+        payload.update(
+            {
+                "end_ts": ts - 0.2,
+                "duration_sec": 0.8,
+                "offset_sec": 12.5,
+                "timing_source": "offset",
+                "recognizer_session_id": "session-1",
+                "recognizer_anchor_ts": ts - 20.0,
+            }
+        )
+        store.append_final_unlocked(payload, max_finals=100)
+        item = store.finals[0]
+        assert item["end_ts"] == pytest.approx(ts - 0.2)
+        assert item["duration_sec"] == pytest.approx(0.8)
+        assert item["offset_sec"] == pytest.approx(12.5)
+        assert item["timing_source"] == "offset"
+        assert item["recognizer_session_id"] == "session-1"
+        assert item["recognizer_anchor_ts"] == pytest.approx(ts - 20.0)
+
     def test_caps_at_max_finals(self, store):
         for i in range(10):
             store.append_final_unlocked(_final(f"turn {i}", segment_id=f"s{i}"), max_finals=5)

@@ -2,7 +2,7 @@
 SummaryOrchestrator — owns end-of-session summary state and generation.
 
 State: summary_pending, summary_result, summary_generated_ts, summary_error,
-       topic_breakdown, agenda_adherence_pct.
+       topic_breakdown, agenda_adherence_pct, meeting_insights, keyword_index.
 
 Shares the AppController RLock for all state mutations.
 """
@@ -13,6 +13,14 @@ import time
 from typing import Any, Awaitable, Callable
 
 from app.config import RuntimeConfig
+from app.services.meeting_insights import build_keyword_index, build_meeting_insights
+from app.services.topic_summary import (
+    apply_topic_durations_from_utterance_ids,
+    build_expected_agenda_context,
+    build_topic_breakdown_from_definitions,
+    prepare_transcript_utterances,
+    render_transcript_for_prompt,
+)
 from app.services.summary import SummaryService
 
 BroadcastCallback = Callable[[dict[str, Any]], Awaitable[None]]
@@ -47,6 +55,8 @@ class SummaryOrchestrator:
         self.summary_error: str = ""
         self.topic_breakdown: list[dict[str, Any]] = []
         self.agenda_adherence_pct: float | None = None
+        self.meeting_insights: dict[str, Any] = {}
+        self.keyword_index: list[dict[str, Any]] = []
 
     @property
     def is_configured(self) -> bool:
@@ -59,6 +69,8 @@ class SummaryOrchestrator:
         self.summary_error = ""
         self.topic_breakdown = []
         self.agenda_adherence_pct = None
+        self.meeting_insights = {}
+        self.keyword_index = []
 
     def snapshot_unlocked(self) -> dict[str, Any]:
         result = self.summary_result or {}
@@ -72,19 +84,23 @@ class SummaryOrchestrator:
             "key_points": list(result.get("key_points") or []),
             "action_items": list(result.get("action_items") or []),
             "topic_key_points": list(result.get("topic_key_points") or []),
+            "keywords": list(result.get("keywords") or []),
+            "entities": list(result.get("entities") or []),
             "decisions_made": list(result.get("decisions_made") or []),
             "risks_and_blockers": list(result.get("risks_and_blockers") or []),
             "key_terms_defined": list(result.get("key_terms_defined") or []),
             "metadata": dict(result.get("metadata") or {}),
             "topic_breakdown": list(self.topic_breakdown),
             "agenda_adherence_pct": self.agenda_adherence_pct,
+            "meeting_insights": dict(result.get("meeting_insights") or self.meeting_insights or {}),
+            "keyword_index": list(result.get("keyword_index") or self.keyword_index or []),
             "result": self.summary_result,
         }
 
-    def _build_transcript_text_unlocked(self) -> str:
+    def _build_summary_entries_unlocked(self) -> list[dict[str, Any]]:
         finals = self._get_finals()
         if not finals:
-            return ""
+            return []
         # Sort the window by start_ts so dual-channel utterances appear in speech order,
         # not arrival order (which can differ when two recognizers run in parallel).
         window = sorted(
@@ -92,31 +108,57 @@ class SummaryOrchestrator:
             key=lambda f: float(f.get("start_ts") or f.get("ts") or 0.0),
         )
         if not window:
-            return ""
+            return []
         # Derive baseline from the earliest item in the sorted window, not finals[0].
         # Using finals[0] as baseline could make out-of-order items clamp to [00:00],
         # collapsing distinct events at the start of a dual-channel session.
-        session_start = float(window[0].get("start_ts") or window[0].get("ts") or 0.0)
-        lines = []
+        entries: list[dict[str, Any]] = []
         for f in window:
-            item_ts = float(f.get("start_ts") or f.get("ts") or 0.0)
-            elapsed = max(0.0, item_ts - session_start)
-            mins = int(elapsed // 60)
-            secs = int(elapsed % 60)
-            ts_str = f"{mins:02d}:{secs:02d}"
+            item_ts = float(f.get("ts") or 0.0)
+            start_ts = float(f.get("start_ts") or item_ts or 0.0)
+            end_ts = float(f.get("end_ts") or item_ts or start_ts)
+            if end_ts < start_ts:
+                end_ts = start_ts
+            duration_sec_raw = f.get("duration_sec")
+            try:
+                duration_sec = max(0.0, float(duration_sec_raw))
+            except (TypeError, ValueError):
+                duration_sec = max(0.0, end_ts - start_ts)
             label = str(f.get("speaker_label") or "Speaker")
             text = str(f.get("en") or "").strip()
             if text:
-                lines.append(f"[{ts_str}] {label}: {text}")
-        return "\n".join(lines)
+                entries.append(
+                    {
+                        "ts": item_ts,
+                        "start_ts": start_ts,
+                        "end_ts": end_ts,
+                        "duration_sec": duration_sec,
+                        "speaker_label": label,
+                        "text": text,
+                    }
+                )
+        return prepare_transcript_utterances(entries, max_items=500)
+
+    @staticmethod
+    def _render_transcript_text(entries: list[dict[str, Any]]) -> str:
+        return render_transcript_for_prompt(entries)
+
+    def _build_transcript_text_unlocked(self) -> str:
+        return self._render_transcript_text(self._build_summary_entries_unlocked())
+
+    def _get_topic_definitions_unlocked(self) -> list[dict[str, Any]]:
+        if self._get_topics is None:
+            return []
+        definitions, _ = self._get_topics()
+        return [dict(row) for row in definitions if isinstance(row, dict)]
 
     def _build_topic_breakdown_unlocked(
         self,
     ) -> tuple[list[dict[str, Any]], float | None]:
-        """Compute topic coverage facts deterministically from TopicOrchestrator state.
+        """Legacy deterministic breakdown from tracker state.
 
-        Returns (breakdown, agenda_adherence_pct).
-        Called under the shared lock via _get_topics().
+        Kept for compatibility tests and troubleshooting. Live summary generation
+        now uses definition-driven one-shot model grouping for final breakdown.
         """
         if self._get_topics is None:
             return [], None
@@ -125,23 +167,22 @@ class SummaryOrchestrator:
         if not items:
             return [], None
 
-        # Build name → planned_min lookup from definitions.
-        # Keys are case-insensitive (lower-stripped) to tolerate minor name drift.
         def_map: dict[str, int] = {}
-        def_names: dict[str, str] = {}  # lower_key → original display name
+        def_names: dict[str, str] = {}
         for d in definitions:
             name = str(d.get("name") or "").strip()
-            if name:
-                key = name.lower()
-                try:
-                    planned = max(0, int(d.get("expected_duration_min") or 0))
-                except (TypeError, ValueError):
-                    planned = 0
-                def_map[key] = planned
-                def_names[key] = name
+            if not name:
+                continue
+            key = name.lower()
+            try:
+                planned = max(0, int(d.get("expected_duration_min") or 0))
+            except (TypeError, ValueError):
+                planned = 0
+            def_map[key] = planned
+            def_names[key] = name
 
         breakdown: list[dict[str, Any]] = []
-        item_keys: set[str] = set()  # track which definition keys have a matching item
+        item_keys: set[str] = set()
 
         for item in items:
             name = str(item.get("name") or "").strip()
@@ -155,16 +196,12 @@ class SummaryOrchestrator:
                 actual_sec = 0
             actual_min = round(actual_sec / 60, 1)
             status = str(item.get("status") or "not_started").strip().lower()
-            planned_min: int | None = def_map.get(key, 0) or None  # 0 → None (unset)
-
-            # Derive "skipped": topic was planned but never visited.
+            planned_min: int | None = def_map.get(key, 0) or None
             if planned_min and actual_sec == 0 and status == "not_started":
                 status = "skipped"
-
             over_under_min: float | None = None
             if planned_min:
                 over_under_min = round(actual_min - planned_min, 1)
-
             breakdown.append(
                 {
                     "name": name,
@@ -175,9 +212,6 @@ class SummaryOrchestrator:
                 }
             )
 
-        # Add synthetic "skipped" entries for planned definitions with no item at all.
-        # This ensures adherence denominator reflects the full planned agenda, not just
-        # whatever happened to be tracked.
         for key, planned in def_map.items():
             if planned > 0 and key not in item_keys:
                 breakdown.append(
@@ -190,7 +224,6 @@ class SummaryOrchestrator:
                     }
                 )
 
-        # Adherence: continuous formula — only for topics with a planned duration.
         planned_topics = [
             (b["actual_min"], b["planned_min"])
             for b in breakdown
@@ -202,31 +235,7 @@ class SummaryOrchestrator:
             if total_planned > 0:
                 used_within_budget = sum(min(a, p) for a, p in planned_topics)
                 adherence = round(100.0 * used_within_budget / total_planned, 1)
-
         return breakdown, adherence
-
-    def _build_agenda_context_unlocked(
-        self, breakdown: list[dict[str, Any]]
-    ) -> str:
-        """Format topic breakdown as a prompt preamble for the LLM."""
-        if not breakdown:
-            return ""
-        lines = ["AGENDA COVERAGE (pre-computed facts — do not recompute):"]
-        for t in breakdown:
-            name = t["name"]
-            actual = t["actual_min"]
-            planned = t["planned_min"]
-            status = t["status"]
-            over_under = t["over_under_min"]
-            if planned is not None:
-                sign = "+" if (over_under or 0) > 0 else ""
-                detail = f"{actual} min actual / {planned} min planned"
-                if over_under is not None and over_under != 0.0:
-                    detail += f" ({sign}{over_under} min)"
-            else:
-                detail = f"{actual} min"
-            lines.append(f"- {name}: {status}, {detail}")
-        return "\n".join(lines)
 
     def _fallback_breakdown_from_topic_groups(
         self, topic_groups: list[dict[str, Any]]
@@ -270,8 +279,9 @@ class SummaryOrchestrator:
                 return
             self.summary_pending = True
             self.summary_error = ""
-            transcript_text = self._build_transcript_text_unlocked()
-            breakdown, adherence = self._build_topic_breakdown_unlocked()
+            entries = self._build_summary_entries_unlocked()
+            transcript_text = self._render_transcript_text(entries)
+            topic_defs = self._get_topic_definitions_unlocked()
 
         if not transcript_text.strip():
             with self._lock:
@@ -279,9 +289,8 @@ class SummaryOrchestrator:
             await self._broadcast_log("info", "Summary skipped: transcript is empty.")
             return
 
-        # Prepend agenda context if topics were tracked.
-        with self._lock:
-            agenda_context = self._build_agenda_context_unlocked(breakdown)
+        # Prepend expected agenda context when topic definitions exist.
+        agenda_context = build_expected_agenda_context(topic_defs)
         if agenda_context:
             transcript_text = agenda_context + "\n\nTRANSCRIPT:\n" + transcript_text
 
@@ -289,18 +298,31 @@ class SummaryOrchestrator:
         try:
             from app.services.summary import SummaryResult  # noqa: F401
             result: Any = await asyncio.to_thread(self._summary.generate, transcript_text)
-            final_breakdown = list(breakdown)
-            final_adherence = adherence
+            resolved_topic_groups = apply_topic_durations_from_utterance_ids(
+                result.topic_key_points,
+                entries,
+            )
+            final_breakdown, final_adherence = build_topic_breakdown_from_definitions(
+                topic_defs, resolved_topic_groups
+            )
             if not final_breakdown:
                 final_breakdown = self._fallback_breakdown_from_topic_groups(
-                    result.topic_key_points
+                    resolved_topic_groups
                 )
-                final_adherence = None
+            meeting_insights = build_meeting_insights(entries)
+            keyword_index = build_keyword_index(
+                entries,
+                result.key_terms_defined,
+                result.keywords,
+                result.entities,
+            )
             payload: dict[str, Any] = {
                 "executive_summary": result.executive_summary,
                 "key_points": result.key_points,
                 "action_items": result.action_items,
-                "topic_key_points": result.topic_key_points,
+                "topic_key_points": resolved_topic_groups,
+                "keywords": result.keywords,
+                "entities": result.entities,
                 "decisions_made": result.decisions_made,
                 "risks_and_blockers": result.risks_and_blockers,
                 "key_terms_defined": result.key_terms_defined,
@@ -309,6 +331,8 @@ class SummaryOrchestrator:
                 "total_ms": result.total_ms,
                 "topic_breakdown": final_breakdown,
                 "agenda_adherence_pct": final_adherence,
+                "meeting_insights": meeting_insights,
+                "keyword_index": keyword_index,
             }
             with self._lock:
                 self.summary_pending = False
@@ -317,17 +341,21 @@ class SummaryOrchestrator:
                 self.summary_error = ""
                 self.topic_breakdown = final_breakdown
                 self.agenda_adherence_pct = final_adherence
+                self.meeting_insights = meeting_insights
+                self.keyword_index = keyword_index
             await self._broadcast({"type": "summary", **payload})
             await self._broadcast_log(
                 "info",
                 f"Summary generated: total_ms={result.total_ms}, "
                 f"key_points={len(result.key_points)}, "
                 f"action_items={len(result.action_items)}, "
-                f"topic_groups={len(result.topic_key_points)}, "
+                f"topic_groups={len(resolved_topic_groups)}, "
+                f"entities={len(result.entities)}, "
                 f"decisions={len(result.decisions_made)}, "
                 f"risks={len(result.risks_and_blockers)}, "
                 f"terms={len(result.key_terms_defined)}, "
-                f"topics={len(final_breakdown)}",
+                f"topics={len(final_breakdown)}, "
+                f"keywords={len(keyword_index)}",
             )
         except Exception as ex:
             with self._lock:

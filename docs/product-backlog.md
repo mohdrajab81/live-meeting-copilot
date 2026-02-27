@@ -13,11 +13,12 @@ Turn the app into a public-ready meeting intelligence platform with clear value 
 | Stability + reliability hardening | Malformed model output handling, run labeling |
 | Deployment package | Self-hosted zip, startup validation, runbooks |
 | Full conversation summary | Executive summary, key points, action items, decisions, risks, key terms, metadata |
-| Topic key points (LLM) | Per-topic key point grouping with duration estimate and Agenda/Inferred origin |
+| Topic key points (LLM + backend) | Per-topic key point grouping with `utterance_ids`; duration resolved deterministically in backend with Agenda/Inferred origin |
 | Agenda-aware analysis | Deterministic topic breakdown, adherence %, skipped detection, timeline bar |
 | Sentiment arc | Session-level tone progression in summary metadata |
 | Optional translation mode | Toggle transcript-only mode for same-language meetings |
-| Summary from file | Upload past transcript CSV → summary modal, does not mutate session state |
+| Summary from file | Upload past transcript CSV → result loads in main Summary tab; backend does not mutate transcript/topic runtime state |
+| Meeting insights + keyword index (v1) | Deterministic speaking balance / pace / health + clickable keyword chips in Summary |
 
 ---
 
@@ -27,21 +28,21 @@ Turn the app into a public-ready meeting intelligence platform with clear value 
 
 Compute purely from existing transcript data — no new agents or services needed.
 
-- **Speaking balance**: per-speaker word count, sentence count, and share of total talk time. Show as bar chart.
-- **Turn-taking**: number of speaker turns, average turn length, longest monologue.
-- **Pace**: words per minute per speaker (timestamps already in transcript).
+- **Speaking balance**: per-speaker word count and share of total airtime/words. Show as bar chart. ✅ v1 shipped
+- **Turn-taking**: number of speaker turns, average turn length, longest monologue. ✅ v1 shipped
+- **Pace**: words per minute per speaker (timestamps already in transcript). ✅ v1 shipped
 - **Topic drift**: flag segments where coach/topic agent detected off-agenda content.
-- **Meeting health score**: composite 0–100 score with short recommendations (e.g. "One speaker dominated 80% of airtime").
-- Export in JSON and TXT summary.
+- **Meeting health score**: composite 0–100 score with short recommendations (e.g. "One speaker dominated 80% of airtime"). ✅ v1 shipped
+- Export in JSON and TXT summary. ✅ v1 shipped
 
 ### 2. Keyword / searchable index
 
 We already extract `key_terms_defined` from the LLM. Add discoverability.
 
-- Deduplicated keyword list from all summary runs in session.
-- Click a keyword to jump to matching transcript lines (timestamp anchor).
+- Deduplicated keyword list from transcript + defined terms in summary runs. ✅ v1 shipped
+- Click a keyword to jump to matching transcript lines (timestamp anchor). ✅ v1 shipped
 - Searchable filter box on the Transcript tab.
-- Export keyword list with definitions in summary JSON/TXT.
+- Export keyword list with definitions in summary JSON/TXT. ✅ v1 shipped
 
 ### 3. Voice recording
 

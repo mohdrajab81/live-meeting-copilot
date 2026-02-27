@@ -180,6 +180,13 @@
   const summaryExecutiveText = document.getElementById("summaryExecutiveText");
   const summaryKeyPointsList = document.getElementById("summaryKeyPointsList");
   const summaryActionItemsList = document.getElementById("summaryActionItemsList");
+  const summaryInsightsSection = document.getElementById("summaryInsightsSection");
+  const summaryInsightsBody = document.getElementById("summaryInsightsBody");
+  const summaryHealthChip = document.getElementById("summaryHealthChip");
+  const summaryKeywordsSection = document.getElementById("summaryKeywordsSection");
+  const summaryKeywordsMeta = document.getElementById("summaryKeywordsMeta");
+  const summaryKeywordSearch = document.getElementById("summaryKeywordSearch");
+  const summaryKeywordsList = document.getElementById("summaryKeywordsList");
   const summaryMetaRow = document.getElementById("summaryMetaRow");
   const summaryDecisionsSection = document.getElementById("summaryDecisionsSection");
   const summaryDecisionsList = document.getElementById("summaryDecisionsList");
@@ -205,10 +212,6 @@
   const fileModalAnalyseBtn = document.getElementById("fileModalAnalyseBtn");
   const fileModalPending = document.getElementById("fileModalPending");
   const fileModalError = document.getElementById("fileModalError");
-  const fileModalResults = document.getElementById("fileModalResults");
-  const fileModalExportRow = document.getElementById("fileModalExportRow");
-  const fileModalExportJson = document.getElementById("fileModalExportJson");
-  const fileModalExportTxt = document.getElementById("fileModalExportTxt");
 
   const logsCompactToggle = document.getElementById("logsCompactToggle");
   const logsPinnedList = document.getElementById("logsPinnedList");
@@ -360,12 +363,15 @@
       key_points: [],
       action_items: [],
       topic_key_points: [],
+      entities: [],
       decisions_made: [],
       risks_and_blockers: [],
       key_terms_defined: [],
       metadata: {},
       topic_breakdown: [],
       agenda_adherence_pct: null,
+      meeting_insights: {},
+      keyword_index: [],
       error: "",
     },
   };
@@ -833,6 +839,16 @@
   }
 
   function appendFinal(item) {
+    const ts = Number(item.ts || Date.now() / 1000);
+    const startTsRaw = Number(item.start_ts ?? ts);
+    const startTs = Number.isFinite(startTsRaw) ? Math.min(startTsRaw, ts) : ts;
+    const endTsRaw = Number(item.end_ts ?? ts);
+    const endTsClamped = Number.isFinite(endTsRaw) ? Math.max(startTs, Math.min(endTsRaw, ts)) : ts;
+    const durationRaw = Number(item.duration_sec);
+    const durationSec = Number.isFinite(durationRaw)
+      ? Math.max(0, durationRaw)
+      : Math.max(0, endTsClamped - startTs);
+
     const normalized = {
       en: item.en || "",
       ar: item.ar || "",
@@ -840,7 +856,13 @@
       speaker_label: item.speaker_label || "Speaker",
       segment_id: item.segment_id || "",
       revision: Number(item.revision || 0),
-      ts: item.ts || Date.now() / 1000,
+      ts,
+      start_ts: startTs,
+      end_ts: endTsClamped,
+      duration_sec: durationSec,
+      offset_sec: item.offset_sec == null ? null : Number(item.offset_sec),
+      timing_source: item.timing_source || "event_only",
+      recognizer_session_id: item.recognizer_session_id || "",
     };
     state.finals.push(normalized);
 
@@ -1104,19 +1126,6 @@
       seenNames.add(key);
       normalized.push(parsed);
     });
-    if (!normalized.length) {
-      const agenda = Array.isArray(state.topics?.agenda) ? state.topics.agenda : [];
-      agenda.forEach((name, idx) => {
-        const parsed = normalizeTopicDefinition({
-          name,
-          expected_duration_min: 0,
-          priority: "normal",
-          comments: "",
-          order: idx,
-        }, idx);
-        if (parsed) normalized.push(parsed);
-      });
-    }
     normalized.sort((a, b) => {
       if (a.order !== b.order) return a.order - b.order;
       return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
@@ -1811,6 +1820,8 @@
       || (s.action_items && s.action_items.length)
       || (s.topic_breakdown && s.topic_breakdown.length)
       || (s.topic_key_points && s.topic_key_points.length)
+      || (s.keyword_index && s.keyword_index.length)
+      || (s.meeting_insights && Object.keys(s.meeting_insights).length)
     );
     const summaryChip = summaryKpiStatus ? summaryKpiStatus.closest(".ops-kpi-chip") : null;
 
@@ -1937,7 +1948,187 @@
       });
     }
 
+    renderMeetingInsights();
+    renderKeywordIndex();
     renderTopicCoverage();
+  }
+
+  function applyTranscriptFilterAndJump(keyword) {
+    const query = String(keyword || "").trim();
+    if (!query) return;
+    state.filters.transcript = query;
+    if (transcriptSearch) transcriptSearch.value = query;
+    setActiveTab("transcriptTab");
+    renderFinals(true);
+    const norm = normalizeText(query);
+    const target = filteredFinals().find((item) => {
+      const blob = `${item.speaker_label || ""} ${item.en || ""} ${item.ar || ""}`;
+      return normalizeText(blob).includes(norm);
+    });
+    if (target) jumpToTimelineKey(finalKey(target));
+  }
+
+  function renderMeetingInsights() {
+    if (!summaryInsightsSection || !summaryInsightsBody) return;
+    const insights = state.summary.meeting_insights || {};
+    const balance = Array.isArray(insights.speaking_balance) ? insights.speaking_balance : [];
+    const turn = (insights.turn_taking && typeof insights.turn_taking === "object")
+      ? insights.turn_taking
+      : {};
+    const pace = Array.isArray(insights.pace) ? insights.pace : [];
+    const health = (insights.health && typeof insights.health === "object") ? insights.health : {};
+
+    const hasInsights = balance.length > 0 || pace.length > 0 || Object.keys(turn).length > 0;
+    summaryInsightsSection.classList.toggle("hidden", !hasInsights);
+    summaryInsightsBody.innerHTML = "";
+
+    if (summaryHealthChip) {
+      const score = Number(health.score_0_100);
+      if (Number.isFinite(score) && score >= 0) {
+        summaryHealthChip.textContent = `Health ${Math.round(score)}/100`;
+        summaryHealthChip.classList.remove("hidden");
+      } else {
+        summaryHealthChip.classList.add("hidden");
+      }
+    }
+
+    if (!hasInsights) return;
+
+    const maxShare = Math.max(1, ...balance.map((row) => Number(row.share_pct || 0)));
+    const balanceBlock = document.createElement("div");
+    balanceBlock.className = "summary-insight-block";
+    const balanceTitle = document.createElement("h4");
+    balanceTitle.textContent = "Speaking Balance";
+    balanceBlock.appendChild(balanceTitle);
+    balance.forEach((row) => {
+      const name = String(row.speaker || "Speaker");
+      const share = Number(row.share_pct || 0);
+      const words = Number(row.words || 0);
+      const line = document.createElement("div");
+      line.className = "summary-speaker-row";
+
+      const label = document.createElement("span");
+      label.className = "summary-speaker-label";
+      label.textContent = `${name} (${share.toFixed(1)}%)`;
+
+      const barWrap = document.createElement("div");
+      barWrap.className = "summary-speaker-bar";
+      const bar = document.createElement("div");
+      bar.className = "summary-speaker-fill";
+      bar.style.width = `${Math.max(6, Math.min(100, (share / maxShare) * 100)).toFixed(1)}%`;
+      barWrap.appendChild(bar);
+
+      const meta = document.createElement("span");
+      meta.className = "summary-speaker-meta";
+      meta.textContent = `${words} words`;
+
+      line.appendChild(label);
+      line.appendChild(barWrap);
+      line.appendChild(meta);
+      balanceBlock.appendChild(line);
+    });
+    summaryInsightsBody.appendChild(balanceBlock);
+
+    const turnBlock = document.createElement("div");
+    turnBlock.className = "summary-insight-block";
+    const turnTitle = document.createElement("h4");
+    turnTitle.textContent = "Turn Taking";
+    turnBlock.appendChild(turnTitle);
+    const turnRows = [
+      `Turns: ${Number(turn.total_turns || 0)}`,
+      `Avg words/turn: ${Number(turn.avg_words_per_turn || 0).toFixed(1)}`,
+      `Speaker switches: ${Number(turn.speaker_switches || 0)} (${Number(turn.switch_rate_pct || 0).toFixed(1)}%)`,
+      `Longest turn: ${Number(turn.longest_turn_words || 0)} words`,
+    ];
+    turnRows.forEach((text) => {
+      const row = document.createElement("div");
+      row.className = "summary-insight-line";
+      row.textContent = text;
+      turnBlock.appendChild(row);
+    });
+    summaryInsightsBody.appendChild(turnBlock);
+
+    const paceBlock = document.createElement("div");
+    paceBlock.className = "summary-insight-block";
+    const paceTitle = document.createElement("h4");
+    paceTitle.textContent = "Speaking Pace";
+    paceBlock.appendChild(paceTitle);
+    pace.forEach((row) => {
+      const line = document.createElement("div");
+      line.className = "summary-insight-line";
+      line.textContent = `${row.speaker || "Speaker"}: ${Number(row.wpm || 0).toFixed(1)} WPM`;
+      paceBlock.appendChild(line);
+    });
+    summaryInsightsBody.appendChild(paceBlock);
+
+    const healthFlags = Array.isArray(health.flags) ? health.flags : [];
+    const healthRecs = Array.isArray(health.recommendations) ? health.recommendations : [];
+    if (healthFlags.length || healthRecs.length) {
+      const healthBlock = document.createElement("div");
+      healthBlock.className = "summary-insight-block";
+      const healthTitle = document.createElement("h4");
+      healthTitle.textContent = "Health Notes";
+      healthBlock.appendChild(healthTitle);
+      healthFlags.forEach((flag) => {
+        const line = document.createElement("div");
+        line.className = "summary-insight-line is-flag";
+        line.textContent = `• ${String(flag)}`;
+        healthBlock.appendChild(line);
+      });
+      healthRecs.forEach((tip) => {
+        const line = document.createElement("div");
+        line.className = "summary-insight-line";
+        line.textContent = `→ ${String(tip)}`;
+        healthBlock.appendChild(line);
+      });
+      summaryInsightsBody.appendChild(healthBlock);
+    }
+  }
+
+  function renderKeywordIndex() {
+    if (!summaryKeywordsSection || !summaryKeywordsList) return;
+    const keywords = Array.isArray(state.summary.keyword_index) ? state.summary.keyword_index : [];
+    const query = normalizeText(summaryKeywordSearch?.value || "").trim();
+    const filtered = query
+      ? keywords.filter((row) => normalizeText(row.keyword || "").includes(query))
+      : keywords;
+    summaryKeywordsSection.classList.toggle("hidden", keywords.length === 0);
+    summaryKeywordsList.innerHTML = "";
+
+    if (summaryKeywordsMeta) {
+      if (keywords.length > 0) {
+        summaryKeywordsMeta.textContent = `${keywords.length} keywords`;
+        summaryKeywordsMeta.classList.remove("hidden");
+      } else {
+        summaryKeywordsMeta.classList.add("hidden");
+      }
+    }
+    if (keywords.length === 0) return;
+
+    if (filtered.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "summary-empty-state summary-empty-state-inline";
+      empty.textContent = "No keywords match your filter.";
+      summaryKeywordsList.appendChild(empty);
+      return;
+    }
+
+    filtered.forEach((row) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn summary-keyword-chip";
+      const keyword = String(row.keyword || "").trim();
+      const occurrences = Number(row.occurrences || 0);
+      const first = Number(row.first_ts || 0);
+      const last = Number(row.last_ts || 0);
+      const speakers = Array.isArray(row.speakers) ? row.speakers.join(", ") : "";
+      btn.textContent = `${keyword} (${occurrences})`;
+      const firstText = first > 0 ? formatTime(first) : "--";
+      const lastText = last > 0 ? formatTime(last) : "--";
+      btn.title = `First: ${firstText} | Last: ${lastText}${speakers ? ` | Speakers: ${speakers}` : ""}`;
+      btn.addEventListener("click", () => applyTranscriptFilterAndJump(keyword));
+      summaryKeywordsList.appendChild(btn);
+    });
   }
 
   function renderTopicCoverage() {
@@ -2045,11 +2236,14 @@
       key_points: s.key_points,
       action_items: s.action_items,
       topic_key_points: s.topic_key_points,
+      entities: s.entities,
       decisions_made: s.decisions_made,
       risks_and_blockers: s.risks_and_blockers,
       key_terms_defined: s.key_terms_defined,
       topic_breakdown: s.topic_breakdown,
       agenda_adherence_pct: s.agenda_adherence_pct,
+      meeting_insights: s.meeting_insights,
+      keyword_index: s.keyword_index,
       generated_ts: s.generated_ts,
     }, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -2102,6 +2296,16 @@
       s.key_terms_defined.forEach((t) => lines.push(`${t.term || ""}: ${t.definition || ""}`));
       lines.push("");
     }
+    if (s.entities && s.entities.length) {
+      lines.push("ENTITIES", "=".repeat(40));
+      s.entities.forEach((e) => {
+        const type = String(e.type || "").trim();
+        const text = String(e.text || "").trim();
+        const mentions = e.mentions !== null && e.mentions !== undefined ? ` (${e.mentions})` : "";
+        if (text) lines.push(`- ${type ? `[${type}] ` : ""}${text}${mentions}`);
+      });
+      lines.push("");
+    }
     if (s.topic_breakdown && s.topic_breakdown.length) {
       lines.push("TOPIC COVERAGE", "=".repeat(40));
       if (s.agenda_adherence_pct !== null && s.agenda_adherence_pct !== undefined) {
@@ -2113,6 +2317,38 @@
           ? ` (${t.over_under_min > 0 ? "+" : ""}${t.over_under_min})`
           : "";
         lines.push(`- ${t.name}: ${t.status}, ${t.actual_min} min actual${planned}${delta}`);
+      });
+      lines.push("");
+    }
+    if (s.meeting_insights && Object.keys(s.meeting_insights).length) {
+      const mi = s.meeting_insights;
+      const turn = mi.turn_taking || {};
+      const health = mi.health || {};
+      lines.push("MEETING INSIGHTS", "=".repeat(40));
+      lines.push(
+        `Turns: ${Number(turn.total_turns || 0)} | Switches: ${Number(turn.speaker_switches || 0)} (${Number(turn.switch_rate_pct || 0).toFixed(1)}%)`
+      );
+      lines.push(
+        `Avg words/turn: ${Number(turn.avg_words_per_turn || 0).toFixed(1)} | Longest turn: ${Number(turn.longest_turn_words || 0)} words`
+      );
+      if (Number.isFinite(Number(health.score_0_100))) {
+        lines.push(`Health score: ${Math.round(Number(health.score_0_100))}/100`);
+      }
+      const balance = Array.isArray(mi.speaking_balance) ? mi.speaking_balance : [];
+      if (balance.length) {
+        lines.push("Speaking balance:");
+        balance.forEach((row) => {
+          lines.push(
+            `- ${row.speaker || "Speaker"}: ${Number(row.share_pct || 0).toFixed(1)}% | ${Number(row.words || 0)} words | ${Number(row.turns || 0)} turns`
+          );
+        });
+      }
+      lines.push("");
+    }
+    if (s.keyword_index && s.keyword_index.length) {
+      lines.push("KEYWORD INDEX", "=".repeat(40));
+      s.keyword_index.forEach((row) => {
+        lines.push(`- ${row.keyword || ""}: ${Number(row.occurrences || 0)} hits`);
       });
       lines.push("");
     }
@@ -2864,6 +3100,9 @@
     state.summary.topic_key_points = Array.isArray(snap.topic_key_points)
       ? snap.topic_key_points
       : (Array.isArray(summaryResult.topic_key_points) ? summaryResult.topic_key_points : []);
+    state.summary.entities = Array.isArray(snap.entities)
+      ? snap.entities
+      : (Array.isArray(summaryResult.entities) ? summaryResult.entities : []);
     state.summary.decisions_made = Array.isArray(snap.decisions_made)
       ? snap.decisions_made
       : (Array.isArray(summaryResult.decisions_made) ? summaryResult.decisions_made : []);
@@ -2878,6 +3117,12 @@
       : ((summaryResult.metadata && typeof summaryResult.metadata === "object") ? summaryResult.metadata : {});
     state.summary.topic_breakdown = Array.isArray(snap.topic_breakdown) ? snap.topic_breakdown : [];
     state.summary.agenda_adherence_pct = (typeof snap.agenda_adherence_pct === "number") ? snap.agenda_adherence_pct : null;
+    state.summary.meeting_insights = (snap.meeting_insights && typeof snap.meeting_insights === "object")
+      ? snap.meeting_insights
+      : ((summaryResult.meeting_insights && typeof summaryResult.meeting_insights === "object") ? summaryResult.meeting_insights : {});
+    state.summary.keyword_index = Array.isArray(snap.keyword_index)
+      ? snap.keyword_index
+      : (Array.isArray(summaryResult.keyword_index) ? summaryResult.keyword_index : []);
     state.summary.error = String(snap.error || "");
   }
 
@@ -2890,6 +3135,14 @@
       segment_id: f.segment_id || "",
       revision: Number(f.revision || 0),
       ts: f.ts || Date.now() / 1000,
+      start_ts: Number(f.start_ts ?? f.ts ?? Date.now() / 1000),
+      end_ts: Number(f.end_ts ?? f.ts ?? Date.now() / 1000),
+      duration_sec: Number(
+        f.duration_sec ?? Math.max(0, Number(f.end_ts ?? f.ts ?? 0) - Number(f.start_ts ?? f.ts ?? 0))
+      ),
+      offset_sec: f.offset_sec == null ? null : Number(f.offset_sec),
+      timing_source: String(f.timing_source || "event_only"),
+      recognizer_session_id: String(f.recognizer_session_id || ""),
     }));
     pruneBookmarksToFinals();
 
@@ -3119,6 +3372,14 @@
         speaker_label: item.speaker_label || "Speaker",
         time_local: formatTime(item.ts),
         time_unix_sec: item.ts,
+        start_unix_sec: Number(item.start_ts ?? item.ts ?? 0),
+        end_unix_sec: Number(item.end_ts ?? item.ts ?? 0),
+        duration_sec: Number(
+          item.duration_sec ?? Math.max(0, Number(item.end_ts ?? item.ts ?? 0) - Number(item.start_ts ?? item.ts ?? 0))
+        ),
+        offset_sec: item.offset_sec == null ? null : Number(item.offset_sec),
+        timing_source: item.timing_source || "event_only",
+        recognizer_session_id: item.recognizer_session_id || "",
         english: item.en,
         arabic: item.ar,
         bookmarked: !!bm,
@@ -3142,10 +3403,17 @@
   }
 
   function exportTranscriptCsv() {
-    const lines = ["index,speaker,speaker_label,time_local,time_unix_sec,bookmarked,bookmark_note,english,arabic"];
+    const lines = [
+      "index,speaker,speaker_label,time_local,time_unix_sec,start_unix_sec,end_unix_sec,duration_sec,offset_sec,timing_source,recognizer_session_id,bookmarked,bookmark_note,english,arabic",
+    ];
     state.finals.forEach((item, idx) => {
       const key = finalKey(item);
       const bm = state.bookmarks[key] || null;
+      const startTs = Number(item.start_ts ?? item.ts ?? 0);
+      const endTs = Number(item.end_ts ?? item.ts ?? 0);
+      const durationSec = Number(
+        item.duration_sec ?? Math.max(0, Number(endTs) - Number(startTs))
+      );
       lines.push(
         [
           idx + 1,
@@ -3153,6 +3421,12 @@
           escapeCsv(item.speaker_label || "Speaker"),
           formatTime(item.ts),
           item.ts,
+          startTs,
+          endTs,
+          durationSec,
+          item.offset_sec == null ? "" : Number(item.offset_sec),
+          escapeCsv(item.timing_source || "event_only"),
+          escapeCsv(item.recognizer_session_id || ""),
           bm ? "1" : "0",
           escapeCsv(bm?.note || ""),
           escapeCsv(item.en),
@@ -3584,12 +3858,17 @@
       state.summary.key_points = Array.isArray(msg.key_points) ? msg.key_points : [];
       state.summary.action_items = Array.isArray(msg.action_items) ? msg.action_items : [];
       state.summary.topic_key_points = Array.isArray(msg.topic_key_points) ? msg.topic_key_points : [];
+      state.summary.entities = Array.isArray(msg.entities) ? msg.entities : [];
       state.summary.decisions_made = Array.isArray(msg.decisions_made) ? msg.decisions_made : [];
       state.summary.risks_and_blockers = Array.isArray(msg.risks_and_blockers) ? msg.risks_and_blockers : [];
       state.summary.key_terms_defined = Array.isArray(msg.key_terms_defined) ? msg.key_terms_defined : [];
       state.summary.metadata = (msg.metadata && typeof msg.metadata === "object") ? msg.metadata : {};
       state.summary.topic_breakdown = Array.isArray(msg.topic_breakdown) ? msg.topic_breakdown : [];
       state.summary.agenda_adherence_pct = (typeof msg.agenda_adherence_pct === "number") ? msg.agenda_adherence_pct : null;
+      state.summary.meeting_insights = (msg.meeting_insights && typeof msg.meeting_insights === "object")
+        ? msg.meeting_insights
+        : {};
+      state.summary.keyword_index = Array.isArray(msg.keyword_index) ? msg.keyword_index : [];
       renderSummary();
       if (!msg.error) {
         setActiveTab("summaryTab");
@@ -3599,6 +3878,7 @@
     }
 
     if (msg.type === "summary_cleared") {
+      if (summaryKeywordSearch) summaryKeywordSearch.value = "";
       state.summary = {
         pending: false,
         generated_ts: null,
@@ -3606,12 +3886,15 @@
         key_points: [],
         action_items: [],
         topic_key_points: [],
+        entities: [],
         decisions_made: [],
         risks_and_blockers: [],
         key_terms_defined: [],
         metadata: {},
         topic_breakdown: [],
         agenda_adherence_pct: null,
+        meeting_insights: {},
+        keyword_index: [],
         error: "",
       };
       renderSummary();
@@ -3709,21 +3992,22 @@
       if (icon) icon.textContent = expanded ? "\u25B6" : "\u25BE";
     });
   }
+  if (summaryKeywordSearch) {
+    summaryKeywordSearch.addEventListener("input", () => {
+      renderKeywordIndex();
+    });
+  }
   // ── File Analysis Modal ──────────────────────────────────────────────────
 
-  let fileModalResult = null;
   let fileModalSelectedFile = null;
 
   function openFileModal() {
     if (!fileAnalysisModal) return;
-    fileModalResult = null;
     fileModalSelectedFile = null;
     if (fileModalFilename) { fileModalFilename.textContent = ""; fileModalFilename.classList.add("hidden"); }
     if (fileModalAnalyseBtn) fileModalAnalyseBtn.disabled = true;
     if (fileModalPending) fileModalPending.classList.add("hidden");
     if (fileModalError) { fileModalError.textContent = ""; fileModalError.classList.add("hidden"); }
-    if (fileModalResults) { fileModalResults.innerHTML = ""; fileModalResults.classList.add("hidden"); }
-    if (fileModalExportRow) fileModalExportRow.classList.add("hidden");
     if (transcriptFileInput) transcriptFileInput.value = "";
     fileAnalysisModal.showModal();
   }
@@ -3740,163 +4024,8 @@
       fileModalFilename.classList.remove("hidden");
     }
     if (fileModalAnalyseBtn) fileModalAnalyseBtn.disabled = false;
-    // Clear previous results when a new file is chosen.
+    // Clear previous error when a new file is chosen.
     if (fileModalError) { fileModalError.textContent = ""; fileModalError.classList.add("hidden"); }
-    if (fileModalResults) { fileModalResults.innerHTML = ""; fileModalResults.classList.add("hidden"); }
-    if (fileModalExportRow) fileModalExportRow.classList.add("hidden");
-  }
-
-  function renderFileModalResults(result) {
-    if (!fileModalResults) return;
-    fileModalResults.innerHTML = "";
-
-    function card(title, content) {
-      const wrap = document.createElement("div");
-      wrap.className = "card-shell summary-section";
-      const h = document.createElement("h3");
-      h.className = "summary-section-title";
-      h.textContent = title;
-      wrap.appendChild(h);
-      wrap.appendChild(content);
-      fileModalResults.appendChild(wrap);
-    }
-
-    // Metadata chip row
-    const meta = result.metadata || {};
-    if (meta.meeting_type || meta.sentiment_arc) {
-      const row = document.createElement("div");
-      row.className = "summary-meta-row";
-      if (meta.meeting_type) {
-        const chip = document.createElement("span");
-        chip.className = "summary-meta-chip";
-        chip.textContent = meta.meeting_type;
-        row.appendChild(chip);
-      }
-      if (meta.sentiment_arc) {
-        const sent = document.createElement("span");
-        sent.className = "summary-meta-sentiment";
-        sent.textContent = meta.sentiment_arc;
-        row.appendChild(sent);
-      }
-      fileModalResults.appendChild(row);
-    }
-
-    // Executive summary
-    if (result.executive_summary) {
-      const p = document.createElement("p");
-      p.className = "summary-executive-text";
-      p.textContent = result.executive_summary;
-      card("Executive Summary", p);
-    }
-
-    // Key points
-    if (result.key_points && result.key_points.length) {
-      const ul = document.createElement("ul");
-      ul.className = "summary-key-points-list";
-      result.key_points.forEach((pt) => { const li = document.createElement("li"); li.textContent = pt; ul.appendChild(li); });
-      card("Key Points", ul);
-    }
-
-    // Action items
-    if (result.action_items && result.action_items.length) {
-      const wrap = document.createElement("div");
-      wrap.className = "summary-action-items-list";
-      result.action_items.forEach((ai) => {
-        const row = document.createElement("div");
-        row.className = "summary-action-item";
-        const t = document.createElement("span");
-        t.className = "action-item-text";
-        t.textContent = ai.item || "";
-        row.appendChild(t);
-        if (ai.owner) { const o = document.createElement("span"); o.className = "action-item-owner"; o.textContent = ai.owner; row.appendChild(o); }
-        if (ai.due_date) { const d = document.createElement("span"); d.className = "action-item-due"; d.textContent = ai.due_date; row.appendChild(d); }
-        wrap.appendChild(row);
-      });
-      card("Action Items", wrap);
-    }
-
-    // Decisions
-    if (result.decisions_made && result.decisions_made.length) {
-      const ul = document.createElement("ul");
-      ul.className = "summary-decisions-list";
-      result.decisions_made.forEach((d) => { const li = document.createElement("li"); li.textContent = d; ul.appendChild(li); });
-      card("Decisions Made", ul);
-    }
-
-    // Topic coverage (inferred or agenda-guided)
-    if (result.topic_breakdown && result.topic_breakdown.length) {
-      const ul = document.createElement("ul");
-      ul.className = "summary-decisions-list";
-      result.topic_breakdown.forEach((t) => {
-        const li = document.createElement("li");
-        const mins = (t.actual_min !== null && t.actual_min !== undefined) ? `${t.actual_min} min` : "n/a";
-        li.textContent = `${t.name || "Topic"} (${mins})`;
-        ul.appendChild(li);
-      });
-      card("Topic Coverage", ul);
-    }
-
-    // Risks
-    if (result.risks_and_blockers && result.risks_and_blockers.length) {
-      const ul = document.createElement("ul");
-      ul.className = "summary-risks-list";
-      result.risks_and_blockers.forEach((r) => { const li = document.createElement("li"); li.className = "summary-risk-item"; li.textContent = r; ul.appendChild(li); });
-      card("Risks & Blockers", ul);
-    }
-
-    // Key terms
-    if (result.key_terms_defined && result.key_terms_defined.length) {
-      const dl = document.createElement("dl");
-      dl.className = "summary-terms-list";
-      result.key_terms_defined.forEach((t) => {
-        const dt = document.createElement("dt"); dt.className = "summary-term-name"; dt.textContent = t.term || ""; dl.appendChild(dt);
-        const dd = document.createElement("dd"); dd.className = "summary-term-def"; dd.textContent = t.definition || ""; dl.appendChild(dd);
-      });
-      card("Key Terms Defined", dl);
-    }
-
-    fileModalResults.classList.remove("hidden");
-    if (fileModalExportRow) fileModalExportRow.classList.remove("hidden");
-  }
-
-  function exportFileModalJson() {
-    if (!fileModalResult) return;
-    const blob = new Blob([JSON.stringify(fileModalResult, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "summary-from-file.json"; a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function exportFileModalTxt() {
-    if (!fileModalResult) return;
-    const r = fileModalResult;
-    const lines = [];
-    const meta = r.metadata || {};
-    if (meta.meeting_type || meta.sentiment_arc) {
-      lines.push("SESSION METADATA", "=".repeat(40));
-      if (meta.meeting_type) lines.push(`Meeting Type: ${meta.meeting_type}`);
-      if (meta.sentiment_arc) lines.push(`Sentiment Arc: ${meta.sentiment_arc}`);
-      lines.push("");
-    }
-    if (r.executive_summary) lines.push("EXECUTIVE SUMMARY", "=".repeat(40), r.executive_summary, "");
-    if (r.key_points && r.key_points.length) { lines.push("KEY POINTS", "=".repeat(40)); r.key_points.forEach((p, i) => lines.push(`${i + 1}. ${p}`)); lines.push(""); }
-    if (r.action_items && r.action_items.length) {
-      lines.push("ACTION ITEMS", "=".repeat(40));
-      r.action_items.forEach((ai, i) => { let l = `${i + 1}. ${ai.item || ""}`; if (ai.owner) l += ` [Owner: ${ai.owner}]`; if (ai.due_date) l += ` [Due: ${ai.due_date}]`; lines.push(l); });
-      lines.push("");
-    }
-    if (r.decisions_made && r.decisions_made.length) { lines.push("DECISIONS MADE", "=".repeat(40)); r.decisions_made.forEach((d, i) => lines.push(`${i + 1}. ${d}`)); lines.push(""); }
-    if (r.risks_and_blockers && r.risks_and_blockers.length) { lines.push("RISKS & BLOCKERS", "=".repeat(40)); r.risks_and_blockers.forEach((d, i) => lines.push(`${i + 1}. ${d}`)); lines.push(""); }
-    if (r.key_terms_defined && r.key_terms_defined.length) { lines.push("KEY TERMS DEFINED", "=".repeat(40)); r.key_terms_defined.forEach((t) => lines.push(`${t.term || ""}: ${t.definition || ""}`)); lines.push(""); }
-    if (r.topic_breakdown && r.topic_breakdown.length) {
-      lines.push("TOPIC COVERAGE", "=".repeat(40));
-      r.topic_breakdown.forEach((t) => lines.push(`- ${t.name || "Topic"}: ${t.actual_min ?? 0} min`));
-      lines.push("");
-    }
-    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "summary-from-file.txt"; a.click();
-    URL.revokeObjectURL(url);
   }
 
   // Wire modal event listeners
@@ -3928,8 +4057,6 @@
       fileModalAnalyseBtn.disabled = true;
       if (fileModalPending) fileModalPending.classList.remove("hidden");
       if (fileModalError) { fileModalError.textContent = ""; fileModalError.classList.add("hidden"); }
-      if (fileModalResults) { fileModalResults.innerHTML = ""; fileModalResults.classList.add("hidden"); }
-      if (fileModalExportRow) fileModalExportRow.classList.add("hidden");
 
       try {
         const form = new FormData();
@@ -3948,9 +4075,19 @@
         if (!resp.ok) {
           throw new Error(data.detail || `Server error ${resp.status}`);
         }
-        fileModalResult = data.result || null;
-        if (fileModalResult) {
-          renderFileModalResults(fileModalResult);
+        const result = data.result || null;
+        if (result && typeof result === "object") {
+          const summarySnap = {
+            pending: false,
+            generated_ts: Date.now() / 1000,
+            ...result,
+          };
+          if (summaryKeywordSearch) summaryKeywordSearch.value = "";
+          applySummarySnapshot(summarySnap);
+          renderSummary();
+          closeFileModal();
+          setActiveTab("summaryTab");
+          showToast("Summary loaded from file.", "success");
         }
       } catch (err) {
         if (fileModalError) {
@@ -3963,9 +4100,6 @@
       }
     });
   }
-
-  if (fileModalExportJson) fileModalExportJson.addEventListener("click", exportFileModalJson);
-  if (fileModalExportTxt) fileModalExportTxt.addEventListener("click", exportFileModalTxt);
 
   if (coachRecoPrevBtn) {
     coachRecoPrevBtn.addEventListener("click", () => {

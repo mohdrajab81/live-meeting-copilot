@@ -112,6 +112,32 @@ class TranscriptStore:
     # ── Mutations (called while holding the shared lock) ─────────────────────
 
     def append_final_unlocked(self, item: dict[str, Any], max_finals: int) -> None:
+        start_ts = float(item.get("start_ts", item["ts"]) or item["ts"])
+        ts = float(item.get("ts", time.time()) or time.time())
+        if start_ts > ts:
+            start_ts = ts
+        if start_ts < 0:
+            start_ts = 0.0
+        end_ts = float(item.get("end_ts", ts) or ts)
+        if end_ts < start_ts:
+            end_ts = start_ts
+        if end_ts > ts:
+            end_ts = ts
+        duration_sec = item.get("duration_sec")
+        try:
+            normalized_duration_sec = max(0.0, float(duration_sec))
+        except Exception:
+            normalized_duration_sec = max(0.0, end_ts - start_ts)
+        offset_sec = item.get("offset_sec")
+        try:
+            normalized_offset_sec: float | None = max(0.0, float(offset_sec))
+        except Exception:
+            normalized_offset_sec = None
+        try:
+            recognizer_anchor_ts = float(item.get("recognizer_anchor_ts", 0.0) or 0.0)
+        except Exception:
+            recognizer_anchor_ts = 0.0
+
         self.finals.append(
             {
                 "en": item["en"],
@@ -120,8 +146,14 @@ class TranscriptStore:
                 "speaker_label": item["speaker_label"],
                 "segment_id": item["segment_id"],
                 "revision": item["revision"],
-                "ts": item["ts"],
-                "start_ts": float(item.get("start_ts", item["ts"]) or item["ts"]),
+                "ts": ts,
+                "start_ts": start_ts,
+                "end_ts": end_ts,
+                "duration_sec": normalized_duration_sec,
+                "offset_sec": normalized_offset_sec,
+                "timing_source": str(item.get("timing_source", "event_only") or "event_only"),
+                "recognizer_session_id": str(item.get("recognizer_session_id", "") or ""),
+                "recognizer_anchor_ts": recognizer_anchor_ts,
             }
         )
         if len(self.finals) > max_finals:

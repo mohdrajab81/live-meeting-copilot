@@ -12,6 +12,14 @@ from pydantic import BaseModel, Field
 
 from app.api.auth import require_http_auth
 from app.config import RuntimeConfig
+from app.services.meeting_insights import build_keyword_index, build_meeting_insights
+from app.services.topic_summary import (
+    apply_topic_durations_from_utterance_ids,
+    build_expected_agenda_context,
+    build_topic_breakdown_from_definitions,
+    prepare_transcript_utterances,
+    render_transcript_for_prompt,
+)
 from app.utils.audio_devices import list_capture_devices
 
 router = APIRouter(dependencies=[Depends(require_http_auth)])
@@ -363,15 +371,17 @@ async def summary_from_transcript(
         raise HTTPException(status_code=400, detail="File must be UTF-8 encoded.")
 
     try:
-        transcript_text = _parse_transcript_csv(text)
+        transcript_rows = _parse_transcript_csv_rows(text)
     except Exception as ex:
         raise HTTPException(status_code=400, detail=f"Could not parse CSV: {ex}")
 
+    transcript_rows = prepare_transcript_utterances(transcript_rows, max_items=500)
+    transcript_text = render_transcript_for_prompt(transcript_rows)
     if not transcript_text.strip():
         raise HTTPException(status_code=400, detail="Transcript is empty after parsing.")
 
     topic_defs = _parse_topics_definitions_json(topics_definitions_json)
-    agenda_context = _build_topics_definitions_context(topic_defs)
+    agenda_context = build_expected_agenda_context(topic_defs)
     if agenda_context:
         transcript_text = agenda_context + "\n\nTRANSCRIPT:\n" + transcript_text
 
@@ -382,19 +392,36 @@ async def summary_from_transcript(
     except Exception as ex:
         raise HTTPException(status_code=502, detail=f"Summary generation failed: {ex}")
 
+    resolved_topic_groups = apply_topic_durations_from_utterance_ids(
+        result.topic_key_points,
+        transcript_rows,
+    )
+    topic_breakdown, agenda_adherence_pct = build_topic_breakdown_from_definitions(
+        topic_defs, resolved_topic_groups
+    )
+
     return {
         "ok": True,
         "result": {
             "executive_summary": result.executive_summary,
             "key_points": result.key_points,
             "action_items": result.action_items,
-            "topic_key_points": result.topic_key_points,
+            "topic_key_points": resolved_topic_groups,
+            "keywords": result.keywords,
+            "entities": result.entities,
             "decisions_made": result.decisions_made,
             "risks_and_blockers": result.risks_and_blockers,
             "key_terms_defined": result.key_terms_defined,
             "metadata": result.metadata,
-            "topic_breakdown": _topic_breakdown_from_topic_groups(result.topic_key_points),
-            "agenda_adherence_pct": None,
+            "topic_breakdown": topic_breakdown,
+            "agenda_adherence_pct": agenda_adherence_pct,
+            "meeting_insights": build_meeting_insights(transcript_rows),
+            "keyword_index": build_keyword_index(
+                transcript_rows,
+                result.key_terms_defined,
+                result.keywords,
+                result.entities,
+            ),
             "total_ms": result.total_ms,
         },
     }
@@ -424,79 +451,102 @@ def _parse_topics_definitions_json(raw: str | None) -> list[dict[str, object]]:
     return cleaned
 
 
-def _build_topics_definitions_context(topic_defs: list[dict[str, object]]) -> str:
-    if not topic_defs:
-        return ""
-    lines = ["EXPECTED AGENDA TOPICS (user-defined):"]
-    for row in topic_defs:
-        name = str(row.get("name") or "").strip()
-        expected = int(row.get("expected_duration_min") or 0)
-        if expected > 0:
-            lines.append(f"- {name} ({expected} min planned)")
-        else:
-            lines.append(f"- {name}")
-    return "\n".join(lines)
+def _parse_transcript_csv_rows(text: str) -> list[dict[str, object]]:
+    """Parse exported transcript CSV into normalized transcript rows.
 
-
-def _topic_breakdown_from_topic_groups(
-    topic_groups: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    breakdown: list[dict[str, object]] = []
-    for row in topic_groups:
-        if not isinstance(row, dict):
-            continue
-        name = str(row.get("topic_name") or "").strip()
-        if not name:
-            continue
-        est_raw = row.get("estimated_duration_minutes")
-        actual_min = 0.0
-        if est_raw is not None and str(est_raw).strip() != "":
-            try:
-                actual_min = max(0.0, round(float(est_raw), 1))
-            except (TypeError, ValueError):
-                actual_min = 0.0
-        breakdown.append(
-            {
-                "name": name,
-                "planned_min": None,
-                "actual_min": actual_min,
-                "status": "inferred",
-                "over_under_min": None,
-            }
-        )
-    return breakdown
-
-
-def _parse_transcript_csv(text: str) -> str:
-    """Convert exported transcript CSV to the [MM:SS] Speaker: text format.
-
-    Expects columns: time_unix_sec, speaker_label, english.
-    Sorts by time_unix_sec, caps at 500 rows, computes elapsed from first row.
+    Supports legacy CSV columns plus timing-enriched columns:
+    - Legacy: time_unix_sec, speaker_label, english
+    - Enriched: start_unix_sec, end_unix_sec, duration_sec, offset_sec
+    Sorts by start_unix_sec (fallback time_unix_sec) and caps at 500 rows.
     """
+    def _parse_float(raw: object) -> float | None:
+        value = str(raw or "").strip()
+        if not value:
+            return None
+        try:
+            parsed = float(value)
+        except ValueError:
+            return None
+        return parsed
+
     reader = csv.DictReader(io.StringIO(text))
-    rows: list[tuple[float, str, str]] = []
+    rows: list[dict[str, object]] = []
     for row in reader:
         english = (row.get("english") or "").strip()
-        ts_raw = (row.get("time_unix_sec") or "").strip()
+        ts_raw = (
+            row.get("time_unix_sec")
+            or row.get("ts")
+            or row.get("event_unix_sec")
+            or ""
+        )
+        start_raw = (
+            row.get("start_unix_sec")
+            or row.get("start_ts")
+            or row.get("start_time_unix_sec")
+            or ""
+        )
+        end_raw = (
+            row.get("end_unix_sec")
+            or row.get("end_ts")
+            or row.get("end_time_unix_sec")
+            or ""
+        )
+        duration_raw = row.get("duration_sec") or ""
+        offset_raw = row.get("offset_sec") or ""
         label = (row.get("speaker_label") or "Speaker").strip()
-        if not english or not ts_raw:
+        if not english:
             continue
-        try:
-            ts = float(ts_raw)
-        except ValueError:
+        ts = _parse_float(ts_raw)
+        start_ts = _parse_float(start_raw)
+        end_ts = _parse_float(end_raw)
+        duration_sec = _parse_float(duration_raw)
+        offset_sec = _parse_float(offset_raw)
+
+        if ts is None and start_ts is None:
             continue
-        rows.append((ts, label, english))
+
+        if ts is None:
+            ts = float(start_ts or 0.0)
+        if start_ts is None:
+            start_ts = float(ts)
+        if end_ts is None:
+            if duration_sec is not None and duration_sec > 0:
+                end_ts = float(start_ts + duration_sec)
+            else:
+                end_ts = float(ts)
+        if duration_sec is None:
+            duration_sec = max(0.0, float(end_ts - start_ts))
+
+        if end_ts < start_ts:
+            end_ts = start_ts
+        if ts < end_ts:
+            ts = end_ts
+        if ts < start_ts:
+            ts = start_ts
+
+        rows.append(
+            {
+                "ts": float(ts),
+                "start_ts": float(start_ts),
+                "end_ts": float(end_ts),
+                "duration_sec": float(max(0.0, duration_sec)),
+                "offset_sec": float(offset_sec) if offset_sec is not None and offset_sec >= 0 else None,
+                "speaker_label": label or "Speaker",
+                "text": english,
+            }
+        )
 
     if not rows:
-        return ""
+        return []
+    rows.sort(
+        key=lambda r: (
+            float(r.get("start_ts") or r.get("ts") or 0.0),
+            float(r.get("ts") or 0.0),
+        )
+    )
+    return rows[-500:]
 
-    rows.sort(key=lambda r: r[0])
-    rows = rows[-500:]
-    baseline = rows[0][0]
-    lines = []
-    for ts, label, english in rows:
-        elapsed = max(0.0, ts - baseline)
-        mins = int(elapsed // 60)
-        secs = int(elapsed % 60)
-        lines.append(f"[{mins:02d}:{secs:02d}] {label}: {english}")
-    return "\n".join(lines)
+
+def _rows_to_transcript_text(rows: list[dict[str, object]]) -> str:
+    # Backward wrapper for tests/compatibility while prompt rendering moved to shared helper.
+    return render_transcript_for_prompt(prepare_transcript_utterances(rows, max_items=500))

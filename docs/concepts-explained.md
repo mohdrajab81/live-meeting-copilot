@@ -370,10 +370,10 @@ The cleanup happens at request time — no background timer needed. This keeps t
 - optional topic definitions JSON from the current UI state.
 
 This route:
-- parses CSV rows into `[MM:SS] Speaker: text` transcript format,
+- parses CSV rows into normalized transcript utterances and renders prompt lines as `[MM:SS] [id:UXXXX] Speaker: text`,
 - prepends optional agenda definitions context when provided,
 - calls the same summary service used by live summaries,
-- returns summary output directly without mutating live session state.
+- returns summary output directly; frontend loads it into the main Summary tab without mutating transcript/topic runtime state.
 
 ### Why config changes are blocked during a running session
 
@@ -482,26 +482,22 @@ Both coach and topic agent calls are blocking HTTP requests (they call the Azure
 
 ## 17. Summary Intelligence and From-File Analysis
 
-### Deterministic vs inferred topic timing
+### Deterministic summary topic timing
 
-There are two ways topic timing appears in summaries:
+Topic timing in summary is now resolved in backend Python from utterance IDs:
 
-1. **Deterministic (preferred)**:
-When live topic tracker data exists, the orchestrator computes `topic_breakdown` and `agenda_adherence_pct` in Python from tracked topic state.
+1. The prompt asks the model to return `topic_key_points` with `utterance_ids` (e.g., `U0001`).
+2. Transcript rows already contain deterministic per-utterance durations.
+3. Backend maps `utterance_ids` to those durations and computes `estimated_duration_minutes`.
+4. If the model omits some utterances (while still assigning others), backend appends `Unassigned / Other` to preserve full duration coverage.
 
-2. **Inferred (fallback)**:
-When deterministic topic tracking is unavailable, the model still returns `topic_key_points` (topic groups with estimated minutes). The orchestrator converts those into a fallback `topic_breakdown` with `status="inferred"` and no adherence score.
-
-### Why both are needed
-
-- Deterministic timing is more reliable when the user configured agenda/topics.
-- Inferred timing still gives useful structure for recordings and uploaded historical transcripts where no live topic tracker state exists.
+This removes dependence on model-side time math and makes durations reproducible across runs.
 
 ### Output fields to know
 
-- `topic_key_points`: grouped key points by topic, estimated minutes, origin (`Agenda` or `Inferred`).
+- `topic_key_points`: grouped key points by topic, `utterance_ids`, origin (`Agenda` or `Inferred`), with `estimated_duration_minutes` resolved deterministically in backend.
 - `topic_breakdown`: UI timeline data (`name`, `planned_min`, `actual_min`, `status`, `over_under_min`).
-- `agenda_adherence_pct`: only meaningful when planned agenda timing exists.
+- `agenda_adherence_pct`: computed when planned minutes exist, using continuous adherence formula `sum(min(actual, planned)) / sum(planned)`.
 
 ---
 
