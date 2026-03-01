@@ -10,7 +10,7 @@ $outputPath = Join-Path $repoRoot $OutputZip
 $distDir = Split-Path -Parent $outputPath
 $stageDir = Join-Path $distDir "_stage_offline"
 $wheelhouseDir = Join-Path $stageDir "wheelhouse"
-$legacyZip = Join-Path $distDir "live-interview-translator-deploy.zip"
+$legacyZip = Join-Path $distDir "live-meeting-copilot-deploy.zip"
 
 if (-not (Test-Path $distDir)) {
   New-Item -ItemType Directory -Path $distDir | Out-Null

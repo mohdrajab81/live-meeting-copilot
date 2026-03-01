@@ -11,7 +11,7 @@
 | Field | Value |
 | --- | --- |
 | Product name | Live Meeting Copilot |
-| Repository folder | `live-interview-translator` (kept for compatibility) |
+| Repository folder | `live-meeting-copilot` |
 | Core purpose | Real-time transcription, Arabic translation, AI coaching, topic tracking, and meeting summary |
 
 ---
