@@ -131,6 +131,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-nuitka-package.ps1 -Kee
 | --- | --- |
 | `.env` | Contains secrets — must remain local to each user's machine |
 | `web_translator_settings.json` | Contains local device IDs and personal runtime settings |
+| `web_translator_settings.example.json` | Safe template file kept in repo for users to copy locally |
 | `docs/BUILD_GUIDE.md` | Maintainer document — not relevant to end users |
 | `docs/SYSTEM_DEFINITION.md` | Developer document — not relevant to end users |
 | `.venv/` | Not portable — each user runs `setup.ps1` to create their own |

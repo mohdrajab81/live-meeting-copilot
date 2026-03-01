@@ -4,6 +4,28 @@ A Windows application for real-time meeting transcription, live English-to-Arabi
 
 ---
 
+## Quick Start (2 Minutes)
+
+1. Copy `.env.example` to `.env` and set your Azure values.
+2. Run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
+powershell -ExecutionPolicy Bypass -File .\run.ps1
+```
+
+For full setup, see [`INSTALL.md`](INSTALL.md) and [`docs/QUICK_START_GUIDE.md`](docs/QUICK_START_GUIDE.md).
+
+---
+
+## Demo
+
+Add a 60-90 second demo clip here for recruiters and reviewers:
+
+- `docs/demo/live-meeting-copilot-demo.mp4` (or `.gif`)
+
+---
+
 ## What It Does
 
 | Feature | Requires |
@@ -70,6 +92,12 @@ AZURE_AI_SERVICES_REGION=<your region>
 ```
 
 See [`docs/AZURE_PROVISIONING.md`](docs/AZURE_PROVISIONING.md) for how to obtain these values.
+
+Optional runtime settings template:
+
+```powershell
+Copy-Item .\web_translator_settings.example.json .\web_translator_settings.json
+```
 
 ---
 

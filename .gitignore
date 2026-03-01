@@ -90,6 +90,7 @@ $RECYCLE.BIN/
 
 # Project specific
 output/
+web_translator_settings.json
 *.wav
 *.mp3
 *.png
