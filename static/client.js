@@ -14,6 +14,10 @@
     "Noto Sans Arabic": '"Noto Sans Arabic", sans-serif',
   };
 
+  // ==========================================================================
+  // DOM REFERENCES
+  // ==========================================================================
+
   const statusDot = document.getElementById("statusDot");
   const statusText = document.getElementById("statusText");
   const reconnectBadge = document.getElementById("reconnectBadge");
@@ -129,7 +133,6 @@
   const topicsEnableAuto = document.getElementById("topicsEnableAuto");
   const topicsAllowNew = document.getElementById("topicsAllowNew");
   const topicsIntervalSec = document.getElementById("topicsIntervalSec");
-  const topicsWindowSec = document.getElementById("topicsWindowSec");
   const topicsSaveBtn = document.getElementById("topicsSaveBtn");
   const topicsAnalyzeBtn = document.getElementById("topicsAnalyzeBtn");
   const topicsClearBtn = document.getElementById("topicsClearBtn");
@@ -141,8 +144,6 @@
   const topicsSortBy = document.getElementById("topicsSortBy");
   const topicsSearch = document.getElementById("topicsSearch");
   const topicsDensityToggle = document.getElementById("topicsDensityToggle");
-  const topicsChunkMode = document.getElementById("topicsChunkMode");
-  const topicsWindowRow = document.getElementById("topicsWindowRow");
   const topicsBoardControls = document.getElementById("topicsBoardControls");
   const topicsBoardPane = document.getElementById("topicsBoardPane");
   const topicsRunsPane = document.getElementById("topicsRunsPane");
@@ -226,7 +227,6 @@
   const transcriptMetaBookmarks = document.getElementById("transcriptMetaBookmarks");
   const insightBookmarkSummary = document.getElementById("insightBookmarkSummary");
   const insightBookmarksList = document.getElementById("insightBookmarksList");
-  const insightSessionStats = document.getElementById("insightSessionStats");
   const insightFilterButtons = Array.from(document.querySelectorAll("[data-filter]"));
   const insightSpeakerButtons = Array.from(document.querySelectorAll("[data-speaker]"));
 
@@ -234,6 +234,10 @@
   const tabPanes = Array.from(document.querySelectorAll(".tab-pane"));
   const settingsAccordions = Array.from(document.querySelectorAll(".settings-accordion"));
   const toastHost = document.getElementById("toastHost");
+
+  // ==========================================================================
+  // AUTH + LOCAL STATE BOOTSTRAP
+  // ==========================================================================
 
   function loadApiToken() {
     try {
@@ -270,9 +274,7 @@
       settings_saved: false,
       enabled: false,
       allow_new_topics: true,
-      chunk_mode: "since_last",
       interval_sec: 60,
-      window_sec: 90,
       pending: false,
       last_run_ts: 0,
       last_final_index: 0,
@@ -376,6 +378,10 @@
     },
   };
 
+  // ==========================================================================
+  // CORE UTILITIES
+  // ==========================================================================
+
   function wsUrl() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const base = `${proto}://${location.host}/ws`;
@@ -428,15 +434,6 @@
     text = text.replace(/```/g, "");
     text = text.replace(/^\s*suggested reply\s*:\s*/im, "");
     return text.trim();
-  }
-
-  function speakerFamily(value) {
-    const key = normalizeText(value);
-    if (!key) return "any";
-    if (key.includes("remote")) return "remote";
-    if (key.includes("local")) return "local";
-    if (key.includes("you")) return "local";
-    return key;
   }
 
   function logKey(log) {
@@ -499,11 +496,6 @@
     if (mode === "connected") statusDot.classList.add("connected");
     statusText.textContent = text || "idle";
     state.recognitionStatus = text || "idle";
-    renderTelemetryHud();
-  }
-
-  function renderTelemetryHud() {
-    // Telemetry pills were intentionally removed from topbar in UX V3.
   }
 
   function showToast(message, type, options) {
@@ -657,6 +649,10 @@
     }
     return { ok: Object.keys(errors).length === 0, errors };
   }
+
+  // ==========================================================================
+  // LOGS + TRANSCRIPT RENDERING
+  // ==========================================================================
 
   function logLineText(log) {
     return `[${formatTimeWithMs(log.ts)}] [${log.level || "info"}] ${log.message || ""}`;
@@ -926,7 +922,7 @@
     if (transcriptMetaBookmarks) transcriptMetaBookmarks.textContent = `Bookmarks: ${bookmarkedRows.length}`;
     syncTranscriptPresetButtons();
 
-    if (!insightBookmarkSummary || !insightBookmarksList || !insightSessionStats) return;
+    if (!insightBookmarkSummary || !insightBookmarksList) return;
     insightBookmarkSummary.textContent = bookmarkedRows.length
       ? `${bookmarkedRows.length} bookmarked moments`
       : "No bookmarks yet.";
@@ -944,7 +940,6 @@
         btn.addEventListener("click", () => jumpToTimelineKey(row.key));
         insightBookmarksList.appendChild(btn);
       });
-    insightSessionStats.innerHTML = "";
   }
 
   function setLiveTextWithAutoScroll(el, text) {
@@ -1094,6 +1089,10 @@
     if (coachKpiStatus) coachKpiStatus.textContent = state.coachPending ? "Pending" : (state.coachConfigured ? "Ready" : "Off");
   }
 
+  // ==========================================================================
+  // TOPICS MODEL + TOPICS UI
+  // ==========================================================================
+
   function normalizeTopicDefinition(raw, index) {
     const name = String(raw?.name || "").replace(/\s+/g, " ").trim();
     if (!name) return null;
@@ -1198,10 +1197,7 @@
     const defs = ensureTopicDefinitions();
     if (topicsEnableAuto) topicsEnableAuto.checked = !!t.enabled;
     if (topicsAllowNew) topicsAllowNew.checked = !!t.allow_new_topics;
-    if (topicsChunkMode) topicsChunkMode.value = String(t.chunk_mode || "since_last");
     if (topicsIntervalSec) topicsIntervalSec.value = clampNumber(t.interval_sec, 30, 300, 60);
-    if (topicsWindowSec) topicsWindowSec.value = clampNumber(t.window_sec, 60, 300, 90);
-    if (topicsWindowRow) topicsWindowRow.classList.toggle("hidden", String(t.chunk_mode || "since_last") !== "window");
     if (topicsAgendaInput && document.activeElement !== topicsAgendaInput) {
       topicsAgendaInput.value = defs.map((row) => row.name).join("\n");
     }
@@ -1229,11 +1225,6 @@
   function syncTopicsSettingsControls() {
     const autoEnabled = !!topicsEnableAuto?.checked;
     if (topicsIntervalSec) topicsIntervalSec.disabled = !autoEnabled;
-    if (topicsChunkMode) topicsChunkMode.disabled = !autoEnabled;
-    const chunkMode = String(topicsChunkMode?.value || state.topics?.chunk_mode || "since_last");
-    const showWindow = autoEnabled && chunkMode === "window";
-    if (topicsWindowRow) topicsWindowRow.classList.toggle("hidden", !showWindow);
-    if (topicsWindowSec) topicsWindowSec.disabled = !showWindow;
   }
 
   function formatTopicSeconds(sec) {
@@ -1627,7 +1618,7 @@
 
       const line2 = document.createElement("div");
       line2.className = "topic-run-meta";
-      line2.textContent = `chunk=${chunkSec}s | active=${chunkActiveSec}s | mode=${String(run?.chunk_mode || "since_last")} | allow_custom=${Boolean(run?.allow_new_topics)} | total=${totalMs}ms`;
+      line2.textContent = `chunk=${chunkSec}s | active=${chunkActiveSec}s | allow_custom=${Boolean(run?.allow_new_topics)} | total=${totalMs}ms`;
 
       const line3 = document.createElement("div");
       line3.className = "topic-run-summary";
@@ -1755,7 +1746,6 @@
     statusParts.push(t.configured ? "Model ready" : "Model unavailable");
     statusParts.push(t.settings_saved ? "Setup saved" : "Setup not saved");
     statusParts.push(t.enabled ? "Auto on" : "Manual only");
-    statusParts.push(`Mode ${String(t.chunk_mode || "since_last")}`);
     if (t.pending) statusParts.push("Updating...");
     if (t.last_error) statusParts.push(`Error: ${t.last_error}`);
     if (!t.pending && !t.last_error && t.last_run_ts) statusParts.push(`Last run ${formatTime(t.last_run_ts)}`);
@@ -1811,6 +1801,10 @@
     }
     syncCoachControlsUI();
   }
+
+  // ==========================================================================
+  // SUMMARY RENDERING + INSIGHTS
+  // ==========================================================================
 
   function renderSummary() {
     const s = state.summary;
@@ -2360,6 +2354,10 @@
     a.click();
     URL.revokeObjectURL(url);
   }
+
+  // ==========================================================================
+  // SETTINGS + CONFIG SYNC
+  // ==========================================================================
 
   function setConfigUI(config) {
     state.currentConfig = { ...config };
@@ -3193,9 +3191,7 @@
       settings_saved: !!topics.settings_saved,
       enabled: !!topics.enabled,
       allow_new_topics: !!topics.allow_new_topics,
-      chunk_mode: String(topics.chunk_mode || "since_last"),
       interval_sec: clampNumber(topics.interval_sec, 30, 300, 60),
-      window_sec: clampNumber(topics.window_sec, 60, 300, 90),
       pending: !!topics.pending,
       last_run_ts: Number(topics.last_run_ts || 0),
       last_final_index: Number(topics.last_final_index || 0),
@@ -3229,8 +3225,11 @@
     applyTranslationVisibility();
     renderSilenceGuardChip();
     renderTimeStrip();
-    renderTelemetryHud();
   }
+
+  // ==========================================================================
+  // API HELPERS + CONFIG REQUESTS
+  // ==========================================================================
 
   async function request(path, method, body) {
     const headers = {};
@@ -3355,6 +3354,10 @@
     a.remove();
     URL.revokeObjectURL(url);
   }
+
+  // ==========================================================================
+  // EXPORT HELPERS
+  // ==========================================================================
 
   function exportLogsText() {
     const content = `\ufeff${state.logs.map((log) => logLineText(log)).join("\r\n")}`;
@@ -3505,9 +3508,7 @@
       settings_saved: !!t.settings_saved,
       enabled: !!t.enabled,
       allow_new_topics: !!t.allow_new_topics,
-      chunk_mode: String(t.chunk_mode || "since_last"),
       interval_sec: Number(t.interval_sec || 60),
-      window_sec: Number(t.window_sec || 90),
       last_final_index: Number(t.last_final_index || 0),
       agenda: Array.isArray(t.agenda) ? t.agenda : [],
       definitions: Array.isArray(t.definitions) ? t.definitions : [],
@@ -3576,6 +3577,10 @@
     state.ui.logsView.pinned = {};
     renderLogs();
   }
+
+  // ==========================================================================
+  // COACH + TOPICS ACTIONS
+  // ==========================================================================
 
   async function askCoach() {
     const prompt = (coachPrompt.value || "").trim();
@@ -3687,16 +3692,11 @@
     if (!allowNew && definitions.length === 0) {
       throw new Error("Add at least one topic definition when custom topics are disabled.");
     }
-    const chunkMode = String(topicsChunkMode?.value || "since_last").trim().toLowerCase() === "window"
-      ? "window"
-      : "since_last";
     const payload = {
       agenda,
       enabled: !!topicsEnableAuto?.checked,
       allow_new_topics: allowNew,
-      chunk_mode: chunkMode,
       interval_sec: clampNumber(topicsIntervalSec?.value, 30, 300, 60),
-      window_sec: clampNumber(topicsWindowSec?.value, 60, 300, 90),
       definitions,
     };
     const out = await request("/api/topics/configure", "POST", payload);
@@ -3726,6 +3726,10 @@
     }
   }
 
+  // ==========================================================================
+  // WEBSOCKET INGESTION + LIVE UPDATES
+  // ==========================================================================
+
   function handleMessage(msg) {
     if (msg.type === "snapshot") {
       renderSnapshot(msg);
@@ -3740,7 +3744,6 @@
       setRecording(msg.recording || null);
       renderSilenceGuardChip();
       renderTimeStrip();
-      renderTelemetryHud();
       return;
     }
 
@@ -3750,7 +3753,6 @@
       state.telemetry.estimatedCostUsd = msg.estimated_cost_usd ?? null;
       state.running = !!msg.recognition_running;
       state.recognitionStatus = msg.recognition_status || state.recognitionStatus;
-      renderTelemetryHud();
       return;
     }
 
@@ -3833,9 +3835,7 @@
         settings_saved: !!topics.settings_saved,
         enabled: !!topics.enabled,
         allow_new_topics: !!topics.allow_new_topics,
-        chunk_mode: String(topics.chunk_mode || "since_last"),
         interval_sec: clampNumber(topics.interval_sec, 30, 300, 60),
-        window_sec: clampNumber(topics.window_sec, 60, 300, 90),
         pending: !!topics.pending,
         last_run_ts: Number(topics.last_run_ts || 0),
         last_final_index: Number(topics.last_final_index || 0),
@@ -3931,6 +3931,10 @@
     }
   }
 
+  // ==========================================================================
+  // SOCKET LIFECYCLE
+  // ==========================================================================
+
   function connectSocket() {
     const ws = new WebSocket(wsUrl());
     state.socket = ws;
@@ -3942,7 +3946,6 @@
       state.running = false;
       state.wsConnected = true;
       renderSilenceGuardChip();
-      renderTelemetryHud();
     };
 
     ws.onmessage = (ev) => {
@@ -3960,10 +3963,13 @@
       state.running = false;
       state.wsConnected = false;
       renderSilenceGuardChip();
-      renderTelemetryHud();
       scheduleReconnect();
     };
   }
+
+  // ==========================================================================
+  // UI EVENT BINDINGS
+  // ==========================================================================
 
   tabButtons.forEach((btn) => {
     btn.addEventListener("click", () => setActiveTab(btn.dataset.tab));
@@ -4485,13 +4491,6 @@
       renderTopics();
     });
   }
-  if (topicsChunkMode) {
-    topicsChunkMode.addEventListener("change", () => {
-      state.topics.chunk_mode = String(topicsChunkMode.value || "since_last");
-      syncTopicsSettingsControls();
-      renderTopics();
-    });
-  }
   if (topicsSubtabButtons.length) {
     topicsSubtabButtons.forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -4727,6 +4726,10 @@
     }
   });
 
+  // ==========================================================================
+  // APP BOOTSTRAP
+  // ==========================================================================
+
   loadUiPrefs();
   state.ui.activeSection = "transcriptTab";
   state.ui.mobileNavOpen = false;
@@ -4744,9 +4747,7 @@
   syncCoachControlsUI();
   renderAutoStopHint();
   renderAutoStopPresetState();
-  renderSilenceGuardChip();
-  renderTelemetryHud();
-  setTopicsUIFromState();
+  renderSilenceGuardChip();  setTopicsUIFromState();
   resetTopicDefinitionEditor();
   renderSummary();
   renderSettingsSummary();

@@ -1,76 +1,130 @@
-# Dual Mode Setup (Mic + Remote Channel)
+# Dual Mode Setup Guide
 
-Use this when you want speaker-separated transcript lines:
-- local speaker (you)
-- remote speaker (meeting audio)
+Dual mode captures two independent audio channels simultaneously:
 
-## Goal
-- `local_input_device_id` captures your physical microphone.
-- `remote_input_device_id` captures the remote meeting audio feed.
+- **Local channel** — your microphone (what you say)
+- **Remote channel** — the meeting audio feed (what the other participants say)
 
-## Recommended routing with VB-CABLE
-1. Install VB-CABLE (VB-Audio Virtual Cable).
-2. In your meeting app (Teams/Zoom/Meet), set **speaker output** to:
-   - `CABLE Input (VB-Audio Virtual Cable)`
-3. In Live Meeting Copilot Settings panel:
-   - Set Capture Mode to `Dual`
-   - Set `local_input_device_id` to your physical microphone
-   - Set `remote_input_device_id` to `CABLE Output (VB-Audio Virtual Cable)` (recording side)
+Use this mode when you need speaker-separated transcription in a Teams, Zoom, or Google Meet call.
+If you only need single-microphone capture, this guide is not required.
 
-Important:
-- The meeting app plays audio to **CABLE Input** (playback endpoint).
-- The copilot should listen from **CABLE Output** (recording endpoint).
-- Device labels can vary by driver/version; pick the endpoint that carries remote audio.
+---
 
-## Two major field issues (and fixes)
+## How It Works
 
-### 1) "I cannot hear the remote side from my speakers"
-When meeting output is moved to `CABLE Input`, remote audio may no longer play on your speakers/headset.
+In dual mode, the application runs two independent speech recognition streams in parallel. To keep the two audio sources separate, remote meeting audio must be routed through a **virtual audio cable** — a software component that acts as a virtual recording device the application can read from independently, without affecting your normal speakers or headset.
 
-Fix options:
-1. Windows monitor path (quick):
-   - Open **Sound Control Panel** -> **Recording** -> `CABLE Output` -> **Properties** -> **Listen**
-   - Enable **Listen to this device**
-   - Choose your speakers/headset as playback device
-2. Mixer path (cleaner):
-   - Use Voicemeeter (or similar) to route remote audio to both:
-     - `CABLE Input` (for capture)
-     - your speakers/headset (for listening)
+---
 
-### 2) "Bleeding/echo between channels"
-We observed local/remote bleed that was reduced by disabling advanced audio processing.
+## Requirements
 
-Recommended mitigation:
-1. Disable Windows **Audio Enhancements/Effects** on:
-   - local microphone device
-   - virtual cable endpoints
-   - speaker/headset output (if processing is enabled)
-2. Use headset when possible (reduces speaker-to-mic leakage).
-3. Keep explicit device IDs in dual mode (avoid auto/default switching).
+- **VB-CABLE Virtual Audio Device** — free, download from <https://vb-audio.com/Cable/>
+- A physical microphone (USB or built-in) for the local channel
 
-## Built-in bleed protection in the app
-- The app has a built-in local-channel suppression window of ~1.6s after remote speech activity.
-- This reduces echo/bleed even when Windows routing is imperfect.
-- Audio-enhancement changes in Windows reduce bleed before it reaches the app; suppression handles residual overlap.
+---
 
-## First validation checklist
+## Step 1 — Install VB-CABLE
+
+1. Download the installer from <https://vb-audio.com/Cable/>.
+2. Extract the zip and run `VBCABLE_Setup_x64.exe` as administrator (right-click → **Run as administrator**).
+3. When prompted, restart Windows. The restart is required — VB-CABLE is a kernel audio driver.
+4. After restart, confirm two new audio devices appear in Windows sound settings:
+   - `CABLE Input (VB-Audio Virtual Cable)` — a playback (output) device
+   - `CABLE Output (VB-Audio Virtual Cable)` — a recording (input) device
+
+---
+
+## Step 2 — Route Meeting Audio Through VB-CABLE
+
+In your meeting application (Teams, Zoom, Google Meet, or similar), change the **speaker output** to:
+
+```text
+CABLE Input (VB-Audio Virtual Cable)
+```
+
+> **Why CABLE Input?**
+> The meeting app plays audio *to* CABLE Input. The application then reads it *from* CABLE Output.
+> Think of it as a pipe: meeting app → CABLE Input → CABLE Output → Live Meeting Copilot.
+
+---
+
+## Step 3 — Configure the Application
+
+Open the application **Settings** panel and set:
+
+| Setting | Value |
+| --- | --- |
+| Capture mode | `dual` |
+| Local input device | Your physical microphone |
+| Remote input device | `CABLE Output (VB-Audio Virtual Cable)` |
+
+Save the settings.
+
+---
+
+## Step 4 — Validate the Setup
+
 1. Start a session.
-2. Speak locally: only local speaker lines should appear.
-3. Play remote audio: only remote speaker lines should appear.
-4. If both appear on one channel, fix audio routing before production use.
+2. Speak into your microphone — confirm only the **local channel** transcript updates.
+3. Play audio through the meeting app — confirm only the **remote channel** transcript updates.
+4. If both channels update from the same source, the routing is incorrect — review Step 2.
 
-## Strongly recommended settings
-- Avoid `default` devices in dual mode.
-- Select explicit device IDs for both channels.
-- Save config after selecting devices.
+---
 
-## Common issues
-- No remote text appears:
-  - meeting app is not routed to `CABLE Input`, or wrong remote input endpoint selected.
-- Both sides appear in local channel:
-  - speaker bleed or wrong Windows routing; follow the bleed mitigation section above.
-- Intermittent remote capture:
-  - another app changed the default audio device; reselect explicit IDs.
-- Log message: "Restarting recognition after buffer overflow":
-  - this is expected during long idle periods on one channel; the app auto-restarts that channel.
-  - the other channel continues running.
+## Common Issues
+
+### You cannot hear remote speakers
+
+Because meeting audio is routed to the virtual cable instead of your headset, you will not hear remote participants without an additional step.
+
+**Option A — Windows Listen mode** (simple, works for most setups):
+
+1. Right-click the speaker icon in the Windows taskbar and select **Sound settings**.
+2. Scroll down and click **More sound settings** to open the legacy Sound control panel.
+3. Go to the **Recording** tab.
+4. Right-click `CABLE Output (VB-Audio Virtual Cable)` and select **Properties**.
+5. Click the **Listen** tab.
+6. Tick **Listen to this device** and select your normal headset or speakers from the **Playback through this device** drop-down.
+7. Click **OK**.
+
+**Option B — Voicemeeter** (recommended for production use, lower latency):
+
+1. Download Voicemeeter from <https://vb-audio.com/Voicemeeter/> (free, same developer as VB-CABLE).
+2. Configure Voicemeeter to receive audio from `CABLE Output` and send it to both your headset and `CABLE Input` simultaneously.
+3. This lets you hear remote participants on your headset while the application reads from a clean, unmodified virtual cable feed.
+
+---
+
+### Local and remote channels bleed into each other
+
+Acoustic feedback or Windows audio enhancement features can cause one channel to appear in the other.
+
+**Mitigations:**
+
+1. Open **Sound settings** → **More sound settings**.
+2. For your microphone: select it → **Properties** → **Enhancements** tab → disable all enhancements.
+3. For `CABLE Output`: select it → **Properties** → **Enhancements** tab → disable all enhancements.
+4. Use a headset rather than open speakers to reduce acoustic feedback from the room.
+5. In the application Settings, always select explicit device IDs — avoid the default-device entries, which can change silently after Windows updates or hardware changes.
+
+---
+
+## Application-Level Suppression
+
+The application includes a built-in local-channel suppression window that activates briefly after recent remote audio activity. This reduces residual bleed in common setups but is not a substitute for correct audio routing.
+
+---
+
+## Production Recommendations
+
+- Always use explicit device IDs in dual mode. Do not use the default device entries.
+- Save your settings in the application after selecting devices.
+- After Windows updates, driver updates, or docking station changes, re-open Settings and verify your device assignments are still correct.
+- If the application log shows repeated "recognition restart" or "buffer overflow" messages on an idle channel, this is normal recovery behaviour — the other channel continues uninterrupted.
+
+---
+
+## Related Documents
+
+- [`INSTALL.md`](../INSTALL.md) — install and run the application
+- [`docs/AZURE_PROVISIONING.md`](AZURE_PROVISIONING.md) — Azure credentials setup

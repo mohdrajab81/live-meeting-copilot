@@ -22,8 +22,7 @@ from app.services.summary import _PROMPT_TEMPLATE, SummaryResult, SummaryService
 def _make_service(**kwargs) -> SummaryService:
     defaults = dict(
         project_endpoint="https://example.openai.azure.com",
-        model_deployment="gpt-4o",
-        agent_ref="asst_abc123",
+        agent_ref="my-summary-agent",
     )
     defaults.update(kwargs)
     return SummaryService(**defaults)
@@ -40,11 +39,6 @@ def test_is_configured_true_when_all_set():
 
 def test_is_configured_false_when_endpoint_missing():
     svc = _make_service(project_endpoint="")
-    assert svc.is_configured is False
-
-
-def test_is_configured_false_when_model_missing():
-    svc = _make_service(model_deployment="")
     assert svc.is_configured is False
 
 
@@ -351,42 +345,34 @@ def test_prompt_template_formats_with_transcript_placeholder():
 def test_from_environment_reads_env_vars():
     env = {
         "PROJECT_ENDPOINT": "https://env-endpoint",
-        "SUMMARY_MODEL_DEPLOYMENT_NAME": "gpt-4-env",
-        "SUMMARY_AGENT_ID": "asst_env",
+        "SUMMARY_AGENT_NAME": "summary-agent",
     }
     with patch.dict(os.environ, env, clear=False):
         svc = SummaryService.from_environment()
     assert svc._project_endpoint == "https://env-endpoint"
-    assert svc._model_deployment == "gpt-4-env"
-    assert svc._agent_ref == "asst_env"
+    assert svc._agent_ref == "summary-agent"
 
 
-def test_from_environment_falls_back_to_model_deployment_name():
+def test_from_environment_returns_empty_agent_when_name_missing():
     env = {
         "PROJECT_ENDPOINT": "https://ep",
-        "MODEL_DEPLOYMENT_NAME": "gpt-4-fallback",
-        "SUMMARY_AGENT_NAME": "my-agent",
     }
-    clean_env = {k: v for k, v in os.environ.items() if k not in (
-        "SUMMARY_MODEL_DEPLOYMENT_NAME", "AZURE_AI_MODEL_DEPLOYMENT_NAME"
-    )}
-    clean_env.update(env)
-    with patch.dict(os.environ, clean_env, clear=True):
+    with patch.dict(os.environ, env, clear=True):
         svc = SummaryService.from_environment()
-    assert svc._model_deployment == "gpt-4-fallback"
+    assert svc._agent_ref == ""
 
 
 # ---------------------------------------------------------------------------
 # agent_key detection
 # ---------------------------------------------------------------------------
 
-def test_agent_key_is_id_for_asst_prefix():
-    svc = _make_service(agent_ref="asst_abc")
-    assert svc._agent_key == "id"
+def test_agent_key_is_name_for_declarative_agent():
+    svc = _make_service(agent_ref="my-summary-agent")
+    assert svc._agent_key == "name"
 
 
-def test_agent_key_is_name_for_non_asst():
-    svc = _make_service(agent_ref="my-agent-name")
+def test_agent_key_is_name_for_any_agent_ref():
+    svc = _make_service(agent_ref="any-agent-ref")
     assert svc._agent_key == "name"
 
 

@@ -94,22 +94,18 @@ class SummaryService:
     def __init__(
         self,
         project_endpoint: str,
-        model_deployment: str,
         agent_ref: str,
     ) -> None:
         self._project_endpoint = project_endpoint.strip()
-        self._model_deployment = model_deployment.strip()
         self._agent_ref = agent_ref.strip()
-        self._agent_key = "id" if self._agent_ref.startswith("asst_") else "name"
+        self._agent_key = "name"
         self._project_client: Any = None
         self._openai_client: Any = None
         self._state_lock = threading.RLock()
 
     @property
     def is_configured(self) -> bool:
-        return bool(
-            self._project_endpoint and self._model_deployment and self._agent_ref
-        )
+        return bool(self._project_endpoint and self._agent_ref)
 
     def _ensure_client(self) -> Any:
         with self._state_lock:
@@ -152,7 +148,7 @@ class SummaryService:
         if not self.is_configured:
             raise RuntimeError(
                 "Summary service is not configured. "
-                "Set PROJECT_ENDPOINT, MODEL_DEPLOYMENT_NAME, and SUMMARY_AGENT_ID."
+                "Set PROJECT_ENDPOINT and SUMMARY_AGENT_NAME."
             )
         client = self._ensure_client()
         valid_utterance_id_ranges = self._extract_valid_utterance_id_ranges(
@@ -165,7 +161,6 @@ class SummaryService:
         request_conversation_id = self._create_new_conversation_id(client)
         total_start = time.perf_counter()
         params: dict[str, Any] = {
-            "model": self._model_deployment,
             "input": prompt,
             "extra_body": {
                 "agent": {
@@ -459,22 +454,10 @@ class SummaryService:
 
     @classmethod
     def from_environment(cls) -> "SummaryService":
-        project_endpoint = (
-            os.getenv("PROJECT_ENDPOINT")
-            or os.getenv("AZURE_AI_PROJECT_ENDPOINT")
-            or ""
-        )
-        model_deployment = (
-            os.getenv("SUMMARY_MODEL_DEPLOYMENT_NAME")
-            or os.getenv("MODEL_DEPLOYMENT_NAME")
-            or os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME")
-            or ""
-        )
-        agent_ref = (
-            os.getenv("SUMMARY_AGENT_ID") or os.getenv("SUMMARY_AGENT_NAME") or ""
-        )
+        project_endpoint = os.getenv("PROJECT_ENDPOINT") or ""
+        agent_ref = os.getenv("SUMMARY_AGENT_NAME") or ""
         return cls(
             project_endpoint=project_endpoint,
-            model_deployment=model_deployment,
             agent_ref=agent_ref,
         )
+

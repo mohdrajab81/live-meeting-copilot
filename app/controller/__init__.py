@@ -206,18 +206,14 @@ class AppController:
         agenda: list[str],
         enabled: bool,
         allow_new_topics: bool,
-        chunk_mode: str = "since_last",
         interval_sec: int,
-        window_sec: int,
         definitions: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         return self.topic_orch.configure(
             agenda=agenda,
             enabled=enabled,
             allow_new_topics=allow_new_topics,
-            chunk_mode=chunk_mode,
             interval_sec=interval_sec,
-            window_sec=window_sec,
             definitions=definitions,
         )
 

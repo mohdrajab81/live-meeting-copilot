@@ -10,8 +10,8 @@ import threading
 
 # Set required env vars before any app module is imported.
 # These are fakes — no real Azure calls are made in unit tests.
-os.environ.setdefault("SPEECH_KEY", "test-speech-key")
-os.environ.setdefault("SPEECH_REGION", "eastus")
+os.environ.setdefault("AZURE_AI_SERVICES_KEY", "test-ai-services-key")
+os.environ.setdefault("AZURE_AI_SERVICES_REGION", "eastus")
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock

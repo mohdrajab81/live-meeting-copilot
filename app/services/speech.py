@@ -66,13 +66,13 @@ class SpeechService:
     def _make_speech_config(self, cfg: RuntimeConfig):
         try:
             config = speech_sdk.SpeechConfig(
-                subscription=self._settings.speech_key,
-                region=self._settings.speech_region,
+                subscription=self._settings.ai_services_key,
+                region=self._settings.ai_services_region,
             )
         except TypeError:
             config = speech_sdk.SpeechConfig(
-                self._settings.speech_key,
-                self._settings.speech_region,
+                self._settings.ai_services_key,
+                self._settings.ai_services_region,
             )
 
         config.speech_recognition_language = cfg.recognition_language

@@ -26,7 +26,7 @@ def _prepare_env(base_dir: Path) -> bool:
     if not env_path.exists() and env_example.exists():
         shutil.copyfile(env_example, env_path)
         print("Created .env from .env.example.")
-        print("Please edit .env (SPEECH_KEY, SPEECH_REGION), then run again.")
+        print("Please edit .env (AZURE_AI_SERVICES_KEY, AZURE_AI_SERVICES_REGION), then run again.")
         try:
             if os.name == "nt":
                 os.startfile(str(env_path))  # type: ignore[attr-defined]
@@ -43,12 +43,12 @@ def _prepare_env(base_dir: Path) -> bool:
             return ""
         return str(m.group(1) or "").strip().strip("'\"")
 
-    speech_key = _env_value("SPEECH_KEY")
-    speech_region = _env_value("SPEECH_REGION")
-    has_key = bool(speech_key) and speech_key.lower() != "your-azure-speech-key"
-    has_region = bool(speech_region)
+    services_key = _env_value("AZURE_AI_SERVICES_KEY")
+    services_region = _env_value("AZURE_AI_SERVICES_REGION")
+    has_key = bool(services_key) and services_key.lower() != "your-azure-ai-services-key"
+    has_region = bool(services_region)
     if not (has_key and has_region):
-        print("Missing/placeholder SPEECH_KEY or SPEECH_REGION in .env.")
+        print("Missing/placeholder AZURE_AI_SERVICES_KEY or AZURE_AI_SERVICES_REGION in .env.")
         print("Update .env, then run again.")
         try:
             if os.name == "nt" and env_path.exists():

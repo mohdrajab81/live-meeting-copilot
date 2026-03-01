@@ -24,14 +24,14 @@ if (-not (Test-Path $envFile)) {
     exit 1
 }
 
-# Quick check that SPEECH_KEY is not a placeholder
+# Quick check that AZURE_AI_SERVICES_KEY is not a placeholder
 $envContent = Get-Content $envFile -Raw
-if ($envContent -match "SPEECH_KEY=your-azure-speech-key" -or
-    $envContent -notmatch "SPEECH_KEY=\S") {
+if ($envContent -match "AZURE_AI_SERVICES_KEY=your-azure-ai-services-key" -or
+    $envContent -notmatch "AZURE_AI_SERVICES_KEY=\S") {
     Write-Host ""
-    Write-Host "  [WARN] SPEECH_KEY looks empty or is still the placeholder." -ForegroundColor Yellow
+    Write-Host "  [WARN] AZURE_AI_SERVICES_KEY looks empty or is still the placeholder." -ForegroundColor Yellow
     Write-Host "  The app will start but transcription won't work without a real key." -ForegroundColor Yellow
-    Write-Host "  Edit .env and add your Azure Speech key, then restart." -ForegroundColor Yellow
+    Write-Host "  Edit .env and add your Azure AI Services key, then restart." -ForegroundColor Yellow
     Write-Host ""
 }
 

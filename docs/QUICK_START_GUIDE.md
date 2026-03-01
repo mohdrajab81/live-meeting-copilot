@@ -1,80 +1,98 @@
 # Quick Start Guide
 
-## 1) Install locally
-From repository root:
+Get the application running in approximately 10 minutes using the online package.
+
+> For other package types (offline or EXE), see [`INSTALL.md`](../INSTALL.md).
+> For Azure credentials you do not yet have, see [`docs/AZURE_PROVISIONING.md`](AZURE_PROVISIONING.md).
+
+---
+
+## Before You Begin
+
+Confirm you have all of the following:
+
+- Windows 10 or Windows 11
+- Python 3.10 or later (run `python --version` in PowerShell to check)
+- Your Azure AI Services key and region — see [`docs/AZURE_PROVISIONING.md`](AZURE_PROVISIONING.md) if you need to create them
+- The package file: `live-meeting-copilot-deploy.zip`
+
+---
+
+## Step 1 — Extract
+
+Extract `live-meeting-copilot-deploy.zip` to a local folder, for example `C:\tools\live-meeting-copilot`.
+
+---
+
+## Step 2 — Run Setup
+
+Open PowerShell in the extracted folder and run:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
-If you received the offline package (`live-meeting-copilot-offline.zip`), run `setup.ps1`.
-It auto-installs dependencies from local `wheelhouse/` without internet.
+Setup installs all dependencies, creates `.env` from the template, and opens it in Notepad.
 
-## 2) Configure environment
-Create `.env` from `.env.example` and set at least:
+---
+
+## Step 3 — Enter Your Azure Credentials
+
+In Notepad, fill in:
 
 ```env
-SPEECH_KEY=...
-SPEECH_REGION=eastus
+AZURE_AI_SERVICES_KEY=<paste your key here>
+AZURE_AI_SERVICES_REGION=<your region, e.g. eastus>
 ```
 
-Optional AI features require:
+Save the file and close Notepad. Setup completes automatically.
 
-```env
-PROJECT_ENDPOINT=https://<resource>.services.ai.azure.com/api/projects/<project>
-MODEL_DEPLOYMENT_NAME=gpt-4.1-mini
-AGENT_ID=asst_...
-TOPIC_AGENT_ID=asst_...
-SUMMARY_AGENT_ID=asst_...
-```
-Optional translation config:
+---
 
-```env
-TRANSLATOR_KEY=...
-TRANSLATOR_REGION=eastus
-TRANSLATOR_ENDPOINT=https://api.cognitive.microsofttranslator.com
-```
-
-For full Azure setup, see [AZURE_PROVISIONING.md](./AZURE_PROVISIONING.md).
-
-## 3) Run
-
-Recommended (operator path):
+## Step 4 — Start the Application
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\run.ps1
 ```
 
-Developer/manual alternative:
+Your browser opens automatically. If it does not, navigate to `http://localhost:8000`.
 
-```powershell
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+---
+
+## Step 5 — Confirm It Works
+
+1. Click **Start**.
+2. Speak for 20–30 seconds.
+3. Confirm transcript lines appear on screen.
+4. Open **Settings** and enable **Translation** — confirm Arabic text appears alongside the transcript.
+
+---
+
+## Optional: Enable AI Features
+
+If you have an Azure AI Foundry project set up (see [`docs/AZURE_PROVISIONING.md`](AZURE_PROVISIONING.md) — Sections 3 through 5), add the following to `.env`:
+
+```env
+PROJECT_ENDPOINT=https://<resource>.services.ai.azure.com/api/projects/<project>
+GUIDANCE_AGENT_NAME=<your coaching agent name>
+TOPIC_AGENT_NAME=<your topic tracking agent name>
+SUMMARY_AGENT_NAME=<your summary agent name>
 ```
 
-Open:
-- `http://127.0.0.1:8000/`
+Then authenticate with Azure:
 
-## 4) First-run smoke test
-1. Click `Start`, speak for 20-30 seconds, confirm transcript lines appear.
-2. In Settings, toggle `Enable Arabic Translation`, save, and verify Arabic column behavior.
-3. Open `Topics`, configure at least one definition, run `Analyze now`.
-4. Open `Summary`, click `Generate Now`, verify sections and topic coverage render.
-5. Export transcript CSV and test `From File` summary.
+```powershell
+az login
+```
 
-## 5) Dual mode (local + remote separation)
-If you run dual-channel capture, follow:
-- [DUAL_MODE_SETUP.md](./DUAL_MODE_SETUP.md)
+Restart `run.ps1`. The Coaching, Topics, and Summary panels in the UI become active.
 
-## 6) Instruction ownership (important)
-- Baseline agent instructions: Azure Foundry.
-- Runtime coach custom instruction: Settings UI (`coach_instruction`).
-- Topic/summary request framing: code-owned templates.
+---
 
-Reference: [SYSTEM_DEFINITION.md](./SYSTEM_DEFINITION.md).
+## If Something Goes Wrong
 
-## 7) Optional: EXE distribution for testers
-If you want testers to run without installing Python, use:
-- [EXE_DISTRIBUTION.md](./EXE_DISTRIBUTION.md)
+| Symptom | Where to Look |
+| --- | --- |
+| Setup or install error | `INSTALL.md` — Troubleshooting section |
+| Azure key or region error | `docs/AZURE_PROVISIONING.md` — Section 8 |
+| Need to capture both local and remote speakers | `docs/DUAL_MODE_SETUP.md` |

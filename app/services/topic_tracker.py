@@ -18,13 +18,11 @@ class TopicTrackerService:
     def __init__(
         self,
         project_endpoint: str,
-        model_deployment: str,
         agent_ref: str,
     ) -> None:
         self._project_endpoint = project_endpoint.strip()
-        self._model_deployment = model_deployment.strip()
         self._agent_ref = agent_ref.strip()
-        self._agent_key = "id" if self._agent_ref.startswith("asst_") else "name"
+        self._agent_key = "name"
         self._project_client: Any = None
         self._openai_client: Any = None
         self._conversation_id: str | None = None
@@ -32,7 +30,7 @@ class TopicTrackerService:
 
     @property
     def is_configured(self) -> bool:
-        return bool(self._project_endpoint and self._model_deployment and self._agent_ref)
+        return bool(self._project_endpoint and self._agent_ref)
 
     def _ensure_client(self) -> Any:
         with self._state_lock:
@@ -253,7 +251,7 @@ class TopicTrackerService:
     def ask_update(self, context: dict[str, Any]) -> TopicTrackerResult:
         if not self.is_configured:
             raise RuntimeError(
-                "Topic tracker is not configured. Set PROJECT_ENDPOINT, MODEL_DEPLOYMENT_NAME, and TOPIC_AGENT_ID/TOPIC_AGENT_NAME."
+                "Topic tracker is not configured. Set PROJECT_ENDPOINT and TOPIC_AGENT_NAME."
             )
 
         with self._state_lock:
@@ -262,7 +260,6 @@ class TopicTrackerService:
             prompt = "Input context JSON:\n" + json.dumps(context, ensure_ascii=False)
 
             params: dict[str, Any] = {
-                "model": self._model_deployment,
                 "input": prompt,
                 "extra_body": {
                     "agent": {
@@ -337,26 +334,10 @@ class TopicTrackerService:
 
     @classmethod
     def from_environment(cls) -> "TopicTrackerService":
-        project_endpoint = (
-            os.getenv("PROJECT_ENDPOINT")
-            or os.getenv("AZURE_AI_PROJECT_ENDPOINT")
-            or ""
-        )
-        model_deployment = (
-            os.getenv("TOPIC_MODEL_DEPLOYMENT_NAME")
-            or os.getenv("MODEL_DEPLOYMENT_NAME")
-            or os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME")
-            or ""
-        )
-        agent_ref = (
-            os.getenv("TOPIC_AGENT_ID")
-            or os.getenv("TOPIC_AGENT_NAME")
-            or os.getenv("AGENT_ID")
-            or os.getenv("AGENT_NAME")
-            or ""
-        )
+        project_endpoint = os.getenv("PROJECT_ENDPOINT") or ""
+        agent_ref = os.getenv("TOPIC_AGENT_NAME") or ""
         return cls(
             project_endpoint=project_endpoint,
-            model_deployment=model_deployment,
             agent_ref=agent_ref,
         )
+

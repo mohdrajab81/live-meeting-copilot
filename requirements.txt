@@ -1,4 +1,5 @@
 azure-ai-projects
+openai
 azure-cognitiveservices-speech
 azure-identity
 fastapi

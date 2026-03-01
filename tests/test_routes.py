@@ -60,8 +60,7 @@ def _make_controller(running=False):
                                                    "type": "coach"})
     ctrl.configure_topics = MagicMock(return_value={
         "enabled": True, "agenda": [], "definitions": [], "items": [],
-        "allow_new_topics": True, "chunk_mode": "since_last",
-        "interval_sec": 60, "window_sec": 90,
+        "allow_new_topics": True, "interval_sec": 60,
     })
     ctrl.analyze_topics_now = AsyncMock(return_value={
         "enabled": True, "items": [], "agenda": [], "runs": [],
@@ -378,7 +377,6 @@ class TestTopicsConfigure:
             "enabled": True,
             "allow_new_topics": True,
             "interval_sec": 60,
-            "window_sec": 90,
         })
         assert r.status_code == 200
 
@@ -389,7 +387,6 @@ class TestTopicsConfigure:
             "enabled": True,
             "allow_new_topics": False,
             "interval_sec": 60,
-            "window_sec": 90,
         })
         ctrl.configure_topics.assert_called_once()
 
@@ -400,7 +397,6 @@ class TestTopicsConfigure:
             "enabled": True,
             "allow_new_topics": True,
             "interval_sec": 60,
-            "window_sec": 90,
         })
         assert r.status_code == 422
 
@@ -413,7 +409,6 @@ class TestTopicsConfigure:
             "enabled": True,
             "allow_new_topics": True,
             "interval_sec": 60,
-            "window_sec": 90,
             "definitions": defs,
         })
         assert r.status_code == 422

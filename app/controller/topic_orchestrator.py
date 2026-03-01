@@ -1,8 +1,8 @@
 """
 TopicOrchestrator — owns all topic-tracking state and logic.
 
-State (15 variables): topics_enabled, topics_allow_new, topics_chunk_mode,
-topics_interval_sec, topics_window_sec, topics_pending, topics_last_run_ts,
+State (13 variables): topics_enabled, topics_allow_new,
+topics_interval_sec, topics_pending, topics_last_run_ts,
 topics_last_final_idx, topics_last_error, topics_agenda, topics_definitions,
 topics_items, topics_runtime_meta, topics_settings_saved, topics_runs.
 
@@ -45,9 +45,7 @@ class TopicOrchestrator:
         # Topic state (protected by shared lock)
         self.topics_enabled = False
         self.topics_allow_new = True
-        self.topics_chunk_mode = "since_last"
         self.topics_interval_sec = 60
-        self.topics_window_sec = 90
         self.topics_pending = False
         self.topics_last_run_ts = 0.0
         self.topics_last_final_idx = 0
@@ -303,7 +301,7 @@ class TopicOrchestrator:
                 key=lambda row: float(row.get("ts", 0) or 0),
                 reverse=True,
             )
-            for row in statements_sorted[:2]:
+            for row in statements_sorted[:6]:
                 text = " ".join(str(row.get("text", "") or "").split()).strip()
                 if text:
                     last_statements.append(text)
@@ -345,9 +343,7 @@ class TopicOrchestrator:
             "settings_saved": bool(self.topics_settings_saved),
             "enabled": self.topics_enabled,
             "allow_new_topics": self.topics_allow_new,
-            "chunk_mode": self.topics_chunk_mode,
             "interval_sec": self.topics_interval_sec,
-            "window_sec": self.topics_window_sec,
             "pending": self.topics_pending,
             "last_run_ts": self.topics_last_run_ts,
             "last_final_index": self.topics_last_final_idx,
@@ -568,7 +564,6 @@ class TopicOrchestrator:
         recent_topic = str(recent.get("active_topic", "") or "").strip()
         return (
             f"trigger={str(topic_call.get('trigger', 'manual'))}, "
-            f"chunk_mode={str(topic_call.get('chunk_mode', 'since_last'))}, "
             f"agenda={len(list(topic_call.get('agenda', []) or []))}, "
             f"current_topics={len(list(topic_call.get('current_topics', []) or []))}, "
             f"chunk_turns={len(turns)}, "
@@ -579,7 +574,6 @@ class TopicOrchestrator:
             f"gap_seconds={int(topic_call.get('gap_seconds', 0) or 0)}, "
             f"possible_context_reset={bool(topic_call.get('possible_context_reset', False))}, "
             f"recent_topic={recent_topic or '-'}, "
-            f"window_seconds={int(topic_call.get('window_seconds', 0) or 0)}, "
             f"allow_new={bool(topic_call.get('allow_new_topics', True))}, "
             f"latest_speaker={latest_speaker}, "
             f"latest_preview={self._preview_text(latest_text, 120) if latest_text else '-'}"
@@ -667,17 +661,8 @@ class TopicOrchestrator:
             return None
 
         finals = self._get_finals()
-        from_idx = 0
-        turns_source: list[dict[str, Any]] = []
-        if self.topics_chunk_mode == "window":
-            since_ts = now_ts - float(self.topics_window_sec)
-            turns_source = [
-                turn for turn in finals if float(turn.get("ts") or 0.0) >= since_ts
-            ]
-            from_idx = max(0, len(finals) - len(turns_source))
-        else:
-            from_idx = max(0, min(len(finals), int(self.topics_last_final_idx or 0)))
-            turns_source = list(finals[from_idx:])
+        from_idx = max(0, min(len(finals), int(self.topics_last_final_idx or 0)))
+        turns_source = list(finals[from_idx:])
 
         chunk_turns = [
             {
@@ -707,14 +692,13 @@ class TopicOrchestrator:
                     prev_ts = first_ts
                 if prev_ts > 0:
                     prev_boundary_ts = prev_ts
-                if self.topics_chunk_mode == "since_last" and prev_ts > 0:
+                if prev_ts > 0:
                     span_start_ts = min(first_ts, prev_ts)
         # First agent run of this session: clamp span to session start.
         # Handles both a brand-new session (from_idx==0) and a restart where
         # the transcript was kept (from_idx>0, prev finals from old session).
         if (
-            self.topics_chunk_mode == "since_last"
-            and self.topics_session_started_ts > 0
+            self.topics_session_started_ts > 0
             and self.topics_last_run_ts < self.topics_session_started_ts
         ):
             span_start_ts = min(first_ts, self.topics_session_started_ts)
@@ -744,7 +728,6 @@ class TopicOrchestrator:
         self.topics_last_run_ts = now_ts
         topic_call = {
             "trigger": trigger,
-            "chunk_mode": self.topics_chunk_mode,
             "from_final_index": from_idx,
             "to_final_index": to_idx,
             "chunk_seconds": chunk_seconds,
@@ -754,7 +737,6 @@ class TopicOrchestrator:
             "allow_new_topics": self.topics_allow_new,
             "current_topics": self._context_items_unlocked(),
             "chunk_turns": chunk_turns,
-            "window_seconds": int(self.topics_window_sec),
             "gap_seconds": gap_seconds,
             "possible_context_reset": possible_context_reset,
         }
@@ -1362,8 +1344,7 @@ class TopicOrchestrator:
                 self._finalize_merged_state_unlocked(merged_by_key, final_order)
                 self.topics_last_error = ""
                 self.topics_pending = False
-                if self.topics_chunk_mode == "since_last":
-                    self.topics_last_final_idx = max(self.topics_last_final_idx, ctx["to_idx"])
+                self.topics_last_final_idx = max(self.topics_last_final_idx, ctx["to_idx"])
                 self._append_run_unlocked(
                     {
                         "ts": now_ts,
@@ -1376,7 +1357,6 @@ class TopicOrchestrator:
                         "chunk_active_seconds": ctx["chunk_active_seconds"],
                         "possible_context_reset": ctx["possible_context_reset"],
                         "allow_new_topics": self.topics_allow_new,
-                        "chunk_mode": self.topics_chunk_mode,
                         "new_topics": new_topics,
                         "updated_topics": updated_topics,
                         "unchanged_topics": unchanged_topics,
@@ -1436,7 +1416,6 @@ class TopicOrchestrator:
                         "chunk_active_seconds": ctx["chunk_active_seconds"],
                         "possible_context_reset": ctx["possible_context_reset"],
                         "allow_new_topics": self.topics_allow_new,
-                        "chunk_mode": self.topics_chunk_mode,
                         "new_topics": 0,
                         "updated_topics": 0,
                         "unchanged_topics": 0,
@@ -1471,9 +1450,7 @@ class TopicOrchestrator:
         agenda: list[str],
         enabled: bool,
         allow_new_topics: bool,
-        chunk_mode: str = "since_last",
         interval_sec: int,
-        window_sec: int,
         definitions: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         cleaned_agenda: list[str] = []
@@ -1498,13 +1475,7 @@ class TopicOrchestrator:
             }
             self.topics_enabled = bool(enabled)
             self.topics_allow_new = bool(allow_new_topics)
-            self.topics_chunk_mode = (
-                "window"
-                if str(chunk_mode or "").strip().lower() == "window"
-                else "since_last"
-            )
             self.topics_interval_sec = max(30, min(300, int(interval_sec)))
-            self.topics_window_sec = max(60, min(300, int(window_sec)))
 
             if raw_definitions is not None:
                 if raw_definitions:
@@ -1604,14 +1575,8 @@ class TopicOrchestrator:
                 )
             topic_call = self.prepare_call_unlocked(time.time(), trigger="manual")
         if not topic_call:
-            with self._lock:
-                chunk_mode = self.topics_chunk_mode
-            if chunk_mode == "since_last":
-                raise RuntimeError(
-                    "No new transcript chunk since the last analysis. Speak more, then retry."
-                )
             raise RuntimeError(
-                "No transcript available in the configured window. Speak first, then retry."
+                "No new transcript chunk since the last analysis. Speak more, then retry."
             )
         await self.run_update(topic_call)
         with self._lock:

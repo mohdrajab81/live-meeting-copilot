@@ -271,7 +271,7 @@ class SummaryOrchestrator:
         if not self._summary.is_configured:
             await self._broadcast_log(
                 "warning",
-                "Summary skipped: agent not configured (set SUMMARY_AGENT_ID).",
+                "Summary skipped: agent not configured (set SUMMARY_AGENT_NAME).",
             )
             return
         with self._lock:
@@ -370,8 +370,9 @@ class SummaryOrchestrator:
                 raise ValueError("Summary generation already in progress.")
             if not self._summary.is_configured:
                 raise ValueError(
-                    "Summary agent not configured. Set SUMMARY_AGENT_ID and related env vars."
+                    "Summary agent not configured. Set SUMMARY_AGENT_NAME and related env vars."
                 )
         await self.run_summary()
         with self._lock:
             return self.snapshot_unlocked()
+

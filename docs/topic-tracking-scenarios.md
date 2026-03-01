@@ -28,7 +28,6 @@ is determined by the rules below.
 |---|---|
 | First agent run of this session (any `from_idx`) | `min(first_statement_ts, session_started_ts)` |
 | Subsequent runs (`topics_last_run_ts >= session_started_ts`) | `min(first_statement_ts, last_final_ts_of_previous_chunk)` |
-| Window mode | `first_statement_ts` (window handles its own range) |
 
 The "first run of this session" is detected by:
 ```python
@@ -98,11 +97,7 @@ session. A "Good morning." detected 9 s into a session now correctly produces
 - Calls `_do_finalize()` → `finalize_on_stop_unlocked()` → active→covered ✓
 - This path was previously unguarded; topics would stay `active` indefinitely
 
-### 12. Window mode
-- `span_start_ts` clamping is guarded by `topics_chunk_mode == "since_last"`
-- Window mode derives its own time range from `now − window_sec`; unaffected ✓
-
-### 13. Stop before any agent run has fired
+### 12. Stop before any agent run has fired
 - `finalize_on_stop_unlocked()` only acts on topics with `status == "active"`
 - If no topics exist yet, it is a no-op ✓
 

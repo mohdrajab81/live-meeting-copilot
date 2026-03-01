@@ -204,9 +204,7 @@ class TopicsConfigureRequest(BaseModel):
     agenda: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=20)
     enabled: bool = True
     allow_new_topics: bool = True
-    chunk_mode: Literal["since_last", "window"] = "since_last"
     interval_sec: int = Field(default=60, ge=30, le=300)
-    window_sec: int = Field(default=90, ge=60, le=300)
     definitions: list[TopicDefinitionPayload] = Field(default_factory=list, max_length=80)
 
 
@@ -221,7 +219,7 @@ async def ask_coach(payload: CoachAskRequest, request: Request) -> dict:
     if not controller.coach.is_configured:
         raise HTTPException(
             status_code=412,
-            detail="Coach is not configured. Set PROJECT_ENDPOINT, MODEL_DEPLOYMENT_NAME, and AGENT_ID/AGENT_NAME.",
+            detail="Coach is not configured. Set PROJECT_ENDPOINT and GUIDANCE_AGENT_NAME.",
         )
     try:
         hint = await controller.request_coach(
@@ -248,9 +246,7 @@ async def configure_topics(payload: TopicsConfigureRequest, request: Request) ->
         agenda=payload.agenda,
         enabled=payload.enabled,
         allow_new_topics=payload.allow_new_topics,
-        chunk_mode=payload.chunk_mode,
         interval_sec=payload.interval_sec,
-        window_sec=payload.window_sec,
         definitions=[row.model_dump() for row in payload.definitions],
     )
     await controller.broadcast({"type": "topics_update", "topics": topics})
@@ -261,8 +257,7 @@ async def configure_topics(payload: TopicsConfigureRequest, request: Request) ->
             f"enabled={topics.get('enabled')}, agenda={len(topics.get('agenda', []))}, "
             f"definitions={len(topics.get('definitions', []))}, "
             f"allow_new={topics.get('allow_new_topics')}, "
-            f"chunk_mode={topics.get('chunk_mode')}, "
-            f"interval={topics.get('interval_sec')}s, window={topics.get('window_sec')}s"
+            f"interval={topics.get('interval_sec')}s"
         ),
     )
     return {"ok": True, "topics": topics}
@@ -308,7 +303,7 @@ async def generate_summary(request: Request) -> dict:
     if not controller.summary_service.is_configured:
         raise HTTPException(
             status_code=412,
-            detail="Summary agent not configured. Set SUMMARY_AGENT_ID and related env vars.",
+            detail="Summary agent not configured. Set SUMMARY_AGENT_NAME and related env vars.",
         )
     try:
         snap = await controller.generate_summary()
@@ -358,7 +353,7 @@ async def summary_from_transcript(
     if not controller.summary_service.is_configured:
         raise HTTPException(
             status_code=412,
-            detail="Summary agent not configured. Set SUMMARY_AGENT_ID and related env vars.",
+            detail="Summary agent not configured. Set SUMMARY_AGENT_NAME and related env vars.",
         )
 
     _MAX_BYTES = 5 * 1024 * 1024  # 5 MB
@@ -550,3 +545,4 @@ def _parse_transcript_csv_rows(text: str) -> list[dict[str, object]]:
 def _rows_to_transcript_text(rows: list[dict[str, object]]) -> str:
     # Backward wrapper for tests/compatibility while prompt rendering moved to shared helper.
     return render_transcript_for_prompt(prepare_transcript_utterances(rows, max_items=500))
+

@@ -1,68 +1,97 @@
 # System Definition
 
-## Product identity
-- Product name: **Live Meeting Copilot**
-- Repository/runtime folder name: `live-interview-translator` (kept for compatibility)
-- Core purpose: real-time transcript, optional translation, coaching, topic tracking, and structured meeting summary.
+> **Developer document.** This file is a reference for developers and maintainers.
+> It is not needed to install, configure, or use the application.
+> End users should refer to `INSTALL.md` and `docs/AZURE_PROVISIONING.md` instead.
 
-## Runtime boundaries
-- Frontend: `static/` (single-page app, no framework).
-- API/WebSocket backend: FastAPI in `app/`.
-- Speech and translation: Azure Speech + Azure Translator.
-- AI features: Azure AI Foundry agents (coach/topics/summary).
+---
 
-## Agent catalog (official naming)
-- **Conversation Coach Agent**: real-time coaching suggestions.
-  - Env binding: `AGENT_ID` or `AGENT_NAME`
-- **Topic Intelligence Agent**: incremental topic detection and status updates.
-  - Env binding: `TOPIC_AGENT_ID` or `TOPIC_AGENT_NAME` (falls back to `AGENT_ID`/`AGENT_NAME`)
-- **Summary Intelligence Agent**: final structured summary generation.
-  - Env binding: `SUMMARY_AGENT_ID` or `SUMMARY_AGENT_NAME`
+## Product Identity
 
-Current Azure agent names/IDs can remain unchanged; these are product-facing names only.
+| Field | Value |
+| --- | --- |
+| Product name | Live Meeting Copilot |
+| Repository folder | `live-interview-translator` (kept for compatibility) |
+| Core purpose | Real-time transcription, Arabic translation, AI coaching, topic tracking, and meeting summary |
 
-## Instruction ownership model
+---
 
-### 1) Azure agent baseline (Foundry)
-- Where: Azure AI Foundry agent system instructions.
-- Scope: persistent persona and global behavior per agent.
+## Runtime Boundaries
 
-### 2) Code-authored request framing
-- Coach: `app/controller/coach_orchestrator.py` (`_build_prompt_unlocked`).
-- Topics: `app/controller/topic_orchestrator.py` (structured context payload).
-- Summary: `app/services/summary.py` (`_PROMPT_TEMPLATE`).
-- Scope: per-request task framing and schema constraints.
+| Layer | Technology |
+| --- | --- |
+| Frontend | `static/` — single-page app, no framework |
+| API and WebSocket backend | FastAPI (`app/`) |
+| Speech transcription | Azure AI Services — Speech SDK |
+| Arabic translation | Azure AI Services — Translator API |
+| AI coaching, topics, summary | Azure AI Foundry agents |
 
-### 3) Web-configurable runtime instruction
-- Currently supported: `coach_instruction` only.
-- Source: Settings UI -> `PUT /api/config` -> `RuntimeConfig.coach_instruction`.
-- Scope: per-session/per-user coaching style refinements.
+---
 
-### 4) Request context data
-- Transcript turns, speaker labels, agenda definitions, valid utterance-id constraints, and runtime state.
-- Scope: highest-signal task context for each call.
+## Agent Catalog
 
-## Effective behavior precedence (practical)
-- In practice, responses are shaped by:
-  1. Request context data
-  2. Runtime web instruction (`coach_instruction`, when set)
-  3. Code-authored prompt framing
-  4. Azure baseline system instruction
+| Product Name | Env Binding | Purpose |
+| --- | --- | --- |
+| Conversation Coach | `GUIDANCE_AGENT_NAME` | Real-time coaching suggestions for the local speaker |
+| Topic Tracker | `TOPIC_AGENT_NAME` | Incremental topic detection and agenda status updates |
+| Meeting Summarizer | `SUMMARY_AGENT_NAME` | Final structured meeting summary generation |
 
-This is the governance model to maintain, even though final model behavior is probabilistic.
+Agent names in this table refer to the display names used in Azure AI Foundry. These must exactly match the values set in `.env`.
 
-## What is configurable from where
-- Web UI:
-  - runtime config (`capture_mode`, language, translation toggle, coach toggle, summary toggle, `coach_instruction`, etc.)
-  - topics definitions/settings
-- `.env`:
-  - credentials, endpoints, model deployment, agent bindings
-- Azure Foundry:
-  - baseline system instructions and tool wiring for each agent
-- Code:
-  - strict schema expectations, payload shaping, deterministic post-processing
+---
 
-## Non-goals (current version)
+## Instruction Ownership Model
+
+Agent behavior is shaped by four layers, listed in order of practical influence on the model response:
+
+| Priority | Layer | Source | Scope |
+| --- | --- | --- | --- |
+| 1 (highest) | Request context data | Code — transcript turns, speaker labels, agenda, runtime state | Per-request; highest signal |
+| 2 | Runtime web instruction | UI Settings → `PUT /api/config` → `coach_instruction` | Per-session coaching style; coach agent only |
+| 3 | Code-authored request framing | `coach_orchestrator.py`, `topic_orchestrator.py`, `summary.py` | Per-request schema constraints and task framing |
+| 4 (lowest) | Azure baseline system instruction | Azure AI Foundry agent system instructions | Persistent persona and global behaviour |
+
+---
+
+## Configuration Sources
+
+| What You Are Configuring | Where to Configure It |
+| --- | --- |
+| Credentials, endpoints, agent bindings | `.env` |
+| Runtime settings (capture mode, language, toggles, coach instruction) | Web UI → `PUT /api/config` |
+| Agenda topics and session definitions | Web UI → Topics panel |
+| Agent baseline instructions and model selection | Azure AI Foundry portal |
+| Request schema, payload structure, deterministic post-processing | Source code |
+
+---
+
+## Key Source Locations
+
+| Component | File |
+| --- | --- |
+| Application entry point | `app/main.py` |
+| Controller wiring layer | `app/controller/__init__.py` |
+| Session lifecycle | `app/controller/session_manager.py` |
+| Topic orchestration | `app/controller/topic_orchestrator.py` |
+| Coach orchestration | `app/controller/coach_orchestrator.py` |
+| Summary orchestration | `app/controller/summary_orchestrator.py` |
+| Transcript store | `app/controller/transcript_store.py` |
+| Runtime config store | `app/controller/config_store.py` |
+| Broadcast service | `app/controller/broadcast_service.py` |
+| Speech SDK integration | `app/services/speech.py` |
+| Translation pipeline | `app/services/translation_pipeline.py` |
+| Coach agent client | `app/services/coach.py` |
+| Topic agent client | `app/services/topic_tracker.py` |
+| Summary agent client | `app/services/summary.py` |
+| API routes | `app/api/routes.py` |
+| API authentication | `app/api/auth.py` |
+| Environment validation | `app/config.py` |
+| EXE launcher | `app_launcher.py` |
+
+---
+
+## Non-Goals (Current Version)
+
 - No web UI editor for topic-agent or summary-agent system instructions.
-- No runtime hot-swap of prompt templates for topic/summary from UI.
-- No external prompt registry service.
+- No runtime hot-swap of prompt templates for topic or summary from the UI.
+- No external prompt registry or versioning service.

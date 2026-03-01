@@ -13,6 +13,7 @@ from app.config import RuntimeConfig, Settings
 
 ApplyTranslationCallback = Callable[[dict[str, Any], str], Awaitable[None]]
 LogCallback = Callable[[str, str], Awaitable[None]]
+_TRANSLATOR_ENDPOINT = "https://api.cognitive.microsofttranslator.com"
 
 
 class TranslationPipeline:
@@ -65,10 +66,8 @@ class TranslationPipeline:
         self._queue = None
 
     def _translator_headers(self) -> dict[str, str]:
-        key = (self._settings.translator_key or self._settings.speech_key or "").strip()
-        region = (
-            self._settings.translator_region or self._settings.speech_region or ""
-        ).strip()
+        key = (self._settings.ai_services_key or "").strip()
+        region = (self._settings.ai_services_region or "").strip()
         headers = {
             "Content-Type": "application/json",
             "X-ClientTraceId": str(uuid.uuid4()),
@@ -83,9 +82,7 @@ class TranslationPipeline:
         content = (text or "").strip()
         if not content:
             return "", None
-        endpoint = (self._settings.translator_endpoint or "").strip().rstrip("/")
-        if not endpoint:
-            return "", "Translator endpoint is not configured."
+        endpoint = _TRANSLATOR_ENDPOINT
         query = urllib.parse.urlencode(
             {"api-version": "3.0", "from": "en", "to": "ar"},
         )

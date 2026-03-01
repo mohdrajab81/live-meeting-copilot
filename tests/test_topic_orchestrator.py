@@ -63,7 +63,6 @@ def _configured_orch(agenda=None, allow_new=True, finals=None):
         enabled=True,
         allow_new_topics=allow_new,
         interval_sec=60,
-        window_sec=90,
     )
     return orch
 
@@ -271,78 +270,67 @@ class TestNormalizeDefinitions:
 class TestConfigure:
     def test_sets_enabled(self):
         orch = _make_orchestrator()
-        orch.configure(agenda=["A"], enabled=True, allow_new_topics=True, interval_sec=60, window_sec=90)
+        orch.configure(agenda=["A"], enabled=True, allow_new_topics=True, interval_sec=60)
         assert orch.topics_enabled is True
 
     def test_sets_allow_new_topics(self):
         orch = _make_orchestrator()
-        orch.configure(agenda=["A"], enabled=True, allow_new_topics=False, interval_sec=60, window_sec=90)
+        orch.configure(agenda=["A"], enabled=True, allow_new_topics=False, interval_sec=60)
         assert orch.topics_allow_new is False
-
-    def test_sets_chunk_mode_window(self):
-        orch = _make_orchestrator()
-        orch.configure(agenda=["A"], enabled=True, allow_new_topics=True,
-                       chunk_mode="window", interval_sec=60, window_sec=90)
-        assert orch.topics_chunk_mode == "window"
-
-    def test_default_chunk_mode_is_since_last(self):
-        orch = _make_orchestrator()
-        orch.configure(agenda=["A"], enabled=True, allow_new_topics=True, interval_sec=60, window_sec=90)
-        assert orch.topics_chunk_mode == "since_last"
 
     def test_sets_interval_sec(self):
         orch = _make_orchestrator()
-        orch.configure(agenda=["A"], enabled=True, allow_new_topics=True, interval_sec=90, window_sec=90)
+        orch.configure(agenda=["A"], enabled=True, allow_new_topics=True, interval_sec=90)
         assert orch.topics_interval_sec == 90
 
     def test_interval_clamped_to_minimum_30(self):
         orch = _make_orchestrator()
-        orch.configure(agenda=["A"], enabled=True, allow_new_topics=True, interval_sec=5, window_sec=60)
+        orch.configure(agenda=["A"], enabled=True, allow_new_topics=True, interval_sec=5)
         assert orch.topics_interval_sec == 30
 
     def test_interval_clamped_to_maximum_300(self):
         orch = _make_orchestrator()
-        orch.configure(agenda=["A"], enabled=True, allow_new_topics=True, interval_sec=9999, window_sec=60)
+        orch.configure(agenda=["A"], enabled=True, allow_new_topics=True, interval_sec=9999)
         assert orch.topics_interval_sec == 300
 
     def test_marks_settings_saved(self):
         orch = _make_orchestrator()
         assert orch.topics_settings_saved is False
-        orch.configure(agenda=["A"], enabled=True, allow_new_topics=True, interval_sec=60, window_sec=90)
+        orch.configure(agenda=["A"], enabled=True, allow_new_topics=True, interval_sec=60)
         assert orch.topics_settings_saved is True
 
     def test_deduplicates_agenda(self):
         orch = _make_orchestrator()
-        orch.configure(agenda=["A", "A", "B"], enabled=True, allow_new_topics=True, interval_sec=60, window_sec=90)
+        orch.configure(agenda=["A", "A", "B"], enabled=True, allow_new_topics=True, interval_sec=60)
         assert orch.topics_agenda.count("A") == 1
         assert len(orch.topics_agenda) == 2
 
     def test_caps_agenda_at_20(self):
         orch = _make_orchestrator()
         orch.configure(agenda=[f"T{i}" for i in range(30)], enabled=True,
-                       allow_new_topics=True, interval_sec=60, window_sec=90)
+                       allow_new_topics=True, interval_sec=60)
         assert len(orch.topics_agenda) == 20
 
     def test_creates_stub_items_for_agenda(self):
         orch = _make_orchestrator()
-        orch.configure(agenda=["Alpha", "Beta"], enabled=True, allow_new_topics=True, interval_sec=60, window_sec=90)
+        orch.configure(agenda=["Alpha", "Beta"], enabled=True, allow_new_topics=True, interval_sec=60)
         names = [item["name"] for item in orch.topics_items]
         assert "Alpha" in names
         assert "Beta" in names
 
     def test_all_stub_items_start_as_not_started(self):
         orch = _make_orchestrator()
-        orch.configure(agenda=["Alpha", "Beta"], enabled=True, allow_new_topics=True, interval_sec=60, window_sec=90)
+        orch.configure(agenda=["Alpha", "Beta"], enabled=True, allow_new_topics=True, interval_sec=60)
         for item in orch.topics_items:
             assert item["status"] == "not_started"
 
     def test_preserves_status_for_known_agenda_topic(self):
         orch = _make_orchestrator()
-        orch.configure(agenda=["Alpha"], enabled=True, allow_new_topics=True, interval_sec=60, window_sec=90)
+        orch.configure(agenda=["Alpha"], enabled=True, allow_new_topics=True, interval_sec=60)
         orch.topics_items[0]["status"] = "active"
         orch.topics_items[0]["time_seconds"] = 120
         # Reconfigure same agenda
-        orch.configure(agenda=["Alpha"], enabled=True, allow_new_topics=True, interval_sec=60, window_sec=90)
+        orch.configure(agenda=["Alpha"], enabled=True, allow_new_topics=True, interval_sec=60)
         assert orch.topics_items[0]["status"] == "active"
         assert orch.topics_items[0]["time_seconds"] == 120
 
@@ -350,13 +338,13 @@ class TestConfigure:
         orch = _make_orchestrator()
         orch.topics_pending = True
         orch.topics_last_error = "previous error"
-        orch.configure(agenda=["A"], enabled=True, allow_new_topics=True, interval_sec=60, window_sec=90)
+        orch.configure(agenda=["A"], enabled=True, allow_new_topics=True, interval_sec=60)
         assert orch.topics_pending is False
         assert orch.topics_last_error == ""
 
     def test_returns_payload_dict(self):
         orch = _make_orchestrator()
-        result = orch.configure(agenda=["A"], enabled=True, allow_new_topics=True, interval_sec=60, window_sec=90)
+        result = orch.configure(agenda=["A"], enabled=True, allow_new_topics=True, interval_sec=60)
         assert isinstance(result, dict)
         assert "items" in result
 
@@ -364,7 +352,7 @@ class TestConfigure:
         orch = _make_orchestrator()
         defs = [{"name": "Budget", "priority": "high"}, {"name": "Timeline"}]
         orch.configure(agenda=["Budget", "Timeline"], enabled=True, allow_new_topics=True,
-                       interval_sec=60, window_sec=90, definitions=defs)
+                       interval_sec=60, definitions=defs)
         assert len(orch.topics_definitions) == 2
         assert orch.topics_definitions[0]["name"] in ("Budget", "Timeline")
 
@@ -378,7 +366,7 @@ class TestPayloadUnlocked:
         orch = _configured_orch()
         payload = orch.payload_unlocked()
         for key in ("configured", "enabled", "agenda", "definitions", "items", "runs",
-                    "pending", "last_run_ts", "allow_new_topics", "chunk_mode"):
+                    "pending", "last_run_ts", "allow_new_topics"):
             assert key in payload
 
     def test_items_reflect_configure(self):
@@ -470,29 +458,14 @@ class TestPrepareCallUnlocked:
         orch.prepare_call_unlocked(now, trigger="manual")
         assert orch.topics_last_run_ts >= before
 
-    def test_since_last_mode_uses_index_offset(self):
+    def test_index_offset_filters_turns(self):
         now = time.time()
         finals = [_final(en=f"turn {i}", ts=now - (10 - i)) for i in range(5)]
         orch = _configured_orch(finals=finals)
-        orch.topics_chunk_mode = "since_last"
         orch.topics_last_final_idx = 3  # skip first 3
         result = orch.prepare_call_unlocked(now, trigger="manual")
         assert result is not None
         assert len(result["chunk_turns"]) == 2  # only turns 3 and 4
-
-    def test_window_mode_filters_by_time(self):
-        now = time.time()
-        finals = [
-            _final(en="old", ts=now - 200),
-            _final(en="recent", ts=now - 30),
-        ]
-        orch = _configured_orch(finals=finals)
-        orch.topics_chunk_mode = "window"
-        orch.topics_window_sec = 90
-        result = orch.prepare_call_unlocked(now, trigger="manual")
-        assert result is not None
-        assert len(result["chunk_turns"]) == 1
-        assert result["chunk_turns"][0]["en"] == "recent"
 
     def test_possible_context_reset_when_large_gap(self):
         now = time.time()
@@ -502,7 +475,6 @@ class TestPrepareCallUnlocked:
             _final(en="turn 1", ts=now - 5),
         ]
         orch = _configured_orch(finals=finals)
-        orch.topics_chunk_mode = "since_last"
         orch.topics_last_final_idx = 1  # only process last turn
         result = orch.prepare_call_unlocked(now, trigger="manual")
         assert result is not None

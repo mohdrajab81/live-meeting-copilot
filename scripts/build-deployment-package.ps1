@@ -28,7 +28,7 @@ New-Item -ItemType Directory -Path $stageDir | Out-Null
 $items = @(
   "app",
   "static",
-  "readme.txt",
+  "README.md",
   "INSTALL.md",
   "requirements.txt",
   ".env.example",
@@ -39,22 +39,33 @@ $items = @(
 $docFiles = @(
   "docs\QUICK_START_GUIDE.md",
   "docs\AZURE_PROVISIONING.md",
-  "docs\DUAL_MODE_SETUP.md",
-  "docs\EXE_DISTRIBUTION.md",
-  "docs\SYSTEM_DEFINITION.md",
-  "docs\deployment-package.md"
+  "docs\DUAL_MODE_SETUP.md"
 )
+
+$missing = @()
+foreach ($item in $items) {
+  $src = Join-Path $repoRoot $item
+  if (-not (Test-Path $src)) {
+    $missing += $item
+  }
+}
+foreach ($doc in $docFiles) {
+  $src = Join-Path $repoRoot $doc
+  if (-not (Test-Path $src)) {
+    $missing += $doc
+  }
+}
+if ($missing.Count -gt 0) {
+  throw "Missing required package files: $($missing -join ', ')"
+}
 
 foreach ($item in $items) {
   $src = Join-Path $repoRoot $item
-  if (Test-Path $src) {
-    Copy-Item -Path $src -Destination $stageDir -Recurse -Force
-  }
+  Copy-Item -Path $src -Destination $stageDir -Recurse -Force
 }
 
 foreach ($doc in $docFiles) {
   $src = Join-Path $repoRoot $doc
-  if (-not (Test-Path $src)) { continue }
   $dst = Join-Path $stageDir $doc
   $dstDir = Split-Path -Parent $dst
   if (-not (Test-Path $dstDir)) {

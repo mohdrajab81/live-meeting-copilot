@@ -5,14 +5,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    speech_key: str = Field(alias="SPEECH_KEY")
-    speech_region: str = Field(alias="SPEECH_REGION")
-    translator_key: str = Field(default="", alias="TRANSLATOR_KEY")
-    translator_region: str = Field(default="", alias="TRANSLATOR_REGION")
-    translator_endpoint: str = Field(
-        default="https://api.cognitive.microsofttranslator.com",
-        alias="TRANSLATOR_ENDPOINT",
-    )
+    ai_services_key: str = Field(alias="AZURE_AI_SERVICES_KEY")
+    ai_services_region: str = Field(alias="AZURE_AI_SERVICES_REGION")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -42,12 +36,10 @@ EnglishRecognitionLanguage = Literal[
 
 def validate_environment(settings: "Settings") -> None:
     errors = []
-    if not settings.speech_key:
-        errors.append("SPEECH_KEY is required (Azure Cognitive Services key)")
-    if not settings.speech_region:
-        errors.append("SPEECH_REGION is required (e.g. 'eastus')")
-    if settings.translator_key and not settings.translator_region:
-        errors.append("TRANSLATOR_REGION is required when TRANSLATOR_KEY is set")
+    if not settings.ai_services_key:
+        errors.append("AZURE_AI_SERVICES_KEY is required (Azure AI Services key)")
+    if not settings.ai_services_region:
+        errors.append("AZURE_AI_SERVICES_REGION is required (e.g. 'eastus')")
     if errors:
         raise RuntimeError(
             "Configuration errors — check your .env file:\n"

@@ -104,7 +104,7 @@ class SessionManager:
                 False,
                 (
                     "Start blocked: coach is enabled but not configured. "
-                    "Set PROJECT_ENDPOINT, MODEL_DEPLOYMENT_NAME, and AGENT_ID/AGENT_NAME."
+                    "Set PROJECT_ENDPOINT and GUIDANCE_AGENT_NAME."
                 ),
             )
         if config.coach_enabled and not self._coach.supports_conversations_create():
@@ -486,3 +486,4 @@ class SessionManager:
                 "total_ms": self._record_total_ms_unlocked(),
             },
         }
+

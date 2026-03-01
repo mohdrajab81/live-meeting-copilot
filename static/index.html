@@ -279,24 +279,10 @@
                   <span>Enable automatic topic analysis</span>
                 </label>
 
-                <div class="field-grid two-col">
+                <div class="field-grid">
                   <div>
                     <label for="topicsIntervalSec">Interval (sec)</label>
                     <input id="topicsIntervalSec" type="number" min="30" max="300" step="5" value="60" />
-                  </div>
-                  <div>
-                    <label for="topicsChunkMode">Chunk mode</label>
-                    <select id="topicsChunkMode">
-                      <option value="since_last" selected>Since last run (recommended)</option>
-                      <option value="window">Rolling window</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div id="topicsWindowRow" class="field-grid">
-                  <div>
-                    <label for="topicsWindowSec">Window (sec)</label>
-                    <input id="topicsWindowSec" type="number" min="60" max="300" step="10" value="90" />
                   </div>
                 </div>
 

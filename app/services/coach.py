@@ -23,13 +23,11 @@ class CoachService:
     def __init__(
         self,
         project_endpoint: str,
-        model_deployment: str,
         agent_ref: str,
     ) -> None:
         self._project_endpoint = project_endpoint.strip()
-        self._model_deployment = model_deployment.strip()
         self._agent_ref = agent_ref.strip()
-        self._agent_key = "id" if self._agent_ref.startswith("asst_") else "name"
+        self._agent_key = "name"
         self._conversation_id: str | None = None
         self._previous_response_id: str | None = None
         self._project_client: Any = None
@@ -38,7 +36,7 @@ class CoachService:
 
     @property
     def is_configured(self) -> bool:
-        return bool(self._project_endpoint and self._model_deployment and self._agent_ref)
+        return bool(self._project_endpoint and self._agent_ref)
 
     def _ensure_client(self) -> Any:
         with self._state_lock:
@@ -115,13 +113,12 @@ class CoachService:
     def ask(self, prompt: str) -> CoachResult:
         if not self.is_configured:
             raise RuntimeError(
-                "Coach is not configured. Set PROJECT_ENDPOINT, MODEL_DEPLOYMENT_NAME, and AGENT_ID/AGENT_NAME."
+                "Coach is not configured. Set PROJECT_ENDPOINT and GUIDANCE_AGENT_NAME."
             )
         with self._state_lock:
             client = self._ensure_client()
 
             params: dict[str, Any] = {
-                "model": self._model_deployment,
                 "input": prompt,
                 "extra_body": {
                     "agent": {
@@ -238,19 +235,10 @@ class CoachService:
 
     @classmethod
     def from_environment(cls) -> "CoachService":
-        project_endpoint = (
-            os.getenv("PROJECT_ENDPOINT")
-            or os.getenv("AZURE_AI_PROJECT_ENDPOINT")
-            or ""
-        )
-        model_deployment = (
-            os.getenv("MODEL_DEPLOYMENT_NAME")
-            or os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME")
-            or ""
-        )
-        agent_ref = os.getenv("AGENT_ID") or os.getenv("AGENT_NAME") or "my-profile-agent"
+        project_endpoint = os.getenv("PROJECT_ENDPOINT") or ""
+        agent_ref = os.getenv("GUIDANCE_AGENT_NAME") or ""
         return cls(
             project_endpoint=project_endpoint,
-            model_deployment=model_deployment,
             agent_ref=agent_ref,
         )
+

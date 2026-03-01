@@ -1,152 +1,280 @@
-# Live Meeting Copilot — Install Guide
+# Live Meeting Copilot — Installation Guide
 
-Real-time speech recognition, optional EN→AR translation, AI coach hints,
-topic tracking, and session summary. Runs entirely on your local machine.
-
----
-
-## Prerequisites
-
-| Requirement | Notes |
-|---|---|
-| Windows 10 or 11 | Audio capture is Windows-only |
-| Python 3.10+ (3.12 recommended) | Download from https://www.python.org/downloads/ — tick "Add to PATH" |
-| Azure account | Free trial at https://azure.microsoft.com/free |
-| Azure credentials | See [AZURE_PROVISIONING.md](docs/AZURE_PROVISIONING.md) |
+This guide covers all three ways to install and run the application on Windows.
 
 ---
 
-## Quick Start (automated)
+## Choose Your Package
 
-1. Extract the zip to a folder (e.g. `C:\tools\live-meeting-copilot`).
-2. Right-click `setup.ps1` → **Run with PowerShell**, or open a terminal and run:
+| Package | File | Installation Requires | Runtime Requires |
+| --- | --- | --- | --- |
+| **Online** | `live-meeting-copilot-deploy.zip` | Python 3.10 or later, internet | Internet (Azure services) |
+| **Offline** | `live-meeting-copilot-offline.zip` | Python 3.10 or later, no internet | Internet (Azure services) |
+| **EXE** | `live-meeting-copilot-exe.zip` | Nothing | Internet (Azure services) |
+
+> **All three packages require an internet connection during use** to reach Azure Speech,
+> Translator, and AI Foundry services. "No internet needed" refers to the installation
+> step only — dependencies are bundled, but Azure calls still go over the network.
+>
+> **Not sure which to use?** Choose the EXE package — it has the fewest installation requirements.
+
+---
+
+## Option A: Online Package
+
+### Requirements
+
+- Windows 10 or Windows 11
+- Python 3.10 or later ([download](https://www.python.org/downloads/) — tick **Add Python to PATH** during install)
+- Internet connection during setup
+
+### Installation Steps
+
+#### 1. Extract the package
+
+Extract `live-meeting-copilot-deploy.zip` to a local folder, for example:
+
+```text
+C:\tools\live-meeting-copilot
+```
+
+#### 2. Run setup
+
+Open PowerShell in that folder and run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
-3. On first run, Notepad opens with `.env`. Fill in your Azure keys (see [AZURE_PROVISIONING.md](docs/AZURE_PROVISIONING.md)). Save and close.
-4. Start the app:
+`setup.ps1` automatically:
+
+- Detects and verifies your Python installation
+- Creates a virtual environment (`.venv`)
+- Downloads and installs all dependencies from the internet
+- Creates `.env` from the built-in template
+- Opens `.env` in Notepad and waits for you to save it
+
+#### 3. Fill in your Azure credentials
+
+When Notepad opens, set at minimum:
+
+```env
+AZURE_AI_SERVICES_KEY=<your key>
+AZURE_AI_SERVICES_REGION=<your region, e.g. eastus>
+```
+
+Save the file and close Notepad. Setup completes automatically.
+
+> Do not have these values yet? See `docs/AZURE_PROVISIONING.md`.
+
+#### 4. Start the application
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\run.ps1
 ```
 
-5. Your browser opens at `http://localhost:8000`. Done.
-
-System and instruction ownership:
-- [SYSTEM_DEFINITION.md](docs/SYSTEM_DEFINITION.md)
-- [DUAL_MODE_SETUP.md](docs/DUAL_MODE_SETUP.md) (dual-channel routing)
-
-Package variants:
-- `live-meeting-copilot-deploy.zip`: smaller package, installs dependencies from internet.
-- `live-meeting-copilot-offline.zip`: larger package with `wheelhouse/`, no internet needed during setup.
-- `live-meeting-copilot-exe.zip`: portable EXE package; no Python install required on target machine.
-  - For EXE targets, install Microsoft Visual C++ Redistributable 2015-2022 if missing.
+Your browser opens automatically to `http://localhost:8000`. If it does not open within a few seconds, navigate there manually.
 
 ---
 
-## Manual Steps (if you prefer)
+## Option B: Offline Package
+
+The offline package is identical to the online package, except that all Python dependencies are pre-bundled in a `wheelhouse/` folder. No internet connection is needed on the target machine.
+
+The `setup.ps1` script automatically detects the `wheelhouse/` folder and installs from it without downloading anything. Prerequisites and installation steps are otherwise identical to Option A.
+
+---
+
+## Option C: EXE Package
+
+### EXE Requirements
+
+- Windows 10 or Windows 11
+- Microsoft Visual C++ Redistributable 2015–2022
+
+  Most Windows machines already have this installed. If the application fails to start, [download and install it](https://aka.ms/vs/17/release/vc_redist.x64.exe), then try again.
+
+### EXE Installation Steps
+
+#### 1. Extract the EXE package
+
+Extract `live-meeting-copilot-exe.zip` to a local folder, for example:
+
+```text
+C:\tools\live-meeting-copilot
+```
+
+#### 2. First run — create your configuration
+
+Double-click `live-meeting-copilot.exe`, or run it from PowerShell:
 
 ```powershell
-# 1. Create virtual environment
-python -m venv .venv
-
-# 2. Activate it
-.\.venv\Scripts\Activate.ps1
-
-# 3. Install dependencies
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-
-# 4. Create your .env
-copy .env.example .env
-notepad .env
-
-# 5. Run
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+.\live-meeting-copilot.exe
 ```
 
-Open `http://localhost:8000` in your browser.
+On first run, if `.env` does not exist, the launcher:
+
+- Creates `.env` from the built-in template automatically
+- Opens `.env` in Notepad
+- Exits — you must fill in your credentials before running again
+
+#### 3. Configure your Azure credentials
+
+When Notepad opens, set at minimum:
+
+```env
+AZURE_AI_SERVICES_KEY=<your key>
+AZURE_AI_SERVICES_REGION=<your region, e.g. eastus>
+```
+
+Save the file and close Notepad.
+
+> Do not have these values yet? See `docs/AZURE_PROVISIONING.md`.
+
+#### 4. Second run — start the application
+
+Run `live-meeting-copilot.exe` again. Your browser opens automatically to `http://127.0.0.1:8000`.
+
+> **Windows Firewall prompt**: If a firewall dialog appears, click **Allow access**.
+
+### EXE-Specific Settings
+
+These optional environment variables are only available in the EXE package:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `APP_HOST` | `127.0.0.1` | Network interface the server binds to |
+| `APP_PORT` | `8000` | Port the server listens on |
+| `OPEN_BROWSER` | `1` | Set to `0` to disable automatic browser launch |
 
 ---
 
-## Minimum .env (speech only, no AI features)
+## Environment Variables Reference
 
+### Required
+
+| Variable | Description |
+| --- | --- |
+| `AZURE_AI_SERVICES_KEY` | Your Azure AI Services key |
+| `AZURE_AI_SERVICES_REGION` | Region for your Azure AI Services resource (e.g., `eastus`) |
+
+### Optional — AI Features
+
+Required only if you want coaching suggestions, topic tracking, or meeting summaries.
+All three depend on an Azure AI Foundry project and agent configuration.
+
+| Variable | Description |
+| --- | --- |
+| `PROJECT_ENDPOINT` | Your Foundry project endpoint URL |
+| `GUIDANCE_AGENT_NAME` | Name of the agent handling coaching suggestions |
+| `TOPIC_AGENT_NAME` | Name of the agent handling topic tracking |
+| `SUMMARY_AGENT_NAME` | Name of the agent handling meeting summaries |
+
+See `docs/AZURE_PROVISIONING.md` for how to create and name these agents.
+
+### Optional — General
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TRANSLATION_COST_PER_MILLION_USD` | `10.0` | Used for on-screen cost estimates only; does not affect translation |
+| `API_AUTH_TOKEN` | *(empty)* | When set, all API requests must supply this token. Recommended for non-localhost deployments. |
+
+---
+
+## Authenticating for AI Features
+
+If you configure `PROJECT_ENDPOINT` and agent names, the application authenticates through your local Azure CLI session.
+
+Install Azure CLI if not already installed: <https://aka.ms/install-azure-cli>
+
+Sign in:
+
+```powershell
+az login
 ```
-SPEECH_KEY=your-key-here
-SPEECH_REGION=eastus
+
+A browser window opens for you to sign in with the same account used to create the Azure resources.
+Once complete, the CLI stores a session token that the application uses automatically.
+
+If you have multiple Azure tenants or subscriptions:
+
+```powershell
+az login --tenant "<your-tenant-id>"
+az account set --subscription "<your-subscription-id>"
 ```
 
-## Full .env (all features)
+---
 
-See [AZURE_PROVISIONING.md](docs/AZURE_PROVISIONING.md) for how to get each value.
+## Verification Checklist
 
-```
-SPEECH_KEY=...
-SPEECH_REGION=eastus
+After the application starts and the browser opens:
 
-TRANSLATOR_KEY=
-TRANSLATOR_REGION=eastus
-TRANSLATOR_ENDPOINT=https://api.cognitive.microsofttranslator.com
-TRANSLATION_COST_PER_MILLION_USD=10.0
-
-PROJECT_ENDPOINT=https://<resource>.services.ai.azure.com/api/projects/<project>
-MODEL_DEPLOYMENT_NAME=gpt-4.1-mini
-
-AGENT_ID=asst_...
-AGENT_NAME=
-TOPIC_MODEL_DEPLOYMENT_NAME=
-TOPIC_AGENT_ID=asst_...
-TOPIC_AGENT_NAME=
-SUMMARY_MODEL_DEPLOYMENT_NAME=
-SUMMARY_AGENT_ID=asst_...
-SUMMARY_AGENT_NAME=
-
-API_AUTH_TOKEN=
-```
-Notes:
-- `.env.example` is the source of truth for supported environment keys.
-- Service fallback aliases also supported by code:
-  - `AZURE_AI_PROJECT_ENDPOINT`, `AZURE_AI_MODEL_DEPLOYMENT_NAME`
-- EXE launcher runtime env vars:
-  - `APP_HOST` (default `127.0.0.1`)
-  - `APP_PORT` (default `8000`)
-  - `OPEN_BROWSER` (`1` by default, set `0` to disable auto-open)
+1. Click **Start** and speak for 20–30 seconds.
+2. Confirm transcript lines appear on screen.
+3. Open **Settings**, enable **Translation** — confirm Arabic text appears alongside the transcript.
+4. If AI features are configured:
+   - **Coaching**: type a question in the guidance box and submit — confirm a response appears.
+   - **Topics**: click **Analyze now** — confirm the topic panel updates.
+   - **Summary**: click **Generate now** — confirm a summary is produced.
 
 ---
 
 ## Troubleshooting
 
-**"running scripts is disabled"**
+### PowerShell reports "cannot be loaded because running scripts is disabled"
+
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
-**No audio / mic not found**
-- Check Windows Settings → Privacy → Microphone → allow desktop apps.
-- In the app UI, open the device picker and select your mic explicitly.
+Then retry the command.
 
-**Azure auth error for coach/topics/summary**
-```powershell
-az login
-```
-If you have multiple tenants:
+### `setup.ps1` reports "Python 3.10+ not found"
+
+Download Python from <https://www.python.org/downloads/>.
+During install, tick **Add Python to PATH**, then run `setup.ps1` again.
+
+### `run.ps1` reports "Dependencies not installed"
+
+Run `setup.ps1` first, then retry.
+
+### Transcript does not appear after clicking Start
+
+- Confirm `AZURE_AI_SERVICES_KEY` and `AZURE_AI_SERVICES_REGION` are set in `.env` and are not placeholder values.
+- Confirm your microphone is connected and permitted in **Windows Settings → Privacy & security → Microphone**.
+
+### An AI feature panel says "not configured"
+
+- Confirm `PROJECT_ENDPOINT` and the relevant `*_AGENT_NAME` variable are set in `.env`.
+- Run `az login` if you have not authenticated yet.
+
+### An AI feature fails with an authentication error
+
 ```powershell
 az login --tenant "<your-tenant-id>"
+az account set --subscription "<your-subscription-id>"
 ```
 
-**`conversations.create()` unsupported**
+Restart the application after logging in.
+
+### Topic updates do not appear or show an error
+
+The Topic Tracker agent must return raw JSON only. Confirm its system instructions in Azure AI Foundry
+match exactly what is specified in `docs/AZURE_PROVISIONING.md` — Section 4.2.
+
+### `conversations.create()` method not supported error
+
 ```powershell
 python -m pip install -U azure-ai-projects openai
 ```
 
 ---
 
-## What runs where
+## Related Documents
 
-Everything runs on **your machine**. No data is sent anywhere except:
-- Azure Speech Service — audio for transcription (your key, your subscription).
-- Azure AI Foundry agents — transcript excerpts for coach/topic/summary (your key, your subscription).
-
-Your Azure account pays for usage. Cost depends mainly on speech time and capture mode.
+| Document | Purpose |
+| --- | --- |
+| `docs/AZURE_PROVISIONING.md` | Create Azure resources and obtain credentials |
+| `docs/QUICK_START_GUIDE.md` | Fastest path to first working session |
+| `docs/DUAL_MODE_SETUP.md` | Capture local and remote speakers separately |
+| `docs/BUILD_GUIDE.md` | Build distributable packages (maintainers only) |
