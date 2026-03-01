@@ -5,8 +5,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    ai_services_key: str = Field(alias="AZURE_AI_SERVICES_KEY")
-    ai_services_region: str = Field(alias="AZURE_AI_SERVICES_REGION")
+    ai_services_key: str = Field(default="", alias="AZURE_AI_SERVICES_KEY")
+    ai_services_region: str = Field(default="", alias="AZURE_AI_SERVICES_REGION")
 
     model_config = SettingsConfigDict(
         env_file=".env",

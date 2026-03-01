@@ -31,15 +31,17 @@ class BroadcastService:
     # ── Core broadcast ────────────────────────────────────────────────────────
 
     async def broadcast(self, payload: dict[str, Any]) -> None:
-        dead: list[WebSocket] = []
+        connections = list(self.connections)
+        if not connections:
+            return
         data = json.dumps(payload, ensure_ascii=False)
-        for ws in list(self.connections):
-            try:
-                await ws.send_text(data)
-            except Exception:
-                dead.append(ws)
-        for ws in dead:
-            self.connections.discard(ws)
+        results = await asyncio.gather(
+            *[ws.send_text(data) for ws in connections],
+            return_exceptions=True,
+        )
+        for ws, result in zip(connections, results):
+            if isinstance(result, Exception):
+                self.connections.discard(ws)
 
     def broadcast_from_thread(self, payload: dict[str, Any]) -> None:
         loop = self.loop
