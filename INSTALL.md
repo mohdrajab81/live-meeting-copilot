@@ -160,14 +160,13 @@ These optional environment variables are only available in the EXE package:
 
 ### Optional — AI Features
 
-Required only if you want coaching suggestions, topic tracking, or meeting summaries.
-All three depend on an Azure AI Foundry project and agent configuration.
+Required only if you want coaching suggestions or meeting summaries.
+Both depend on an Azure AI Foundry project and agent configuration.
 
 | Variable | Description |
 | --- | --- |
 | `PROJECT_ENDPOINT` | Your Foundry project endpoint URL |
 | `GUIDANCE_AGENT_NAME` | Name of the agent handling coaching suggestions |
-| `TOPIC_AGENT_NAME` | Name of the agent handling topic tracking |
 | `SUMMARY_AGENT_NAME` | Name of the agent handling meeting summaries |
 
 See `docs/AZURE_PROVISIONING.md` for how to create and name these agents.
@@ -214,7 +213,7 @@ After the application starts and the browser opens:
 3. Open **Settings**, enable **Translation** — confirm Arabic text appears alongside the transcript.
 4. If AI features are configured:
    - **Coaching**: type a question in the guidance box and submit — confirm a response appears.
-   - **Topics**: click **Analyze now** — confirm the topic panel updates.
+   - **Topics**: add at least one definition in the Topics panel and confirm it is saved.
    - **Summary**: click **Generate now** — confirm a summary is produced.
 
 ---
@@ -256,11 +255,6 @@ az account set --subscription "<your-subscription-id>"
 ```
 
 Restart the application after logging in.
-
-### Topic updates do not appear or show an error
-
-The Topic Tracker agent must return raw JSON only. Confirm its system instructions in Azure AI Foundry
-match exactly what is specified in `docs/AZURE_PROVISIONING.md` — Section 4.2.
 
 ### `conversations.create()` method not supported error
 

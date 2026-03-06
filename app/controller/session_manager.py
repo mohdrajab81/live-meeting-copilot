@@ -365,16 +365,6 @@ class SessionManager:
             self._transcript.last_speech_activity_ts = self.session_started_ts
             self._translation.reset_unlocked()
             self._coach_orch.reset_runtime_unlocked(keep_history=True)
-            self._topic_orch.topics_session_started_ts = self.session_started_ts
-            self._topic_orch.topics_pending = False
-            self._topic_orch.topics_last_error = ""
-            self._topic_orch.topics_last_final_idx = max(
-                0,
-                min(
-                    int(self._topic_orch.topics_last_final_idx or 0),
-                    self._transcript.get_finals_count(),
-                ),
-            )
 
         if config.coach_enabled:
             self._broadcast_from_thread(
@@ -393,27 +383,10 @@ class SessionManager:
         return True
 
     async def stop_async(self) -> bool:
-        """Stop with a final topic-flush before finalizing."""
+        """Stop with a final summary flush before finalizing."""
         stopped = self._speech.stop_recognition()
         if not stopped:
             return False
-        topic_call = None
-        with self._lock:
-            if (
-                self._topic_orch.topics_enabled
-                and self._topic_orch.is_tracker_configured
-                and not self._topic_orch.topics_pending
-            ):
-                topic_call = self._topic_orch.prepare_call_unlocked(
-                    time.time(), trigger="auto"
-                )
-        if topic_call:
-            try:
-                await asyncio.wait_for(
-                    self._topic_orch.run_update(topic_call), timeout=30.0
-                )
-            except Exception:
-                pass  # flush failure must not block cleanup
         try:
             await asyncio.wait_for(self._summary_orch.run_summary(), timeout=60.0)
         except Exception:
@@ -425,14 +398,7 @@ class SessionManager:
         with self._lock:
             self._coach_orch.reset_runtime_unlocked(keep_history=True)
             self._translation.reset_unlocked()
-            self._topic_orch.topics_pending = False
-            self._topic_orch.finalize_on_stop_unlocked()
-            topics_payload = {
-                "type": "topics_update",
-                "topics": self._topic_orch.payload_unlocked(),
-            }
         self._coach.clear_conversation()
-        self._broadcast_from_thread(topics_payload)
 
     # ── Watchdog ──────────────────────────────────────────────────────────────
 
@@ -440,7 +406,6 @@ class SessionManager:
         while True:
             await asyncio.sleep(1.0)
             reason: str | None = None
-            topic_call: dict[str, Any] | None = None
             config = self._get_config()
             with self._lock:
                 if not self.running:
@@ -450,14 +415,6 @@ class SessionManager:
                 max_session = int(config.max_session_sec)
                 idle_for = now - self._transcript.last_speech_activity_ts
                 run_for = now - self.session_started_ts
-                if (
-                    self._topic_orch.topics_enabled
-                    and not self._topic_orch.topics_pending
-                    and self._topic_orch.is_tracker_configured
-                    and (now - self._topic_orch.topics_last_run_ts)
-                    >= float(self._topic_orch.topics_interval_sec)
-                ):
-                    topic_call = self._topic_orch.prepare_call_unlocked(now, trigger="auto")
                 if silence_limit > 0 and idle_for >= silence_limit:
                     reason = (
                         f"Auto-stopping after {silence_limit}s of inactivity to control costs."
@@ -467,8 +424,6 @@ class SessionManager:
                         f"Auto-stopping after {max_session}s max session duration to control costs."
                     )
             if not reason:
-                if topic_call:
-                    await self._topic_orch.run_update(topic_call)
                 continue
             if await self.stop_async():
                 await self._broadcast_log("warning", reason)

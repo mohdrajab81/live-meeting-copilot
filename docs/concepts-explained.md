@@ -34,7 +34,7 @@ The system does six things during a live meeting session:
 2. **Produces a live English transcript** — both partial (live preview) and final (committed) text.
 3. **Optionally translates English to Arabic** asynchronously in the background.
 4. **Optionally provides AI coaching hints** based on what the remote speaker just said.
-5. **Optionally tracks which meeting topics** have been covered and for how long.
+5. **Optionally stores meeting topic definitions** to guide summary structure and coverage visuals.
 6. **Optionally generates a structured meeting summary** (either from live session stop or uploaded transcript CSV).
 
 All of this streams to the browser in real time over a WebSocket connection.
@@ -74,7 +74,7 @@ speech detected
 |---|---|---|
 | Azure SDK thread | Speech callbacks (on_recognized, on_canceled) | `run_coroutine_threadsafe` → event loop |
 | asyncio event loop | FastAPI routes, WebSocket sends, AI agent calls | Direct `await` |
-| Watchdog (async task) | Auto-stop timer, periodic topic analysis | Runs on event loop, uses `await` |
+| Watchdog (async task) | Auto-stop timer and session-duration guard | Runs on event loop, uses `await` |
 
 ---
 
@@ -86,7 +86,6 @@ The app has several modules that each manage a piece of state: the transcript st
 
 - Append it to the transcript
 - Check if coach should trigger
-- Update the topic tracker's last-seen index
 - Check bleed suppression state
 
 All of this must happen atomically (as one indivisible unit). If you used separate locks per module, you would risk a **deadlock** (each module waiting for the other's lock) or a **race condition** (another thread sees an inconsistent state halfway through the update).
@@ -178,7 +177,7 @@ When the remote channel produces any speech activity, the local channel is suppr
 
 Translation requests are placed into a queue. The pipeline processes them asynchronously. Final translation requests have higher priority than partial ones — because finals are committed text and matter more to the user.
 
-If `translation_enabled=false`, requests are not enqueued at all. English transcript, coach, and topics still run normally.
+If `translation_enabled=false`, requests are not enqueued at all. English transcript, coach, and summary still run normally.
 
 ### Stale-guard: don't translate old partials
 
@@ -205,7 +204,7 @@ The pipeline tracks:
 
 1. **Idle**: No recognition running. Config can be changed freely.
 2. **Running**: Azure recognizers are active, speech events flowing, watchdog running.
-3. **Stopping/Finalized**: All recognizers stopped, topics finalized (active → covered), coach conversation cleared, final state broadcast to UI.
+3. **Stopping/Finalized**: All recognizers stopped, coach conversation cleared, final state broadcast to UI.
 
 ### The finalization invariant
 
@@ -262,48 +261,23 @@ The coach service keeps a `conversation_id` (with `previous_response_id` as fall
 
 ## 10. Topic Orchestrator
 
-This is the most complex module (~1660 lines). It tracks which topics from the meeting agenda have been discussed and for how long.
+The Topic Orchestrator is now a lightweight definitions store.
 
-### The three topic statuses
+What it does:
+- Normalizes topic definitions from the Topics panel (name, expected duration, priority, comments, order).
+- Builds a clean agenda-name list from those definitions.
+- Broadcasts `topics_update` snapshots when definitions are saved or cleared.
 
-- `not_started`: Topic hasn't been mentioned yet
-- `active`: Topic is currently being discussed
-- `covered`: Topic was discussed and is now done
+What it no longer does:
+- No topic-agent calls.
+- No manual `analyze-now` flow.
+- No periodic topic analysis in watchdog.
+- No runtime topic status/time accumulation.
 
-When the session ends, all `active` topics are automatically moved to `covered`.
-
-### How time is allocated
-
-Every time the topic agent runs, it looks at a chunk of the transcript and estimates which topics were discussed. For each topic, it calculates how many seconds of that chunk were spent on it. These seconds are accumulated in `time_seconds` across all agent runs.
-
-This gives you a running total: "We spent 4 minutes on system design and 2 minutes on algorithms."
-
-### Chunk modes
-
-- **`window`**: Send the last N seconds of transcript to the agent on every run. Good for real-time accuracy. Drawback: may re-analyze the same words multiple times.
-- **`since_last`**: Send only what's new since the last run. More efficient. Drawback: requires careful tracking of where we left off.
-
-### First-chunk detection
-
-On the first agent run after a session starts, there's a subtle edge case: what if the user kept their transcript from a previous session? The `time_seconds` from old topics would be preserved. The system detects this by comparing `topics_last_run_ts` (when we last ran the agent) to `topics_session_started_ts` (when this session began). If the last run was before this session started, it's the first chunk.
-
-### Context reset detection
-
-If more than 45 seconds of silence passed between the last transcript entry analyzed and the first entry of the new chunk, the system marks this as a `possible_context_reset`. This flag is sent to the AI agent so it knows the conversation may have jumped — not to extrapolate continuity across the gap.
-
-### Statement deduplication
-
-The agent returns key statements (quotes from the transcript) for each topic. On the next run, it might return some of the same quotes again. To avoid duplicates in the UI, statements are deduplicated using a `speaker:text` key. Only the 20 most recent unique statements are kept per topic.
-
-### Confidence threshold
-
-The agent returns a `match_confidence` score (0.0 to 1.0) for each topic it detects. The threshold is 0.65. What happens below it depends on context:
-
-- **Known topic** (already in the agenda or previously tracked): low confidence → result is discarded. The system won't demote or update a known topic based on a weak signal.
-- **New topic** (not previously seen) with `allow_new_topics = True` and a usable name: low confidence → the topic is still created as a candidate. Allowing new topics is an explicit user choice; the system respects it even with uncertain confidence.
-- **New topic** with `allow_new_topics = False`, or with an unusable name: low confidence → discarded.
-
-In short: 0.65 is a hard gate for known topics, but a soft gate for new topics when the user has opted into discovering new ones.
+How topic timing still works:
+- Topic timing is computed in summary generation, not in live tracking.
+- The model returns `topic_key_points` with `utterance_ids`.
+- Backend maps those IDs to deterministic transcript utterance durations.
 
 ---
 
@@ -326,7 +300,7 @@ The server sends structured JSON messages over WebSocket. Each message has a `ty
 | `final_patch` | After translation completes | Updated AR text for an existing final |
 | `telemetry` | After each translation | Latency, cost, character count |
 | `coach` | After AI coach responds | Hint text and metadata |
-| `topics_update` | After topic agent runs | Full topic state snapshot |
+| `topics_update` | After topic definitions change | Full topic state snapshot |
 | `summary` | After summary generation | Structured summary payload + topic coverage |
 | `summary_cleared` | After clear action | Resets summary state in UI |
 | `log` | Any time | System log entries (info, debug, error) |
@@ -355,7 +329,6 @@ Two modes:
 
 Rate-limited endpoints protect AI-backed operations (which cost money):
 - **Coach ask**: 6 requests per minute per IP
-- **Topics analyze-now**: 4 requests per minute per IP
 - **Summary generate**: 2 requests per minute per IP
 - **Summary from-transcript**: shares the same 2/min pool as summary generate
 
@@ -413,12 +386,6 @@ Setting this to 0 disables auto-stop entirely (useful for testing or long pauses
 
 If the session has been running longer than `max_session_sec` (default: 3600 = 1 hour), the watchdog stops it. This prevents unbounded recording and protects against accidentally leaving the app running.
 
-### Periodic topic analysis
-
-The watchdog also triggers the topic agent on a schedule (default every 60 seconds). After each trigger, it waits for the result before scheduling the next one. This ensures topic analysis doesn't pile up if one run takes longer than the interval.
-
----
-
 ## 15. Windows Audio Devices
 
 ### How device enumeration works
@@ -448,7 +415,7 @@ These are decisions where there was a real choice between approaches. Being able
 
 **Chosen**: One shared RLock.
 **Alternative**: Separate locks per module with careful acquire ordering.
-**Why**: The operations that span modules (speech event → transcript + coach + topics) need to be atomic. With multiple locks, you'd need to define a consistent acquisition order to avoid deadlock — complex and error-prone. One lock is simpler and correctness is guaranteed.
+**Why**: The operations that span modules (speech event → transcript + coach + summary state) need to be atomic. With multiple locks, you'd need to define a consistent acquisition order to avoid deadlock — complex and error-prone. One lock is simpler and correctness is guaranteed.
 
 ### Coach queue depth = 1
 
@@ -474,7 +441,7 @@ These are decisions where there was a real choice between approaches. Being able
 
 ### `asyncio.to_thread` for AI agent calls
 
-Both coach and topic agent calls are blocking HTTP requests (they call the Azure AI Foundry REST API synchronously). Running them directly in the event loop would block all other async operations — no WebSocket sends, no route handling — for the duration of the API call (often 2-10 seconds).
+Coach and summary agent calls are blocking HTTP requests (they call the Azure AI Foundry REST API synchronously). Running them directly in the event loop would block all other async operations — no WebSocket sends, no route handling — for the duration of the API call (often 2-10 seconds).
 
 `asyncio.to_thread()` runs the blocking call on a thread pool thread, so the event loop stays free. The `await` waits for the result without blocking anything else.
 

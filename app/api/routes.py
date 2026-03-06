@@ -5,7 +5,7 @@ import json
 import threading
 import time
 from collections import deque
-from typing import Annotated, Literal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
@@ -24,14 +24,10 @@ from app.utils.audio_devices import list_capture_devices
 
 router = APIRouter(dependencies=[Depends(require_http_auth)])
 _coach_rate_lock = threading.Lock()
-_topics_rate_lock = threading.Lock()
 _summary_rate_lock = threading.Lock()
 _coach_rate_window_sec = 60
 _coach_rate_limit = 6
 _coach_rate_buckets: dict[str, deque[float]] = {}
-_topics_rate_window_sec = 60
-_topics_rate_limit = 4
-_topics_rate_buckets: dict[str, deque[float]] = {}
 _summary_rate_window_sec = 60
 _summary_rate_limit = 2
 _summary_rate_buckets: dict[str, deque[float]] = {}
@@ -76,17 +72,6 @@ def _enforce_coach_rate_limit(request: Request) -> None:
         window_sec=_coach_rate_window_sec,
         limit=_coach_rate_limit,
         detail="Rate limit exceeded for /coach/ask. Try again in about a minute.",
-    )
-
-
-def _enforce_topics_rate_limit(request: Request) -> None:
-    _enforce_rate_limit(
-        request,
-        lock=_topics_rate_lock,
-        buckets=_topics_rate_buckets,
-        window_sec=_topics_rate_window_sec,
-        limit=_topics_rate_limit,
-        detail="Rate limit exceeded for /topics/analyze-now. Try again in about a minute.",
     )
 
 
@@ -201,10 +186,6 @@ class TopicDefinitionPayload(BaseModel):
 
 
 class TopicsConfigureRequest(BaseModel):
-    agenda: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=20)
-    enabled: bool = True
-    allow_new_topics: bool = True
-    interval_sec: int = Field(default=60, ge=30, le=300)
     definitions: list[TopicDefinitionPayload] = Field(default_factory=list, max_length=80)
 
 
@@ -243,34 +224,20 @@ async def ask_coach(payload: CoachAskRequest, request: Request) -> dict:
 async def configure_topics(payload: TopicsConfigureRequest, request: Request) -> dict:
     controller = request.app.state.controller
     topics = controller.configure_topics(
-        agenda=payload.agenda,
-        enabled=payload.enabled,
-        allow_new_topics=payload.allow_new_topics,
-        interval_sec=payload.interval_sec,
+        agenda=[],
+        enabled=False,
+        allow_new_topics=False,
+        interval_sec=60,
         definitions=[row.model_dump() for row in payload.definitions],
     )
     await controller.broadcast({"type": "topics_update", "topics": topics})
     await controller.broadcast_log(
         "info",
         (
-            "Topics configured: "
-            f"enabled={topics.get('enabled')}, agenda={len(topics.get('agenda', []))}, "
-            f"definitions={len(topics.get('definitions', []))}, "
-            f"allow_new={topics.get('allow_new_topics')}, "
-            f"interval={topics.get('interval_sec')}s"
+            "Topic definitions saved: "
+            f"definitions={len(topics.get('definitions', []))}"
         ),
     )
-    return {"ok": True, "topics": topics}
-
-
-@router.post("/topics/analyze-now")
-async def analyze_topics_now(request: Request) -> dict:
-    _enforce_topics_rate_limit(request)
-    controller = request.app.state.controller
-    try:
-        topics = await controller.analyze_topics_now()
-    except Exception as ex:
-        raise HTTPException(status_code=409, detail=str(ex))
     return {"ok": True, "topics": topics}
 
 
@@ -387,9 +354,12 @@ async def summary_from_transcript(
     except Exception as ex:
         raise HTTPException(status_code=502, detail=f"Summary generation failed: {ex}")
 
+    runtime_cfg = controller.get_runtime_config()
     resolved_topic_groups = apply_topic_durations_from_utterance_ids(
         result.topic_key_points,
         transcript_rows,
+        duration_mode=runtime_cfg.summary_topic_duration_mode,
+        gap_threshold_sec=runtime_cfg.summary_topic_gap_threshold_sec,
     )
     topic_breakdown, agenda_adherence_pct = build_topic_breakdown_from_definitions(
         topic_defs, resolved_topic_groups
@@ -545,4 +515,3 @@ def _parse_transcript_csv_rows(text: str) -> list[dict[str, object]]:
 def _rows_to_transcript_text(rows: list[dict[str, object]]) -> str:
     # Backward wrapper for tests/compatibility while prompt rendering moved to shared helper.
     return render_transcript_for_prompt(prepare_transcript_utterances(rows, max_items=500))
-

@@ -12,7 +12,7 @@
 | --- | --- |
 | Product name | Live Meeting Copilot |
 | Repository folder | `live-meeting-copilot` |
-| Core purpose | Real-time transcription, Arabic translation, AI coaching, topic tracking, and meeting summary |
+| Core purpose | Real-time transcription, Arabic translation, AI coaching, topic definitions, and meeting summary |
 
 ---
 
@@ -24,7 +24,7 @@
 | API and WebSocket backend | FastAPI (`app/`) |
 | Speech transcription | Azure AI Services — Speech SDK |
 | Arabic translation | Azure AI Services — Translator API |
-| AI coaching, topics, summary | Azure AI Foundry agents |
+| AI coaching, summary | Azure AI Foundry agents |
 
 ---
 
@@ -33,7 +33,6 @@
 | Product Name | Env Binding | Purpose |
 | --- | --- | --- |
 | Conversation Coach | `GUIDANCE_AGENT_NAME` | Real-time coaching suggestions for the local speaker |
-| Topic Tracker | `TOPIC_AGENT_NAME` | Incremental topic detection and agenda status updates |
 | Meeting Summarizer | `SUMMARY_AGENT_NAME` | Final structured meeting summary generation |
 
 Agent names in this table refer to the display names used in Azure AI Foundry. These must exactly match the values set in `.env`.
@@ -81,7 +80,6 @@ Agent behavior is shaped by four layers, listed in order of practical influence 
 | Speech SDK integration | `app/services/speech.py` |
 | Translation pipeline | `app/services/translation_pipeline.py` |
 | Coach agent client | `app/services/coach.py` |
-| Topic agent client | `app/services/topic_tracker.py` |
 | Summary agent client | `app/services/summary.py` |
 | API routes | `app/api/routes.py` |
 | API authentication | `app/api/auth.py` |
@@ -92,6 +90,6 @@ Agent behavior is shaped by four layers, listed in order of practical influence 
 
 ## Non-Goals (Current Version)
 
-- No web UI editor for topic-agent or summary-agent system instructions.
-- No runtime hot-swap of prompt templates for topic or summary from the UI.
+- No web UI editor for summary-agent system instructions.
+- No runtime hot-swap of prompt templates for summary from the UI.
 - No external prompt registry or versioning service.

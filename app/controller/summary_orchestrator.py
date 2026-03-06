@@ -301,6 +301,8 @@ class SummaryOrchestrator:
             resolved_topic_groups = apply_topic_durations_from_utterance_ids(
                 result.topic_key_points,
                 entries,
+                duration_mode=config.summary_topic_duration_mode,
+                gap_threshold_sec=config.summary_topic_gap_threshold_sec,
             )
             final_breakdown, final_adherence = build_topic_breakdown_from_definitions(
                 topic_defs, resolved_topic_groups

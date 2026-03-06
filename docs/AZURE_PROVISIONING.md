@@ -23,7 +23,7 @@ AZURE_AI_SERVICES_REGION=...
 
 ### Service 2: Azure AI Foundry (optional — AI features only)
 
-- **What it does**: provides AI coaching suggestions, topic tracking, and meeting summary generation
+- **What it does**: provides AI coaching suggestions and meeting summary generation
 - **How it authenticates**: through your Azure account, signed in via the Azure CLI on your machine
 - **Cost**: billed per AI model request (token-based)
 
@@ -32,7 +32,6 @@ What you set in `.env`:
 ```env
 PROJECT_ENDPOINT=...
 GUIDANCE_AGENT_NAME=...
-TOPIC_AGENT_NAME=...
 SUMMARY_AGENT_NAME=...
 ```
 
@@ -93,11 +92,11 @@ AZURE_AI_SERVICES_REGION=eastus2
 
 ## Section 3: Create an Azure AI Foundry Project (Optional)
 
-Do this only if you want coaching suggestions, topic tracking, or meeting summaries.
+Do this only if you want coaching suggestions or meeting summaries.
 
 ### What is Azure AI Foundry?
 
-Azure AI Foundry is a platform for creating and running AI agents — software components that receive input, reason about it using a language model, and return a structured response. The application calls three such agents.
+Azure AI Foundry is a platform for creating and running AI agents — software components that receive input, reason about it using a language model, and return a structured response. The application calls two such agents.
 
 Foundry is organized as:
 
@@ -137,11 +136,11 @@ Agents require an AI model to run. You must deploy one before creating agents.
    - `gpt-35-turbo` — widely available fallback
 4. Accept the defaults and click **Deploy**. Wait until the status shows **Succeeded**.
 
-> If none of the models above appear in your catalog, choose any chat completion model listed — all three agents work with any model that supports instruction-following.
+> If none of the models above appear in your catalog, choose any chat completion model listed — both agents work with any model that supports instruction-following.
 
 ---
 
-## Section 4: Create the Three Agents (Optional)
+## Section 4: Create the Two Agents (Optional)
 
 Each AI feature has a dedicated agent. Create them in the **Agents** section of your Foundry project.
 
@@ -152,8 +151,8 @@ Each AI feature has a dedicated agent. Create them in the **Agents** section of 
 
 This agent provides real-time communication coaching to the local speaker during a session.
 
-> **This is the most customizable of the three agents.** Unlike the Topic Tracker and Meeting Summarizer,
-> which have strict structural requirements, this agent's behavior is shaped primarily by your persona,
+> **This is the most customizable of the two agents.** Unlike the Meeting Summarizer,
+> which has strict structural requirements, this agent's behavior is shaped primarily by your persona,
 > background, and preferred coaching style. The instructions below are a functional generic baseline —
 > you are expected to extend them with your own profile, role, and any knowledge base you attach in Foundry.
 
@@ -224,109 +223,11 @@ GUIDANCE_AGENT_NAME=Conversation Coach
 
 ---
 
-### Agent 2: Topic Tracker
-
-This agent detects which agenda topics are being discussed and tracks their status throughout the meeting.
-
-> **Important**: the application parses this agent's response as machine-readable JSON. The system instructions below must be followed exactly. Any free text, markdown formatting, or missing required fields will cause topic updates to fail or produce errors.
-
-**Create in Foundry:**
-
-1. In your project, go to **Agents** → **+ New agent**.
-2. Set the agent name to: `Topic Tracker`
-3. Paste the following as the system instructions:
-
-   ```text
-   You are Meeting Topic Tracker.
-
-   Return exactly one valid JSON object.
-   No markdown. No prose. No comments.
-   Top-level key must be only: "topics".
-
-   TASK
-   Classify ONLY the provided chunk_turns into topic updates.
-
-   INPUTS
-   - agenda: list of topic names
-   - definitions: topic definitions with optional comments/scope
-   - current_topics: prior state (context only, never direct evidence)
-   - chunk_turns: the ONLY evidence source
-   - allow_new_topics: boolean
-   - possible_context_reset: boolean
-   - recent_context: optional recent topic context
-
-   MANDATORY RULES
-   1) Every returned topic must have non-empty name.
-   2) Prefer definitions scope over current_topics.
-   3) Never assign solely because topic was previously active.
-   4) If matching an existing known topic, keep name EXACT.
-   5) Confidence threshold is 0.65.
-   6) If best match < 0.65:
-      - if allow_new_topics=true: return at most one meaningful new topic for that content.
-      - if allow_new_topics=false: do not assign that content.
-   7) If possible_context_reset=true, treat chunk as fresh subject.
-   8) recent_context is drift-check only; do not force-match to it.
-   9) Return only topics present in this chunk or genuinely changed by this chunk.
-      If a chunk clearly shifts subject mid-way, return separate entries for each
-      distinct subject rather than forcing all content under the closest match.
-   10) key_statements must come only from chunk_turns.
-   11) Each key_statements.text must be <= 15 words.
-   12) If any candidate statement exceeds 15 words, rewrite it before returning.
-   13) Use status="covered" only with explicit closure/transition-away evidence;
-       otherwise use active (or not_started only if truly no presence evidence).
-   14) topic_presence must be boolean.
-   15) match_confidence must be numeric in [0.0, 1.0].
-   16) Do not return time_seconds.
-   17) Do not repeat keys inside any JSON object (no duplicate keys).
-
-   NEW TOPIC RULES
-   18) New topic names must be semantic and specific, not generic/framing words.
-   19) New topic names must reflect overall chunk theme, not first sentence.
-   20) For new topics only, include:
-       - suggested_name
-       - short_description (<= 20 words)
-   21) For matched existing topics, omit suggested_name and short_description.
-   22) If creating a new topic and name would be empty, set name = suggested_name.
-   23) If both name and suggested_name are empty, return {"topics":[]}.
-
-   OUTPUT SHAPE
-   {
-     "topics": [
-       {
-         "name": "string",
-         "suggested_name": "string (new topics only)",
-         "short_description": "string (new topics only)",
-         "status": "not_started|active|covered",
-         "topic_presence": true,
-         "match_confidence": 0.0,
-         "key_statements": [
-           {"ts": 0, "speaker": "string", "text": "string"}
-         ]
-       }
-     ]
-   }
-
-   FAIL-SAFE (MANDATORY)
-   - If you cannot fully comply with valid JSON output, return exactly: {"topics":[]}
-   - Never output refusal, apology, or policy text.
-   - Never output partial or truncated JSON.
-   ```
-
-4. Click **Save**.
-
-**Set in `.env`:**
-
-```env
-TOPIC_AGENT_NAME=Topic Tracker
-```
-
----
-
-### Agent 3: Meeting Summarizer
+### Agent 2: Meeting Summarizer
 
 This agent generates a structured summary from the meeting transcript at the end of a session.
 
-> **Important**: like the Topic Tracker, this agent's response is parsed as JSON. The system instructions must enforce JSON-only output.
+> **Important**: this agent's response is parsed as JSON. The system instructions must enforce JSON-only output.
 
 **Create in Foundry:**
 
@@ -399,7 +300,6 @@ TRANSLATION_COST_PER_MILLION_USD=10.0
 
 PROJECT_ENDPOINT=https://<resource>.services.ai.azure.com/api/projects/<project>
 GUIDANCE_AGENT_NAME=Conversation Coach
-TOPIC_AGENT_NAME=Topic Tracker
 SUMMARY_AGENT_NAME=Meeting Summarizer
 ```
 
@@ -413,7 +313,7 @@ Work through these checks in order after configuring `.env`:
 - [ ] Click **Start**, speak for 20–30 seconds, confirm transcript lines appear.
 - [ ] Open **Settings**, enable **Translation** — confirm Arabic text appears.
 - [ ] *(AI features only)* Open the **Coaching** panel, type a question, and submit — confirm a response appears.
-- [ ] *(AI features only)* Open the **Topics** panel, click **Analyze now** — confirm the topic list updates.
+- [ ] *(AI features only)* Open the **Topics** panel, add one topic definition, and confirm it is saved.
 - [ ] *(AI features only)* Open the **Summary** panel, click **Generate now** — confirm a summary is produced.
 
 ---
@@ -443,11 +343,6 @@ az account set --subscription "<your-subscription-id>"
 
 Restart the application after signing in.
 
-### Topic updates fail or produce no output
-
-The Topic Tracker agent must return raw JSON only — no markdown code fences, no explanatory text.
-Confirm its system instructions in Foundry match exactly what is shown in Section 4, Agent 2 above.
-
 ### `conversations.create()` method not supported error
 
 ```powershell
@@ -467,7 +362,7 @@ python -m pip install -U azure-ai-projects openai
 To minimize costs during testing:
 
 - Disable translation in **Settings** when you do not need it.
-- Use the **Analyze now** and **Generate now** buttons on demand rather than enabling high-frequency automatic runs.
+- Use **Generate now** only when needed instead of repeatedly re-running summaries during testing.
 - Free-tier credits on a new Azure account are sufficient for initial testing of all features.
 
 ---

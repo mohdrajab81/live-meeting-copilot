@@ -10,8 +10,7 @@ Live meeting copilot that:
 - computes deterministic meeting insights and keyword index from transcript turns for both live and from-file summary paths,
 - builds topic coverage timeline from agenda definitions + one-shot transcript topic grouping with deterministic duration allocation from utterance IDs,
 - computes agenda adherence when planned minutes exist in definitions,
-- optionally provides coach hints,
-- optionally tracks meeting topics through an agent.
+- optionally provides coach hints.
 
 ## High-level modules
 
@@ -26,7 +25,7 @@ Live meeting copilot that:
 - `app/controller/session_manager.py`: speech event handling, start/stop lifecycle, watchdog.
 - `app/controller/transcript_store.py`: transcript state + translation telemetry.
 - `app/controller/coach_orchestrator.py`: coach trigger scheduling and async execution.
-- `app/controller/topic_orchestrator.py`: topic config/state, topic agent calls, merge/allocation logic.
+- `app/controller/topic_orchestrator.py`: topic definitions config/state used by summary context.
 - `app/controller/summary_orchestrator.py`: summary generation state and execution.
 - `app/controller/config_store.py`: runtime config get/set/save/reload/reset.
 - `app/controller/broadcast_service.py`: websocket fanout, log buffer, debug trace broadcasting.
@@ -35,7 +34,6 @@ Live meeting copilot that:
 - `app/services/speech.py`: Azure Speech recognizers and event emission.
 - `app/services/translation_pipeline.py`: async translation queue with priority and stale guards.
 - `app/services/coach.py`: Azure AI Foundry coach agent client.
-- `app/services/topic_tracker.py`: Azure AI Foundry topic tracker agent client.
 - `app/services/summary.py`: Azure AI Foundry summary agent client.
 - `app/services/meeting_insights.py`: deterministic meeting insights and keyword index builders.
 - `app/services/topic_summary.py`: deterministic topic duration/breakdown helpers for summary flows.
@@ -61,12 +59,8 @@ Live meeting copilot that:
 
 ### Topics flow
 1. Topics configured via `POST /api/topics/configure`.
-2. Topic analysis runs:
-   - manually via `POST /api/topics/analyze-now`,
-   - automatically by watchdog when enabled and interval elapsed.
-3. `TopicOrchestrator` builds internal call context, then sends a minimized agent payload.
-4. Agent response is normalized and merged into runtime topic state.
-5. Updates broadcast as `topics_update`.
+2. `TopicOrchestrator` persists normalized definitions and agenda names only.
+3. Updates broadcast as `topics_update`.
 
 ### Summary flow
 1. Session stop (`stop_async`) triggers summary generation when `summary_enabled=true`.
@@ -102,9 +96,6 @@ Live meeting copilot that:
   - trigger policy + cooldown,
   - queue-latest while busy.
   - API rate limit on manual ask endpoint.
-- Topics:
-  - confidence threshold and merge controls in orchestrator,
-  - API rate limit on manual analyze-now endpoint.
 - Summary:
   - API rate limit on generate/from-file endpoints.
   - deterministic post-processing for durations, topic breakdown, and adherence.

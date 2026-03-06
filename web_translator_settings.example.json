@@ -20,5 +20,7 @@
   "max_finals": 5000,
   "translation_enabled": true,
   "summary_enabled": true,
+  "summary_topic_duration_mode": "coverage_with_gaps",
+  "summary_topic_gap_threshold_sec": 30,
   "debug": false
 }

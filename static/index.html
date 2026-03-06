@@ -167,58 +167,14 @@
             <header class="workspace-page-head topics-page-head">
               <div class="topics-head-left">
                 <h2 id="topicsPageTitle" class="workspace-page-title">Topics</h2>
-                <p id="topicsStatus" class="workspace-page-subtitle topics-status-line">Configure topic settings, then analyze manually or automatically.</p>
+                <p id="topicsStatus" class="workspace-page-subtitle topics-status-line">Definitions are used as agenda context in Summary.</p>
                 <div class="workspace-head-meta topics-head-kpis">
                   <span class="ops-kpi-chip">Definitions <strong id="topicsKpiCount">0</strong></span>
-                  <span class="ops-kpi-chip">Covered <strong id="topicsKpiCovered">0</strong></span>
-                </div>
-              </div>
-
-              <div class="topics-topbar-right">
-                <div class="topics-subtabs" role="tablist" aria-label="Topics views">
-                  <button class="btn topics-subtab-btn active" type="button" data-topics-tab="board" role="tab" aria-selected="true">Board</button>
-                  <button class="btn topics-subtab-btn" type="button" data-topics-tab="definitions" role="tab" aria-selected="false">Definitions</button>
-                  <button class="btn topics-subtab-btn" type="button" data-topics-tab="runs" role="tab" aria-selected="false">Runs</button>
-                  <button class="btn topics-subtab-btn" type="button" data-topics-tab="settings" role="tab" aria-selected="false">Settings</button>
-                </div>
-                <div id="topicsTopActions" class="topics-top-actions">
-                  <button id="topicsAnalyzeBtn" class="btn topics-board-action" type="button">Analyze now</button>
-                  <div id="topicsExportMenuWrap" class="export-menu-wrap topics-board-action" data-export-menu-wrapper>
-                    <button id="topicsExportMenuBtn" class="btn" type="button" aria-expanded="false" aria-controls="topicsExportMenu">Export</button>
-                    <div id="topicsExportMenu" class="export-menu hidden" role="menu" aria-label="Topics export actions">
-                      <button id="exportTopicsJsonBtn" class="btn export-item" type="button" role="menuitem">Topics JSON</button>
-                      <button id="exportTopicsCsvBtn" class="btn export-item" type="button" role="menuitem">Topics CSV</button>
-                    </div>
-                  </div>
-                  <button id="topicsClearBtn" class="btn btn-soft-danger topics-board-action" type="button">Clear</button>
                 </div>
               </div>
             </header>
 
-            <div id="topicsBoardControls" class="topics-view-controls">
-              <label class="topics-inline-field" for="topicsGroupBy">Group</label>
-              <select id="topicsGroupBy" aria-label="Group topics">
-                <option value="status">Status</option>
-                <option value="origin">Origin</option>
-                <option value="none">None</option>
-              </select>
-
-              <label class="topics-inline-field" for="topicsSortBy">Sort</label>
-              <select id="topicsSortBy" aria-label="Sort topics">
-                <option value="duration_desc">Duration desc</option>
-                <option value="name_asc">Name asc</option>
-                <option value="latest_activity">Latest activity</option>
-              </select>
-
-              <input id="topicsSearch" class="search-input" type="text" placeholder="Search topics or statements..." aria-label="Search topics" />
-              <button id="topicsDensityToggle" class="btn" type="button" aria-pressed="false">Compact</button>
-            </div>
-
-            <section id="topicsBoardPane" class="topics-subpane active" data-topics-pane="board">
-              <div id="topicsList" class="topics-list"></div>
-            </section>
-
-            <section id="topicsDefinitionsPane" class="topics-subpane" data-topics-pane="definitions" hidden>
+            <section id="topicsDefinitionsPane" class="topics-subpane active" data-topics-pane="definitions">
               <div class="definitions-layout">
                 <div class="card-shell definition-editor-card">
                   <div class="panel-head panel-head-compact">
@@ -261,40 +217,6 @@
                     <h3>Definitions</h3>
                   </div>
                   <div id="topicsDefinitionsList" class="topics-definitions-list"></div>
-                </div>
-              </div>
-            </section>
-
-            <section id="topicsRunsPane" class="topics-subpane" data-topics-pane="runs" hidden>
-              <div id="topicsRunsList" class="topics-activity-list"></div>
-            </section>
-
-            <section id="topicsSettingsPane" class="topics-subpane" data-topics-pane="settings" hidden>
-              <div class="card-shell topics-settings-shell">
-                <div class="panel-head panel-head-compact">
-                  <h3>Tracking settings</h3>
-                </div>
-                <label class="check check-row topics-main-switch" for="topicsEnableAuto">
-                  <input id="topicsEnableAuto" type="checkbox" checked />
-                  <span>Enable automatic topic analysis</span>
-                </label>
-
-                <div class="field-grid">
-                  <div>
-                    <label for="topicsIntervalSec">Interval (sec)</label>
-                    <input id="topicsIntervalSec" type="number" min="30" max="300" step="5" value="60" />
-                  </div>
-                </div>
-
-                <label class="check check-row" for="topicsAllowNew">
-                  <input id="topicsAllowNew" type="checkbox" checked />
-                  <span>Allow custom topics from conversation</span>
-                </label>
-
-                <textarea id="topicsAgendaInput" class="legacy-hidden" rows="2" aria-hidden="true" tabindex="-1"></textarea>
-
-                <div class="actions compact">
-                  <button id="topicsSaveBtn" class="btn" type="button">Save settings</button>
                 </div>
               </div>
             </section>
@@ -383,8 +305,43 @@
                     <h3 class="summary-section-title">Topic Coverage</h3>
                     <span id="summaryAdherenceChip" class="summary-meta-chip hidden"></span>
                   </div>
-                  <div id="summaryTopicTimeline" class="summary-topic-timeline"></div>
-                  <p id="summaryTopicPlaceholder" class="summary-empty-state-inline">No agenda defined. Configure Topics Settings to enable coverage.</p>
+                  <div id="summaryTopicKpis" class="summary-topic-kpis"></div>
+
+                  <div id="summaryTopicJourneyWrap" class="summary-topic-journey-wrap hidden">
+                    <div class="summary-topic-subhead">
+                      <h4 class="summary-topic-subtitle">Topic Journey</h4>
+                      <span id="summaryTopicJourneyMeta" class="summary-meta-chip hidden"></span>
+                    </div>
+                    <div id="summaryTopicJourneyAxis" class="summary-topic-axis"></div>
+                    <div id="summaryTopicJourney" class="summary-topic-journey"></div>
+                  </div>
+
+                  <div id="summaryTopicDonutWrap" class="summary-topic-donut-wrap hidden">
+                    <div class="summary-topic-subhead">
+                      <h4 class="summary-topic-subtitle">Coverage Share</h4>
+                    </div>
+                    <div class="summary-topic-donut-grid">
+                      <div id="summaryTopicDonut" class="summary-topic-donut" aria-hidden="true">
+                        <div id="summaryTopicDonutCenter" class="summary-topic-donut-center"></div>
+                      </div>
+                      <div id="summaryTopicDonutLegend" class="summary-topic-donut-legend"></div>
+                    </div>
+                  </div>
+
+                  <div id="summaryTopicGroupsWrap" class="summary-topic-groups-wrap hidden">
+                    <div class="summary-topic-subhead">
+                      <h4 class="summary-topic-subtitle">Topic Briefs</h4>
+                    </div>
+                    <div id="summaryTopicGroups" class="summary-topic-groups"></div>
+                  </div>
+
+                  <div id="summaryAgendaActualHead" class="summary-topic-subhead">
+                    <h4 class="summary-topic-subtitle">Agenda vs Actual</h4>
+                  </div>
+                  <div id="summaryAgendaActualWrap">
+                    <div id="summaryTopicTimeline" class="summary-topic-timeline"></div>
+                    <p id="summaryTopicPlaceholder" class="summary-empty-state-inline">No topic definitions are defined for this summary.</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -444,7 +401,7 @@
 
             <div class="settings-studio">
               <nav class="settings-index card-shell" aria-label="Settings sections">
-                <button class="btn settings-index-btn" type="button" data-settings-target="system">System</button>
+                <button class="btn settings-index-btn" type="button" data-settings-target="system">Capture</button>
                 <button class="btn settings-index-btn" type="button" data-settings-target="coach">Coach</button>
                 <button class="btn settings-index-btn" type="button" data-settings-target="transcript">Transcript</button>
                 <button class="btn settings-index-btn" type="button" data-settings-target="appearance">Appearance</button>
@@ -454,98 +411,111 @@
                 <div class="settings-grid">
                   <section class="settings-card" id="settingsSectionSystem">
                     <details class="settings-accordion" data-accordion="system" open>
-                      <summary>System</summary>
+                      <summary>Capture</summary>
                       <div class="settings-card-body">
-                        <label>Recognition Language</label>
-                        <select id="cfgLang">
-                          <option value="en-AU">English (Australia)</option>
-                          <option value="en-CA">English (Canada)</option>
-                          <option value="en-GB">English (United Kingdom)</option>
-                          <option value="en-GH">English (Ghana)</option>
-                          <option value="en-HK">English (Hong Kong SAR)</option>
-                          <option value="en-IE">English (Ireland)</option>
-                          <option value="en-IN">English (India)</option>
-                          <option value="en-KE">English (Kenya)</option>
-                          <option value="en-NG">English (Nigeria)</option>
-                          <option value="en-NZ">English (New Zealand)</option>
-                          <option value="en-PH">English (Philippines)</option>
-                          <option value="en-SG">English (Singapore)</option>
-                          <option value="en-TZ">English (Tanzania)</option>
-                          <option value="en-US">English (United States)</option>
-                          <option value="en-ZA">English (South Africa)</option>
-                        </select>
+                        <div class="settings-subgroup">
+                          <h4 class="settings-subgroup-title">Capture Basics</h4>
+                          <p class="settings-subgroup-hint">Set language and microphone layout first.</p>
 
-                        <label>Capture Mode</label>
-                        <select id="cfgCaptureMode">
-                          <option value="single">Single Input</option>
-                          <option value="dual">Dual Input (You + Remote)</option>
-                        </select>
-
-                        <div id="singleInputGroup">
-                          <label>Audio Input Source</label>
-                          <select id="cfgAudioSource">
-                            <option value="default">Default Microphone</option>
-                            <option value="device_id">Specific Device</option>
+                          <label>Spoken Language (Recognition)</label>
+                          <select id="cfgLang">
+                            <option value="en-AU">English (Australia)</option>
+                            <option value="en-CA">English (Canada)</option>
+                            <option value="en-GB">English (United Kingdom)</option>
+                            <option value="en-GH">English (Ghana)</option>
+                            <option value="en-HK">English (Hong Kong SAR)</option>
+                            <option value="en-IE">English (Ireland)</option>
+                            <option value="en-IN">English (India)</option>
+                            <option value="en-KE">English (Kenya)</option>
+                            <option value="en-NG">English (Nigeria)</option>
+                            <option value="en-NZ">English (New Zealand)</option>
+                            <option value="en-PH">English (Philippines)</option>
+                            <option value="en-SG">English (Singapore)</option>
+                            <option value="en-TZ">English (Tanzania)</option>
+                            <option value="en-US">English (United States)</option>
+                            <option value="en-ZA">English (South Africa)</option>
                           </select>
-                          <label>Input Device (single mode)</label>
-                          <select id="cfgInputDeviceId"></select>
-                          <div id="audioDevicesHint" class="muted">Use Default for normal mic, or choose a specific capture device.</div>
+
+                          <label>Microphone Layout</label>
+                          <select id="cfgCaptureMode">
+                            <option value="single">Single Input</option>
+                            <option value="dual">Dual Input (You + Remote)</option>
+                          </select>
+
+                          <div id="singleInputGroup">
+                            <label>Audio Input Source</label>
+                            <select id="cfgAudioSource">
+                              <option value="default">Default Microphone</option>
+                              <option value="device_id">Specific Device</option>
+                            </select>
+                            <label>Input Device (Single Input)</label>
+                            <select id="cfgInputDeviceId"></select>
+                            <div id="audioDevicesHint" class="muted">Use Default for normal mic, or choose a specific capture device.</div>
+                          </div>
+
+                          <div id="dualInputGroup">
+                            <label>Local Speaker Label</label>
+                            <input id="cfgLocalSpeakerLabel" type="text" placeholder="You" />
+                            <label>Local Input Device</label>
+                            <select id="cfgLocalInputDeviceId"></select>
+                            <label>Remote Speaker Label</label>
+                            <input id="cfgRemoteSpeakerLabel" type="text" placeholder="Remote" />
+                            <label>Remote Input Device</label>
+                            <select id="cfgRemoteInputDeviceId"></select>
+                            <div class="muted">Dual mode needs two different active devices for clean separation.</div>
+                          </div>
                         </div>
 
-                        <div id="dualInputGroup">
-                          <label>Your Speaker Label</label>
-                          <input id="cfgLocalSpeakerLabel" type="text" placeholder="You" />
-                          <label>Your Input Device</label>
-                          <select id="cfgLocalInputDeviceId"></select>
-                          <label>Remote Speaker Label</label>
-                          <input id="cfgRemoteSpeakerLabel" type="text" placeholder="Remote" />
-                          <label>Remote Input Device</label>
-                          <select id="cfgRemoteInputDeviceId"></select>
-                          <div class="muted">Dual mode needs two different active devices for clean separation.</div>
+                        <div class="settings-subgroup">
+                          <h4 class="settings-subgroup-title">Session Safety</h4>
+                          <p class="settings-subgroup-hint">Prevent over-long runs and tune end-of-utterance behavior.</p>
+
+                          <div class="label-row">
+                            <label>Finalization Silence (ms)</label>
+                            <details class="hint-tip">
+                              <summary aria-label="Finalization Silence help">?</summary>
+                              <div class="hint-tip-content">Range: 50-10000 ms.</div>
+                            </details>
+                          </div>
+                          <div class="field-inline">
+                            <input id="cfgEndRange" type="range" min="50" max="10000" step="10" />
+                            <input id="cfgEnd" type="number" min="50" max="10000" step="10" />
+                          </div>
+
+                          <label>Auto-Stop After Silence (min)</label>
+                          <div class="field-inline">
+                            <input id="cfgAutoStopSilenceSecRange" type="range" min="0" max="5" step="0.25" />
+                            <input id="cfgAutoStopSilenceSec" type="number" min="0" max="5" step="0.25" />
+                          </div>
+                          <div class="preset-row" id="autoStopPresets">
+                            <button class="btn preset-btn" type="button" data-minutes="0">Off</button>
+                            <button class="btn preset-btn" type="button" data-minutes="0.5">0.5m</button>
+                            <button class="btn preset-btn" type="button" data-minutes="1">1m</button>
+                            <button class="btn preset-btn" type="button" data-minutes="1.5">1.5m</button>
+                            <button class="btn preset-btn" type="button" data-minutes="2">2m</button>
+                          </div>
+                          <div id="autoStopHint" class="muted">Auto-stop when no recognized speech for N minutes. 0 = never auto-stop.</div>
+
+                          <div class="label-row">
+                            <label>Hard Session Limit (min)</label>
+                            <details class="hint-tip">
+                              <summary aria-label="Hard Session Limit help">?</summary>
+                              <div class="hint-tip-content">Range: 5-180 minutes (default: 60 minutes).</div>
+                            </details>
+                          </div>
+                          <div class="field-inline">
+                            <input id="cfgMaxSessionSecRange" type="range" min="5" max="180" step="1" value="60" />
+                            <input id="cfgMaxSessionSec" type="number" min="5" max="180" step="1" value="60" />
+                          </div>
                         </div>
 
-                        <div class="label-row">
-                          <label>End Silence (ms)</label>
-                          <details class="hint-tip">
-                            <summary aria-label="End Silence help">?</summary>
-                            <div class="hint-tip-content">Range: 50-10000 ms.</div>
-                          </details>
+                        <div class="settings-subgroup">
+                          <h4 class="settings-subgroup-title">Diagnostics</h4>
+                          <label class="check check-row">
+                            <input id="cfgDebug" type="checkbox" />
+                            <span>Enable Debug Logs</span>
+                          </label>
                         </div>
-                        <div class="field-inline">
-                          <input id="cfgEndRange" type="range" min="50" max="10000" step="10" />
-                          <input id="cfgEnd" type="number" min="50" max="10000" step="10" />
-                        </div>
-
-                        <label>Auto Stop Silence (min)</label>
-                        <div class="field-inline">
-                          <input id="cfgAutoStopSilenceSecRange" type="range" min="0" max="5" step="0.25" />
-                          <input id="cfgAutoStopSilenceSec" type="number" min="0" max="5" step="0.25" />
-                        </div>
-                        <div class="preset-row" id="autoStopPresets">
-                          <button class="btn preset-btn" type="button" data-minutes="0">Off</button>
-                          <button class="btn preset-btn" type="button" data-minutes="0.5">0.5m</button>
-                          <button class="btn preset-btn" type="button" data-minutes="1">1m</button>
-                          <button class="btn preset-btn" type="button" data-minutes="1.5">1.5m</button>
-                          <button class="btn preset-btn" type="button" data-minutes="2">2m</button>
-                        </div>
-                        <div id="autoStopHint" class="muted">Auto-stop when no recognized speech for N minutes. 0 = never auto-stop.</div>
-
-                        <div class="label-row">
-                          <label>Max Session Duration (min)</label>
-                          <details class="hint-tip">
-                            <summary aria-label="Max Session help">?</summary>
-                            <div class="hint-tip-content">Range: 5-180 minutes (default: 60 minutes).</div>
-                          </details>
-                        </div>
-                        <div class="field-inline">
-                          <input id="cfgMaxSessionSecRange" type="range" min="5" max="180" step="1" value="60" />
-                          <input id="cfgMaxSessionSec" type="number" min="5" max="180" step="1" value="60" />
-                        </div>
-
-                        <label class="check check-row">
-                          <input id="cfgDebug" type="checkbox" />
-                          <span>Enable Debug Logs</span>
-                        </label>
                       </div>
                     </details>
                   </section>
@@ -554,34 +524,36 @@
                     <details class="settings-accordion" data-accordion="coach">
                       <summary>Coach</summary>
                       <div class="settings-card-body">
-                        <label class="check check-row">
-                          <input id="cfgCoachEnabled" type="checkbox" />
-                          <span>Enable Auto Coach</span>
-                        </label>
+                        <div class="settings-subgroup">
+                          <label class="check check-row">
+                            <input id="cfgCoachEnabled" type="checkbox" />
+                            <span>Enable Live Coach</span>
+                          </label>
 
-                        <div class="label-row">
-                          <label>Coach Trigger Speaker</label>
-                          <details class="hint-tip">
-                            <summary aria-label="Coach Trigger help">?</summary>
-                            <div class="hint-tip-content">Select whose final speech can trigger automatic coach suggestions.</div>
-                          </details>
-                        </div>
-                        <select id="cfgCoachTriggerSpeaker">
-                          <option value="remote">Remote</option>
-                          <option value="local">Local</option>
-                          <option value="any">Any</option>
-                        </select>
+                          <div class="label-row">
+                            <label>Trigger On Speaker</label>
+                            <details class="hint-tip">
+                              <summary aria-label="Trigger speaker help">?</summary>
+                              <div class="hint-tip-content">Select whose final speech can trigger automatic coach suggestions.</div>
+                            </details>
+                          </div>
+                          <select id="cfgCoachTriggerSpeaker">
+                            <option value="remote">Remote</option>
+                            <option value="local">Local</option>
+                            <option value="any">Any</option>
+                          </select>
 
-                        <div class="preset-row" id="coachPresetRow">
-                          <button class="btn preset-btn" type="button" data-preset="conservative">Conservative</button>
-                          <button class="btn preset-btn" type="button" data-preset="balanced">Balanced</button>
-                          <button class="btn preset-btn" type="button" data-preset="aggressive">Aggressive</button>
+                          <div class="preset-row" id="coachPresetRow">
+                            <button class="btn preset-btn" type="button" data-preset="conservative">Conservative</button>
+                            <button class="btn preset-btn" type="button" data-preset="balanced">Balanced</button>
+                            <button class="btn preset-btn" type="button" data-preset="aggressive">Aggressive</button>
+                          </div>
                         </div>
 
                         <details class="settings-advanced" open>
-                          <summary>Advanced Coach Settings</summary>
+                          <summary>Coach Tuning</summary>
                           <div class="label-row">
-                            <label>Coach Cooldown (seconds between suggestions)</label>
+                            <label>Minimum Seconds Between Suggestions</label>
                             <details class="hint-tip">
                               <summary aria-label="Coach Cooldown help">?</summary>
                               <div class="hint-tip-content">Lower values suggest more often; higher values reduce noise and cost.</div>
@@ -593,7 +565,7 @@
                           </div>
 
                           <div class="label-row">
-                            <label>Conversation Memory (turns)</label>
+                            <label>Context Window (turns)</label>
                             <details class="hint-tip">
                               <summary aria-label="Conversation Memory help">?</summary>
                               <div class="hint-tip-content">More turns improve context but can slow response.</div>
@@ -604,7 +576,7 @@
                             <input id="cfgCoachMaxTurns" type="number" min="2" max="30" />
                           </div>
 
-                          <label>Coach Instruction</label>
+                          <label>Coach Prompt / Instruction</label>
                           <textarea id="cfgCoachInstruction" rows="4" placeholder="How the coach should respond..."></textarea>
                         </details>
                       </div>
@@ -615,32 +587,50 @@
                     <details class="settings-accordion" data-accordion="transcript">
                       <summary>Transcript</summary>
                       <div class="settings-card-body">
-                        <div class="label-row">
-                          <label>Partial Translate Min Interval (sec)</label>
-                          <details class="hint-tip">
-                            <summary aria-label="Partial Translate Interval help">?</summary>
-                            <div class="hint-tip-content">Lower values update Arabic faster; higher values reduce API usage.</div>
-                          </details>
+                        <div class="settings-subgroup">
+                          <h4 class="settings-subgroup-title">Live Translation</h4>
+                          <div class="label-row">
+                            <label>Translation Update Interval (sec)</label>
+                            <details class="hint-tip">
+                              <summary aria-label="Partial Translate Interval help">?</summary>
+                              <div class="hint-tip-content">Lower values update Arabic faster; higher values reduce API usage.</div>
+                            </details>
+                          </div>
+                          <div class="field-inline">
+                            <input id="cfgPartialTranslateMinIntervalSecRange" type="range" min="0.2" max="10.0" step="0.1" />
+                            <input id="cfgPartialTranslateMinIntervalSec" type="number" min="0.2" max="10.0" step="0.1" />
+                          </div>
+
+                          <label class="check check-row">
+                            <input id="cfgTranslationEnabled" type="checkbox" checked />
+                            <span>Enable Arabic Translation</span>
+                          </label>
                         </div>
-                        <div class="field-inline">
-                          <input id="cfgPartialTranslateMinIntervalSecRange" type="range" min="0.2" max="10.0" step="0.1" />
-                          <input id="cfgPartialTranslateMinIntervalSec" type="number" min="0.2" max="10.0" step="0.1" />
+
+                        <div class="settings-subgroup">
+                          <h4 class="settings-subgroup-title">Summary Automation</h4>
+                          <label class="check check-row">
+                            <input id="cfgSummaryEnabled" type="checkbox" checked />
+                            <span>Generate Summary On Session Stop</span>
+                          </label>
+
+                          <label for="cfgSummaryTopicDurationMode">Topic Timing Method</label>
+                          <select id="cfgSummaryTopicDurationMode">
+                            <option value="coverage_with_gaps">Coverage with Gaps (Recommended)</option>
+                            <option value="speech_only">Speech Only (Utterance Duration)</option>
+                          </select>
+
+                          <label for="cfgSummaryTopicGapThresholdSec">Gap Merge Threshold (sec)</label>
+                          <input id="cfgSummaryTopicGapThresholdSec" type="number" min="0" max="300" step="1" value="30" />
                         </div>
 
-                        <label class="check check-row">
-                          <input id="cfgTranslationEnabled" type="checkbox" checked />
-                          <span>Enable Arabic Translation</span>
-                        </label>
-
-                        <label class="check check-row">
-                          <input id="cfgSummaryEnabled" type="checkbox" checked />
-                          <span>Generate summary on session stop</span>
-                        </label>
-
-                        <label class="check check-row">
-                          <input id="showTs" type="checkbox" />
-                          <span>Show Entry Timestamps</span>
-                        </label>
+                        <div class="settings-subgroup">
+                          <h4 class="settings-subgroup-title">Transcript View</h4>
+                          <label class="check check-row">
+                            <input id="showTs" type="checkbox" />
+                            <span>Show Entry Timestamps</span>
+                          </label>
+                        </div>
 
                         <input id="cfgInitial" type="hidden" />
                         <input id="cfgMaxFinals" type="hidden" value="5000" />
@@ -652,31 +642,38 @@
                     <details class="settings-accordion" data-accordion="appearance">
                       <summary>Appearance</summary>
                       <div class="settings-card-body">
-                        <label>Theme</label>
-                        <button id="themeToggleBtn" class="btn" type="button" title="Toggle light/dark theme">Theme</button>
+                        <div class="settings-subgroup">
+                          <h4 class="settings-subgroup-title">Theme</h4>
+                          <p class="settings-subgroup-hint">Switch between light and dark presets.</p>
+                          <label>UI Theme</label>
+                          <button id="themeToggleBtn" class="btn" type="button" title="Toggle light/dark theme">Theme</button>
+                        </div>
 
-                        <label>English Font</label>
-                        <select id="fontFamilyEn">
-                          <option value="Manrope">Manrope</option>
-                          <option value="Segoe UI">Segoe UI</option>
-                          <option value="Arial">Arial</option>
-                        </select>
+                        <div class="settings-subgroup">
+                          <h4 class="settings-subgroup-title">Text & Readability</h4>
+                          <label>English Font</label>
+                          <select id="fontFamilyEn">
+                            <option value="Manrope">Manrope</option>
+                            <option value="Segoe UI">Segoe UI</option>
+                            <option value="Arial">Arial</option>
+                          </select>
 
-                        <label>Arabic Font</label>
-                        <select id="fontFamilyAr">
-                          <option value="IBM Plex Sans Arabic">IBM Plex Sans Arabic</option>
-                          <option value="Noto Sans Arabic">Noto Sans Arabic</option>
-                          <option value="Segoe UI">Segoe UI</option>
-                          <option value="Arial">Arial</option>
-                        </select>
+                          <label>Arabic Font</label>
+                          <select id="fontFamilyAr">
+                            <option value="IBM Plex Sans Arabic">IBM Plex Sans Arabic</option>
+                            <option value="Noto Sans Arabic">Noto Sans Arabic</option>
+                            <option value="Segoe UI">Segoe UI</option>
+                            <option value="Arial">Arial</option>
+                          </select>
 
-                        <label>English Font Size</label>
-                        <input id="fontScaleEn" type="range" min="0.6" max="1.6" step="0.05" value="1" />
-                        <div id="fontScaleEnVal" class="muted">100%</div>
+                          <label>English Text Size</label>
+                          <input id="fontScaleEn" type="range" min="0.6" max="1.6" step="0.05" value="1" />
+                          <div id="fontScaleEnVal" class="muted">100%</div>
 
-                        <label>Arabic Font Size</label>
-                        <input id="fontScaleAr" type="range" min="0.6" max="1.6" step="0.05" value="1" />
-                        <div id="fontScaleArVal" class="muted">100%</div>
+                          <label>Arabic Text Size</label>
+                          <input id="fontScaleAr" type="range" min="0.6" max="1.6" step="0.05" value="1" />
+                          <div id="fontScaleArVal" class="muted">100%</div>
+                        </div>
                       </div>
                     </details>
                   </section>

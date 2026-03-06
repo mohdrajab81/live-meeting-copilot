@@ -2,7 +2,7 @@
 Targeted tests for app.controller.session_manager.SessionManager.
 
 Focuses on high-risk lifecycle paths:
-- stop_async final topic flush behavior
+- stop_async behavior with summary-only finalization
 - _do_finalize side effects and idempotency
 - SDK self-stop finalization trigger from status event
 """
@@ -69,7 +69,7 @@ def _make_session_manager():
 
 
 @pytest.mark.asyncio
-async def test_stop_async_runs_topic_flush_when_call_available():
+async def test_stop_async_does_not_run_topic_flush_even_when_call_available():
     mgr, speech, _, _, topic_orch, _, _ = _make_session_manager()
     topic_orch.prepare_call_unlocked.return_value = {"trigger": "auto", "chunk_turns": []}
     mgr._do_finalize = MagicMock()
@@ -78,9 +78,8 @@ async def test_stop_async_runs_topic_flush_when_call_available():
 
     assert result is True
     speech.stop_recognition.assert_called_once()
-    topic_orch.prepare_call_unlocked.assert_called_once()
-    assert topic_orch.prepare_call_unlocked.call_args.kwargs.get("trigger") == "auto"
-    topic_orch.run_update.assert_awaited_once_with({"trigger": "auto", "chunk_turns": []})
+    topic_orch.prepare_call_unlocked.assert_not_called()
+    topic_orch.run_update.assert_not_awaited()
     mgr._do_finalize.assert_called_once()
 
 
@@ -93,32 +92,23 @@ async def test_stop_async_skips_topic_flush_when_no_call():
     result = await mgr.stop_async()
 
     assert result is True
+    topic_orch.prepare_call_unlocked.assert_not_called()
     topic_orch.run_update.assert_not_awaited()
     mgr._do_finalize.assert_called_once()
 
 
-def test_do_finalize_covers_active_topics_and_broadcasts_topics_update():
+def test_do_finalize_resets_runtime_without_topics_side_effects():
     mgr, _, translation, coach_orch, topic_orch, broadcast_from_thread, coach = _make_session_manager()
     topic_orch.topics_pending = True
 
-    def _finalize_side_effect():
-        for row in topic_orch.topics_items:
-            if row.get("status") == "active":
-                row["status"] = "covered"
-
-    topic_orch.finalize_on_stop_unlocked.side_effect = _finalize_side_effect
-
     mgr._do_finalize()
 
-    assert topic_orch.topics_pending is False
-    assert topic_orch.topics_items[0]["status"] == "covered"
+    assert topic_orch.topics_pending is True
+    assert topic_orch.topics_items[0]["status"] == "active"
     coach_orch.reset_runtime_unlocked.assert_called_once_with(keep_history=True)
     translation.reset_unlocked.assert_called_once()
     coach.clear_conversation.assert_called_once()
-    broadcast_from_thread.assert_called_once()
-    payload = broadcast_from_thread.call_args.args[0]
-    assert payload["type"] == "topics_update"
-    assert payload["topics"][0]["status"] == "covered"
+    broadcast_from_thread.assert_not_called()
 
 
 def test_do_finalize_is_idempotent():
@@ -127,10 +117,10 @@ def test_do_finalize_is_idempotent():
     mgr._do_finalize()
     mgr._do_finalize()
 
-    assert topic_orch.finalize_on_stop_unlocked.call_count == 2
+    assert topic_orch.finalize_on_stop_unlocked.call_count == 0
     assert coach_orch.reset_runtime_unlocked.call_count == 2
     assert coach.clear_conversation.call_count == 2
-    assert broadcast_from_thread.call_count == 2
+    assert broadcast_from_thread.call_count == 0
 
 
 def test_status_event_running_to_stopped_triggers_finalize():

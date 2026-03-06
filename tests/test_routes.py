@@ -35,7 +35,7 @@ def _make_controller(running=False):
         "recording": {"started_ts": None, "accumulated_ms": 0, "total_ms": 0},
         "coach": {"configured": False, "pending": False, "hints": [], "queued": False,
                   "last_sent_final_idx": 0},
-        "topics": {"enabled": False, "items": [], "agenda": [], "runs": []},
+        "topics": {"definitions": []},
         "telemetry": {},
     }
     ctrl.get_config.return_value = {}
@@ -59,11 +59,7 @@ def _make_controller(running=False):
     ctrl.request_coach = AsyncMock(return_value={"suggestion": "test hint", "ts": 1.0,
                                                    "type": "coach"})
     ctrl.configure_topics = MagicMock(return_value={
-        "enabled": True, "agenda": [], "definitions": [], "items": [],
-        "allow_new_topics": True, "interval_sec": 60,
-    })
-    ctrl.analyze_topics_now = AsyncMock(return_value={
-        "enabled": True, "items": [], "agenda": [], "runs": [],
+        "definitions": [],
     })
 
     from app.config import RuntimeConfig
@@ -373,73 +369,30 @@ class TestTopicsConfigure:
     def test_returns_200(self, client):
         tc, _ = client
         r = tc.post("/api/topics/configure", json={
-            "agenda": ["Budget", "Timeline"],
-            "enabled": True,
-            "allow_new_topics": True,
-            "interval_sec": 60,
+            "definitions": [
+                {"name": "Budget", "expected_duration_min": 5, "priority": "normal", "order": 0, "comments": "", "id": "budget"}
+            ],
         })
         assert r.status_code == 200
 
     def test_calls_configure_topics(self, client):
         tc, ctrl = client
-        tc.post("/api/topics/configure", json={
-            "agenda": ["A"],
-            "enabled": True,
-            "allow_new_topics": False,
-            "interval_sec": 60,
-        })
-        ctrl.configure_topics.assert_called_once()
-
-    def test_agenda_capped_at_20_by_validation(self, client):
-        tc, _ = client
-        r = tc.post("/api/topics/configure", json={
-            "agenda": [f"Topic {i}" for i in range(25)],  # over the max of 20
-            "enabled": True,
-            "allow_new_topics": True,
-            "interval_sec": 60,
-        })
-        assert r.status_code == 422
+        defs = [{"name": "A", "expected_duration_min": 1, "priority": "normal", "order": 0, "comments": "", "id": "a"}]
+        tc.post("/api/topics/configure", json={"definitions": defs})
+        ctrl.configure_topics.assert_called_once_with(
+            agenda=[],
+            enabled=False,
+            allow_new_topics=False,
+            interval_sec=60,
+            definitions=defs,
+        )
 
     def test_definitions_capped_at_80(self, client):
         tc, _ = client
         defs = [{"name": f"T{i}", "expected_duration_min": 0, "priority": "normal",
                  "order": i, "comments": "", "id": ""} for i in range(90)]
-        r = tc.post("/api/topics/configure", json={
-            "agenda": [],
-            "enabled": True,
-            "allow_new_topics": True,
-            "interval_sec": 60,
-            "definitions": defs,
-        })
+        r = tc.post("/api/topics/configure", json={"definitions": defs})
         assert r.status_code == 422
-
-
-# ---------------------------------------------------------------------------
-# POST /api/topics/analyze-now
-# ---------------------------------------------------------------------------
-
-class TestTopicsAnalyzeNow:
-    def test_returns_200(self, client):
-        tc, _ = client
-        r = tc.post("/api/topics/analyze-now")
-        assert r.status_code == 200
-
-    def test_returns_409_on_runtime_error(self, client):
-        tc, ctrl = client
-        ctrl.analyze_topics_now.side_effect = RuntimeError("already running")
-        r = tc.post("/api/topics/analyze-now")
-        assert r.status_code == 409
-
-    def test_rate_limit_returns_429_after_4_requests(self, client, monkeypatch):
-        """Rate limit for /topics/analyze-now is 4/min."""
-        import app.api.routes as routes_mod
-        monkeypatch.setattr(routes_mod, "_topics_rate_buckets", {})
-        tc, _ = client
-        for _ in range(4):
-            r = tc.post("/api/topics/analyze-now")
-            assert r.status_code == 200
-        r = tc.post("/api/topics/analyze-now")
-        assert r.status_code == 429
 
 
 # ---------------------------------------------------------------------------
@@ -789,5 +742,7 @@ class TestSummaryFromTranscript:
         ctrl.summary_service.generate = MagicMock(return_value=result)
         data = self._post(tc, csv_text=_VALID_ENRICHED_CSV).json()
         topic = data["result"]["topic_key_points"][0]
-        # duration_sec = 5 + 7 = 12 sec -> 0.2 min
-        assert topic["estimated_duration_minutes"] == 0.2
+        # coverage_with_gaps default:
+        # duration_sec = 5 + 7 = 12 sec, plus inter-utterance gap 5 sec (same topic)
+        # total 17 sec -> 0.3 min
+        assert topic["estimated_duration_minutes"] == 0.3

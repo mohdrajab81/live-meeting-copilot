@@ -129,28 +129,8 @@
   const coachRecoNextBtn = document.getElementById("coachRecoNextBtn");
   const coachRecoPage = document.getElementById("coachRecoPage");
   const coachKpiStatus = document.getElementById("coachKpiStatus");
-  const topicsAgendaInput = document.getElementById("topicsAgendaInput");
-  const topicsEnableAuto = document.getElementById("topicsEnableAuto");
-  const topicsAllowNew = document.getElementById("topicsAllowNew");
-  const topicsIntervalSec = document.getElementById("topicsIntervalSec");
-  const topicsSaveBtn = document.getElementById("topicsSaveBtn");
-  const topicsAnalyzeBtn = document.getElementById("topicsAnalyzeBtn");
-  const topicsClearBtn = document.getElementById("topicsClearBtn");
-  const topicsTopActions = document.getElementById("topicsTopActions");
-  const topicsExportMenuWrap = document.getElementById("topicsExportMenuWrap");
   const topicsStatusEl = document.getElementById("topicsStatus");
-  const topicsListEl = document.getElementById("topicsList");
-  const topicsGroupBy = document.getElementById("topicsGroupBy");
-  const topicsSortBy = document.getElementById("topicsSortBy");
-  const topicsSearch = document.getElementById("topicsSearch");
-  const topicsDensityToggle = document.getElementById("topicsDensityToggle");
-  const topicsBoardControls = document.getElementById("topicsBoardControls");
-  const topicsBoardPane = document.getElementById("topicsBoardPane");
-  const topicsRunsPane = document.getElementById("topicsRunsPane");
   const topicsDefinitionsPane = document.getElementById("topicsDefinitionsPane");
-  const topicsSettingsPane = document.getElementById("topicsSettingsPane");
-  const topicsRunsList = document.getElementById("topicsRunsList");
-  const topicsSubtabButtons = Array.from(document.querySelectorAll(".topics-subtab-btn"));
   const topicsDefinitionsList = document.getElementById("topicsDefinitionsList");
   const topicsDefinitionEditorTitle = document.getElementById("topicsDefinitionEditorTitle");
   const topicDefIdInput = document.getElementById("topicDefIdInput");
@@ -162,11 +142,6 @@
   const topicDefCancelBtn = document.getElementById("topicDefCancelBtn");
   const topicsDefinitionsValidation = document.getElementById("topicsDefinitionsValidation");
   const topicsKpiCount = document.getElementById("topicsKpiCount");
-  const topicsKpiCovered = document.getElementById("topicsKpiCovered");
-  const exportTopicsJsonBtn = document.getElementById("exportTopicsJsonBtn");
-  const exportTopicsCsvBtn = document.getElementById("exportTopicsCsvBtn");
-  const topicsExportMenuBtn = document.getElementById("topicsExportMenuBtn");
-  const topicsExportMenu = document.getElementById("topicsExportMenu");
   const summaryGenerateBtn = document.getElementById("summaryGenerateBtn");
   const summaryClearBtn = document.getElementById("summaryClearBtn");
   const summaryExportMenuBtn = document.getElementById("summaryExportMenuBtn");
@@ -199,10 +174,25 @@
   const summaryTermsList = document.getElementById("summaryTermsList");
   const summaryTopicSection = document.getElementById("summaryTopicSection");
   const summaryAdherenceChip = document.getElementById("summaryAdherenceChip");
+  const summaryTopicKpis = document.getElementById("summaryTopicKpis");
+  const summaryTopicJourneyWrap = document.getElementById("summaryTopicJourneyWrap");
+  const summaryTopicJourneyMeta = document.getElementById("summaryTopicJourneyMeta");
+  const summaryTopicJourneyAxis = document.getElementById("summaryTopicJourneyAxis");
+  const summaryTopicJourney = document.getElementById("summaryTopicJourney");
+  const summaryTopicDonutWrap = document.getElementById("summaryTopicDonutWrap");
+  const summaryTopicDonut = document.getElementById("summaryTopicDonut");
+  const summaryTopicDonutCenter = document.getElementById("summaryTopicDonutCenter");
+  const summaryTopicDonutLegend = document.getElementById("summaryTopicDonutLegend");
+  const summaryTopicGroupsWrap = document.getElementById("summaryTopicGroupsWrap");
+  const summaryTopicGroups = document.getElementById("summaryTopicGroups");
+  const summaryAgendaActualHead = document.getElementById("summaryAgendaActualHead");
+  const summaryAgendaActualWrap = document.getElementById("summaryAgendaActualWrap");
   const summaryTopicTimeline = document.getElementById("summaryTopicTimeline");
   const summaryTopicPlaceholder = document.getElementById("summaryTopicPlaceholder");
   const summaryFromFileBtn = document.getElementById("summaryFromFileBtn");
   const cfgSummaryEnabled = document.getElementById("cfgSummaryEnabled");
+  const cfgSummaryTopicDurationMode = document.getElementById("cfgSummaryTopicDurationMode");
+  const cfgSummaryTopicGapThresholdSec = document.getElementById("cfgSummaryTopicGapThresholdSec");
 
   // File analysis modal
   const fileAnalysisModal = document.getElementById("fileAnalysisModal");
@@ -270,19 +260,7 @@
     coachPending: false,
     coachConfigured: false,
     topics: {
-      configured: false,
-      settings_saved: false,
-      enabled: false,
-      allow_new_topics: true,
-      interval_sec: 60,
-      pending: false,
-      last_run_ts: 0,
-      last_final_index: 0,
-      last_error: "",
-      agenda: [],
       definitions: [],
-      items: [],
-      runs: [],
     },
     sessionStartedTs: null,
     recording: {
@@ -305,7 +283,7 @@
         topicsSetupCollapsed: false,
       },
       pageSubtabs: {
-        topics: "board",
+        topics: "definitions",
       },
       transcriptView: {
         preset: "all",
@@ -426,6 +404,96 @@
     const text = String(value || "").replace(/\s+/g, " ").trim();
     if (text.length <= limit) return text;
     return `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}...`;
+  }
+
+  function toFiniteNumber(value, fallback = 0) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  function toOptionalNumber(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "string" && value.trim() === "") return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function formatMinutesShort(minutes) {
+    const totalSec = Math.max(0, Math.round(toFiniteNumber(minutes, 0) * 60));
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    return `${mins}m ${secs}s`;
+  }
+
+  function formatMinutesDelta(minutes) {
+    const value = toFiniteNumber(minutes, 0);
+    const sign = value < 0 ? "-" : "+";
+    const totalSec = Math.max(0, Math.round(Math.abs(value) * 60));
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    return `${sign}${mins}m ${secs}s`;
+  }
+
+  function formatClockFromSeconds(totalSec) {
+    const sec = Math.max(0, Math.round(toFiniteNumber(totalSec, 0)));
+    const hh = Math.floor(sec / 3600);
+    const mm = Math.floor((sec % 3600) / 60);
+    const ss = sec % 60;
+    if (hh > 0) {
+      return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+    }
+    return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+  }
+
+  function formatClockTime(tsSec) {
+    const sec = toFiniteNumber(tsSec, 0);
+    if (sec <= 0) return "--:--:--";
+    if (sec < 1_000_000_000) return formatClockFromSeconds(sec);
+    return formatTime(sec);
+  }
+
+  function formatTimelinePoint(vm, sec, tsSec = null) {
+    const absTs = toFiniteNumber(tsSec, 0);
+    if (vm?.hasRealTiming) {
+      if (absTs > 0) return formatClockTime(absTs);
+      const baseline = toFiniteNumber(vm.timelineStartTs, 0);
+      if (baseline > 0) {
+        const offset = Math.max(0, toFiniteNumber(sec, 0));
+        return formatClockTime(baseline + offset);
+      }
+    }
+    return formatClockFromSeconds(sec);
+  }
+
+  function parseUtteranceIdNumber(value) {
+    const raw = String(value || "").trim().toUpperCase();
+    const match = raw.match(/^U(\d{1,6})$/);
+    if (!match) return null;
+    return Number(match[1]);
+  }
+
+  const TOPIC_COLORS = [
+    "#4E9BFF",
+    "#53D8A8",
+    "#F5B35C",
+    "#FF7E7E",
+    "#8E9CFF",
+    "#34C8D9",
+    "#E69DFF",
+    "#B8D86D",
+    "#FF9E6E",
+    "#74D3BE",
+  ];
+
+  function topicColorByName(name) {
+    const text = String(name || "").trim();
+    if (!text) return TOPIC_COLORS[0];
+    let hash = 0;
+    for (let i = 0; i < text.length; i += 1) {
+      hash = ((hash << 5) - hash) + text.charCodeAt(i);
+      hash |= 0;
+    }
+    return TOPIC_COLORS[Math.abs(hash) % TOPIC_COLORS.length];
   }
 
   function cleanCoachSuggestionText(value) {
@@ -563,11 +631,11 @@
     if (localId && remoteId) return { ok: true, message: "" };
 
     const missing = [];
-    if (!localId) missing.push("Your Input Device");
+    if (!localId) missing.push("Local Input Device");
     if (!remoteId) missing.push("Remote Input Device");
     return {
       ok: false,
-      message: `Dual Input needs both devices selected. Missing: ${missing.join(", ")}`,
+      message: `Dual Input requires both devices selected. Missing: ${missing.join(", ")}`,
     };
   }
 
@@ -607,12 +675,13 @@
     if (isDual && !remoteId) errors[cfgRemoteInputDeviceId.id] = "Required in dual mode.";
 
     const rangeChecks = [
-      { el: cfgEnd, min: 50, max: 10000, label: "End silence" },
+      { el: cfgEnd, min: 50, max: 10000, label: "Finalization silence" },
       { el: cfgCoachCooldownSec, min: 0, max: 120, label: "Coach cooldown" },
-      { el: cfgCoachMaxTurns, min: 2, max: 30, label: "Coach max turns" },
-      { el: cfgPartialTranslateMinIntervalSec, min: 0.2, max: 10.0, label: "Partial interval" },
-      { el: cfgAutoStopSilenceSec, min: 0, max: 5, label: "Auto-stop silence" },
-      { el: cfgMaxSessionSec, min: 5, max: 180, label: "Max session" },
+      { el: cfgCoachMaxTurns, min: 2, max: 30, label: "Context window turns" },
+      { el: cfgPartialTranslateMinIntervalSec, min: 0.2, max: 10.0, label: "Translation update interval" },
+      { el: cfgAutoStopSilenceSec, min: 0, max: 5, label: "Auto-stop silence minutes" },
+      { el: cfgMaxSessionSec, min: 5, max: 180, label: "Hard session limit" },
+      { el: cfgSummaryTopicGapThresholdSec, min: 0, max: 300, label: "Gap merge threshold" },
     ];
     rangeChecks.forEach((row) => {
       if (!row.el) return;
@@ -631,6 +700,7 @@
       cfgPartialTranslateMinIntervalSec,
       cfgAutoStopSilenceSec,
       cfgMaxSessionSec,
+      cfgSummaryTopicGapThresholdSec,
     ];
     if (render) {
       targets.forEach((el) => setFieldValidation(el, errors[el?.id] || ""));
@@ -1134,47 +1204,12 @@
     return normalized;
   }
 
-  function agendaLinesFromInput() {
-    const defs = ensureTopicDefinitions();
-    return defs.map((row) => row.name).slice(0, 20);
-  }
-
   function syncTopicsSubtabUI() {
-    const active = String(state.ui.pageSubtabs?.topics || "board");
-    const tabs = topicsSubtabButtons || [];
-    tabs.forEach((btn) => {
-      const key = String(btn.getAttribute("data-topics-tab") || "board");
-      const selected = key === active;
-      btn.classList.toggle("active", selected);
-      btn.setAttribute("aria-selected", selected ? "true" : "false");
-    });
-    if (topicsBoardPane) {
-      const on = active === "board";
-      topicsBoardPane.classList.toggle("active", on);
-      topicsBoardPane.hidden = !on;
-    }
-    if (topicsRunsPane) {
-      const on = active === "runs";
-      topicsRunsPane.classList.toggle("active", on);
-      topicsRunsPane.hidden = !on;
-    }
+    state.ui.pageSubtabs.topics = "definitions";
     if (topicsDefinitionsPane) {
-      const on = active === "definitions";
-      topicsDefinitionsPane.classList.toggle("active", on);
-      topicsDefinitionsPane.hidden = !on;
+      topicsDefinitionsPane.classList.add("active");
+      topicsDefinitionsPane.hidden = false;
     }
-    if (topicsSettingsPane) {
-      const on = active === "settings";
-      topicsSettingsPane.classList.toggle("active", on);
-      topicsSettingsPane.hidden = !on;
-    }
-    if (topicsBoardControls) topicsBoardControls.classList.toggle("hidden", active !== "board");
-
-    const showTopActions = active === "board" || active === "runs";
-    if (topicsAnalyzeBtn) topicsAnalyzeBtn.classList.toggle("hidden", !showTopActions);
-    if (topicsClearBtn) topicsClearBtn.classList.toggle("hidden", !showTopActions);
-    if (topicsExportMenuWrap) topicsExportMenuWrap.classList.toggle("hidden", !showTopActions);
-    if (topicsTopActions) topicsTopActions.classList.toggle("definitions-mode", !showTopActions);
   }
 
   function resetTopicDefinitionEditor() {
@@ -1193,26 +1228,7 @@
   }
 
   function setTopicsUIFromState() {
-    const t = state.topics || {};
-    const defs = ensureTopicDefinitions();
-    if (topicsEnableAuto) topicsEnableAuto.checked = !!t.enabled;
-    if (topicsAllowNew) topicsAllowNew.checked = !!t.allow_new_topics;
-    if (topicsIntervalSec) topicsIntervalSec.value = clampNumber(t.interval_sec, 30, 300, 60);
-    if (topicsAgendaInput && document.activeElement !== topicsAgendaInput) {
-      topicsAgendaInput.value = defs.map((row) => row.name).join("\n");
-    }
-    if (topicsGroupBy) topicsGroupBy.value = state.ui.topicsView.groupBy;
-    if (topicsSortBy) topicsSortBy.value = state.ui.topicsView.sortBy;
-    if (topicsSearch && document.activeElement !== topicsSearch) {
-      topicsSearch.value = state.ui.topicsView.search || "";
-    }
-    if (topicsDensityToggle) {
-      const compact = state.ui.topicsView.density === "compact";
-      topicsDensityToggle.textContent = compact ? "Comfortable" : "Compact";
-      topicsDensityToggle.setAttribute("aria-pressed", compact ? "true" : "false");
-    }
-    if (topicsListEl) topicsListEl.classList.toggle("compact", state.ui.topicsView.density === "compact");
-    syncTopicsSettingsControls();
+    ensureTopicDefinitions();
     syncTopicsSubtabUI();
     const activeEl = document.activeElement;
     const editingInputs = [topicDefNameInput, topicDefDurationInput, topicDefPriorityInput, topicDefCommentsInput];
@@ -1222,415 +1238,6 @@
     }
   }
 
-  function syncTopicsSettingsControls() {
-    const autoEnabled = !!topicsEnableAuto?.checked;
-    if (topicsIntervalSec) topicsIntervalSec.disabled = !autoEnabled;
-  }
-
-  function formatTopicSeconds(sec) {
-    const total = Math.max(0, Number(sec || 0));
-    if (total < 60) return `${Math.round(total)}s`;
-    const mins = Math.floor(total / 60);
-    const rem = Math.round(total % 60);
-    return rem ? `${mins}m ${rem}s` : `${mins}m`;
-  }
-
-  function formatTopicGroupLabel(groupBy, key) {
-    if (groupBy === "status") {
-      if (key === "active") return "Active";
-      if (key === "covered") return "Covered";
-      if (key === "not_started") return "Not started";
-      return "Other";
-    }
-    if (groupBy === "origin") {
-      return key === "agenda" ? "Agenda topics" : "Custom topics";
-    }
-    return "All topics";
-  }
-
-  function getDefinitionByTopicName() {
-    const defs = ensureTopicDefinitions();
-    const map = new Map();
-    defs.forEach((row) => {
-      map.set(normalizeTopicKey(row.name), row);
-    });
-    return map;
-  }
-
-  function buildTopicRows() {
-    const t = state.topics || {};
-    const definitionMap = getDefinitionByTopicName();
-    const agendaSet = new Set(
-      (Array.isArray(t.agenda) ? t.agenda : []).map((name) => normalizeTopicKey(name))
-    );
-    const items = Array.isArray(t.items) ? t.items : [];
-    return items.map((item) => {
-      const keyStatements = Array.isArray(item.key_statements) ? item.key_statements : [];
-      const latestStatementTs = keyStatements.reduce((acc, row) => {
-        const ts = Number(row?.ts || 0);
-        if (!Number.isFinite(ts) || ts <= 0) return acc;
-        return Math.max(acc, ts);
-      }, 0);
-      const updatedTs = Number(item.updated_ts || 0);
-      const latestActivityTs = latestStatementTs > 0 ? latestStatementTs : (updatedTs > 0 ? updatedTs : 0);
-      const name = String(item.name || "Untitled");
-      const key = normalizeTopicKey(name);
-      const definition = definitionMap.get(key) || null;
-      const originRaw = String(item.origin || "").trim().toLowerCase();
-      const origin = ["agenda", "custom"].includes(originRaw)
-        ? originRaw
-        : (agendaSet.has(key) ? "agenda" : "custom");
-      const expandKey = definition?.id
-        ? `def:${String(definition.id)}`
-        : `${origin}:${key}`;
-      return {
-        ...item,
-        name,
-        status: String(item.status || "not_started"),
-        time_seconds: Number(item.time_seconds || 0),
-        key_statements: keyStatements,
-        origin,
-        latest_activity_ts: Number(item.latest_activity_ts || latestActivityTs),
-        statement_count: Number(item.statement_count || keyStatements.length || 0),
-        expected_duration_min: Number(
-          definition?.expected_duration_min ?? item.expected_duration_min ?? 0
-        ),
-        priority: String(definition?.priority || item.priority || "normal"),
-        comments: String(definition?.comments || item.comments || ""),
-        definition_id: String(definition?.id || item.definition_id || ""),
-        definition_order: Number(definition?.order ?? item.definition_order ?? 0),
-        ui_expand_key: expandKey,
-      };
-    });
-  }
-
-  function getTopicsViewModel() {
-    const view = state.ui.topicsView || {};
-    const groupBy = ["status", "origin", "none"].includes(view.groupBy) ? view.groupBy : "status";
-    const sortBy = ["duration_desc", "name_asc", "latest_activity"].includes(view.sortBy)
-      ? view.sortBy
-      : "duration_desc";
-    const query = normalizeText(view.search || "").trim();
-    const rows = buildTopicRows();
-
-    const filtered = rows.filter((item) => {
-      if (!query) return true;
-      const statementBlob = item.key_statements
-        .map((row) => `${row?.speaker || ""} ${row?.text || ""}`)
-        .join(" ");
-      const blob = `${item.name} ${item.status} ${item.origin} ${statementBlob}`;
-      return normalizeText(blob).includes(query);
-    });
-
-    const sorted = [...filtered].sort((a, b) => {
-      if (sortBy === "name_asc") {
-        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-      }
-      if (sortBy === "latest_activity") {
-        if (b.latest_activity_ts !== a.latest_activity_ts) return b.latest_activity_ts - a.latest_activity_ts;
-        if (b.time_seconds !== a.time_seconds) return b.time_seconds - a.time_seconds;
-        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-      }
-      if (b.time_seconds !== a.time_seconds) return b.time_seconds - a.time_seconds;
-      if (b.latest_activity_ts !== a.latest_activity_ts) return b.latest_activity_ts - a.latest_activity_ts;
-      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-    });
-
-    if (groupBy === "none") {
-      return {
-        totalCount: rows.length,
-        filteredCount: sorted.length,
-        groups: [
-          {
-            key: "all",
-            title: "All topics",
-            items: sorted,
-          },
-        ],
-      };
-    }
-
-    const groupOrder = groupBy === "status"
-      ? ["active", "covered", "not_started", "other"]
-      : ["agenda", "custom"];
-    const grouped = new Map();
-    sorted.forEach((item) => {
-      let key = groupBy === "status" ? item.status : item.origin;
-      if (groupBy === "status" && !["active", "covered", "not_started"].includes(key)) key = "other";
-      if (groupBy === "origin" && !["agenda", "custom"].includes(key)) key = "custom";
-      if (!grouped.has(key)) grouped.set(key, []);
-      grouped.get(key).push(item);
-    });
-
-    const groups = [];
-    groupOrder.forEach((key) => {
-      const items = grouped.get(key) || [];
-      if (!items.length) return;
-      groups.push({ key, title: formatTopicGroupLabel(groupBy, key), items });
-    });
-    grouped.forEach((items, key) => {
-      if (groupOrder.includes(key)) return;
-      groups.push({ key, title: formatTopicGroupLabel(groupBy, key), items });
-    });
-
-    return {
-      totalCount: rows.length,
-      filteredCount: sorted.length,
-      groups,
-    };
-  }
-
-  function renderTopicsBoard(vm) {
-    if (!topicsListEl) return;
-    topicsListEl.innerHTML = "";
-    topicsListEl.classList.toggle("compact", state.ui.topicsView.density === "compact");
-    if (!vm.groups.length || vm.filteredCount === 0) {
-      const empty = document.createElement("div");
-      empty.className = "topics-empty topics-empty-rich";
-
-      const title = document.createElement("div");
-      title.className = "topics-empty-title";
-
-      const sub = document.createElement("div");
-      sub.className = "topics-empty-sub";
-
-      const actions = document.createElement("div");
-      actions.className = "topics-empty-actions";
-
-      const defs = ensureTopicDefinitions();
-      if (!defs.length && !state.topics.allow_new_topics) {
-        title.textContent = "No topic definitions yet.";
-        sub.textContent = "Open Definitions, add your topics, then save setup.";
-        const openDefsBtn = document.createElement("button");
-        openDefsBtn.type = "button";
-        openDefsBtn.className = "btn";
-        openDefsBtn.textContent = "Open Definitions";
-        openDefsBtn.addEventListener("click", () => {
-          state.ui.pageSubtabs.topics = "definitions";
-          syncTopicsSubtabUI();
-          saveUiPrefs();
-        });
-        actions.appendChild(openDefsBtn);
-      } else if (!defs.length && state.topics.allow_new_topics) {
-        title.textContent = "No tracked topics yet.";
-        sub.textContent = "Custom topics are allowed. Speak, then run manual analysis.";
-        const analyzeBtn = document.createElement("button");
-        analyzeBtn.type = "button";
-        analyzeBtn.className = "btn";
-        analyzeBtn.textContent = "Analyze now";
-        analyzeBtn.disabled = !!state.topics.pending || !state.topics.configured || !state.topics.settings_saved;
-        analyzeBtn.addEventListener("click", () => {
-          if (topicsAnalyzeBtn) topicsAnalyzeBtn.click();
-        });
-        actions.appendChild(analyzeBtn);
-      } else if (!state.topics.enabled) {
-        title.textContent = "Automatic analysis is disabled.";
-        sub.textContent = "You can run manual analysis now, or enable automatic runs.";
-        const analyzeBtn = document.createElement("button");
-        analyzeBtn.type = "button";
-        analyzeBtn.className = "btn";
-        analyzeBtn.textContent = "Analyze now";
-        analyzeBtn.disabled = !!state.topics.pending || !state.topics.configured || !state.topics.settings_saved;
-        analyzeBtn.addEventListener("click", () => {
-          if (topicsAnalyzeBtn) topicsAnalyzeBtn.click();
-        });
-        const enableBtn = document.createElement("button");
-        enableBtn.type = "button";
-        enableBtn.className = "btn";
-        enableBtn.textContent = "Enable Automatic";
-        enableBtn.addEventListener("click", () => {
-          withBusy(enableBtn, "Enabling", async () => {
-            if (topicsEnableAuto) topicsEnableAuto.checked = true;
-            await saveTopicsSetup();
-            showToast("Automatic analysis enabled and saved.", "success");
-          }).catch(notifyError);
-        });
-        actions.appendChild(analyzeBtn);
-        actions.appendChild(enableBtn);
-      } else {
-        title.textContent = "No topics match the current view.";
-        sub.textContent = "Clear filters or run analysis after speaking to populate coverage.";
-        const analyzeBtn = document.createElement("button");
-        analyzeBtn.type = "button";
-        analyzeBtn.className = "btn";
-        analyzeBtn.textContent = "Analyze now";
-        analyzeBtn.disabled = !!state.topics.pending;
-        analyzeBtn.addEventListener("click", () => {
-          if (topicsAnalyzeBtn) topicsAnalyzeBtn.click();
-        });
-        const resetBtn = document.createElement("button");
-        resetBtn.type = "button";
-        resetBtn.className = "btn";
-        resetBtn.textContent = "Reset View";
-        resetBtn.addEventListener("click", () => {
-          state.ui.topicsView.groupBy = "status";
-          state.ui.topicsView.sortBy = "duration_desc";
-          state.ui.topicsView.search = "";
-          saveUiPrefs();
-          setTopicsUIFromState();
-          renderTopics();
-        });
-        actions.appendChild(analyzeBtn);
-        actions.appendChild(resetBtn);
-      }
-
-      empty.appendChild(title);
-      empty.appendChild(sub);
-      empty.appendChild(actions);
-      topicsListEl.appendChild(empty);
-      return;
-    }
-
-    vm.groups.forEach((group) => {
-      const groupWrap = document.createElement("section");
-      groupWrap.className = "topics-group";
-
-      const groupHead = document.createElement("div");
-      groupHead.className = "topics-group-head";
-      const groupTitle = document.createElement("div");
-      groupTitle.className = "topics-group-title";
-      groupTitle.textContent = group.title;
-      const groupMeta = document.createElement("div");
-      groupMeta.className = "topics-group-meta";
-      const totalSeconds = group.items.reduce((acc, item) => acc + Math.max(0, Number(item.time_seconds || 0)), 0);
-      groupMeta.textContent = `${group.items.length} topics | ${formatTopicSeconds(totalSeconds)}`;
-      groupHead.appendChild(groupTitle);
-      groupHead.appendChild(groupMeta);
-      groupWrap.appendChild(groupHead);
-
-      group.items.forEach((item) => {
-        const card = document.createElement("div");
-        card.className = "topic-item";
-        const head = document.createElement("div");
-        head.className = "topic-item-head";
-
-        const status = document.createElement("span");
-        const rawStatus = String(item.status || "not_started");
-        status.className = `topic-status status-${rawStatus}`;
-        status.textContent = rawStatus.replace("_", " ");
-
-        const origin = document.createElement("span");
-        origin.className = `topic-origin origin-${item.origin}`;
-        origin.textContent = item.origin;
-
-        const name = document.createElement("div");
-        name.className = "topic-item-name";
-        const priority = String(item.priority || "normal");
-        const priorityLabel = priority.charAt(0).toUpperCase() + priority.slice(1);
-        name.textContent = `${item.name || "Untitled"} (${priorityLabel})`;
-
-        const timeBlock = document.createElement("div");
-        timeBlock.className = "topic-item-time-block";
-        const time = document.createElement("div");
-        time.className = "topic-item-time";
-        time.textContent = formatTopicSeconds(item.time_seconds || 0);
-        const activity = document.createElement("div");
-        activity.className = "topic-item-activity";
-        activity.textContent = item.latest_activity_ts
-          ? `Last ${formatTime(item.latest_activity_ts)}`
-          : "Last --";
-
-        timeBlock.appendChild(time);
-        timeBlock.appendChild(activity);
-        head.appendChild(status);
-        head.appendChild(origin);
-        head.appendChild(name);
-        head.appendChild(timeBlock);
-        card.appendChild(head);
-
-        const rows = Array.isArray(item.key_statements) ? item.key_statements : [];
-        if (rows.length) {
-          const ul = document.createElement("ul");
-          ul.className = "topic-statements";
-          const visibleLimit = state.ui.topicsView.density === "compact" ? 4 : 6;
-          const expandedMap = state.ui.topicsView.expandedStatements || {};
-          const isExpanded = !!expandedMap[item.ui_expand_key];
-          const visibleCount = isExpanded ? rows.length : visibleLimit;
-          rows.slice(0, visibleCount).forEach((row) => {
-            const li = document.createElement("li");
-            const ts = row.ts ? formatTime(row.ts) : "";
-            const speaker = (row.speaker || "Speaker").trim();
-            const text = clipText(row.text || "", state.ui.topicsView.density === "compact" ? 74 : 130);
-            li.textContent = ts ? `[${ts}] ${speaker}: ${text}` : `${speaker}: ${text}`;
-            ul.appendChild(li);
-          });
-          if (rows.length > visibleLimit) {
-            const more = document.createElement("li");
-            more.className = "topic-statements-more";
-            const toggle = document.createElement("button");
-            toggle.type = "button";
-            toggle.className = "topic-statements-more-toggle";
-            toggle.textContent = isExpanded
-              ? "Show less"
-              : `+${rows.length - visibleLimit} more`;
-            toggle.addEventListener("click", () => {
-              const next = { ...(state.ui.topicsView.expandedStatements || {}) };
-              if (isExpanded) delete next[item.ui_expand_key];
-              else next[item.ui_expand_key] = true;
-              state.ui.topicsView.expandedStatements = next;
-              saveUiPrefs();
-              renderTopics();
-            });
-            more.appendChild(toggle);
-            ul.appendChild(more);
-          }
-          card.appendChild(ul);
-        }
-        groupWrap.appendChild(card);
-      });
-      topicsListEl.appendChild(groupWrap);
-    });
-  }
-
-  function renderTopicsRuns() {
-    if (!topicsRunsList) return;
-    topicsRunsList.innerHTML = "";
-    const runs = Array.isArray(state.topics?.runs) ? state.topics.runs : [];
-    if (!runs.length) {
-      const empty = document.createElement("div");
-      empty.className = "topics-empty";
-      empty.textContent = "No runs yet.";
-      topicsRunsList.appendChild(empty);
-      return;
-    }
-    runs.slice().reverse().forEach((run) => {
-      const card = document.createElement("div");
-      card.className = "topics-activity-item";
-
-      const ts = Number(run?.ts || 0);
-      const trigger = String(run?.trigger || "manual");
-      const status = String(run?.status || "success");
-      const fromIdx = Number(run?.from_final_index || 0);
-      const toIdx = Number(run?.to_final_index || 0);
-      const chunkTurns = Number(run?.chunk_turns || 0);
-      const chunkSec = Number(run?.chunk_seconds || 0);
-      const chunkActiveSec = Number(run?.chunk_active_seconds || 0);
-      const totalMs = Number(run?.total_ms || 0);
-      const summary = (
-        status === "error"
-          ? `Error: ${String(run?.error || "unknown error")}`
-          : `Topics: +${Number(run?.new_topics || 0)} new, ${Number(run?.updated_topics || 0)} updated, ${Number(run?.unchanged_topics || 0)} unchanged`
-      );
-
-      const line1 = document.createElement("div");
-      line1.className = "topic-run-head";
-      line1.textContent = `[${ts ? formatTime(ts) : "--"}] ${trigger.toUpperCase()} | ${status.toUpperCase()} | turns [${fromIdx}..${toIdx}) (${chunkTurns})`;
-
-      const line2 = document.createElement("div");
-      line2.className = "topic-run-meta";
-      line2.textContent = `chunk=${chunkSec}s | active=${chunkActiveSec}s | allow_custom=${Boolean(run?.allow_new_topics)} | total=${totalMs}ms`;
-
-      const line3 = document.createElement("div");
-      line3.className = "topic-run-summary";
-      line3.textContent = summary;
-
-      card.appendChild(line1);
-      card.appendChild(line2);
-      card.appendChild(line3);
-      topicsRunsList.appendChild(card);
-    });
-  }
-
   function renderTopicDefinitionsList() {
     if (!topicsDefinitionsList) return;
     const defs = ensureTopicDefinitions();
@@ -1638,7 +1245,7 @@
     if (!defs.length) {
       const empty = document.createElement("div");
       empty.className = "topics-empty";
-      empty.textContent = "No topic definitions yet. Add one to start tracking.";
+      empty.textContent = "No topic definitions yet. Add one to use in Summary.";
       topicsDefinitionsList.appendChild(empty);
       return;
     }
@@ -1713,10 +1320,6 @@
       deleteBtn.textContent = "Delete";
       deleteBtn.addEventListener("click", () => {
         const next = defs.filter((it) => it.id !== row.id).map((it, order) => ({ ...it, order }));
-        if (!topicsAllowNew?.checked && next.length === 0) {
-          showTopicsDefinitionsError("Add at least one topic definition when custom topics are disabled.");
-          return;
-        }
         showTopicsDefinitionsError("");
         commitTopicDefinitions(next, "Topic deleted and saved.").catch(notifyError);
       });
@@ -1734,35 +1337,15 @@
   }
 
   function renderTopics() {
-    const t = state.topics || {};
-    const rows = buildTopicRows();
-    const vm = getTopicsViewModel();
     const defs = ensureTopicDefinitions();
 
     const statusParts = [];
-    if (!defs.length && !t.allow_new_topics) statusParts.push("No definitions yet");
-    else if (!defs.length && t.allow_new_topics) statusParts.push("Custom-only mode");
-    else statusParts.push("Definitions ready");
-    statusParts.push(t.configured ? "Model ready" : "Model unavailable");
-    statusParts.push(t.settings_saved ? "Setup saved" : "Setup not saved");
-    statusParts.push(t.enabled ? "Auto on" : "Manual only");
-    if (t.pending) statusParts.push("Updating...");
-    if (t.last_error) statusParts.push(`Error: ${t.last_error}`);
-    if (!t.pending && !t.last_error && t.last_run_ts) statusParts.push(`Last run ${formatTime(t.last_run_ts)}`);
+    statusParts.push(defs.length ? "Definitions ready" : "No definitions yet");
+    statusParts.push("Used by Summary");
     if (topicsStatusEl) topicsStatusEl.textContent = statusParts.join(" | ");
 
     if (topicsKpiCount) topicsKpiCount.textContent = String(defs.length);
-    if (topicsKpiCovered) topicsKpiCovered.textContent = String(rows.filter((item) => item.status === "covered").length);
-
-    const canAnalyze = !t.pending && !!t.settings_saved && !!t.configured && (defs.length > 0 || !!t.allow_new_topics);
-    if (topicsAnalyzeBtn) topicsAnalyzeBtn.disabled = !canAnalyze;
-    if (topicsClearBtn) topicsClearBtn.disabled = !rows.length;
-    if (topicsExportMenuBtn) topicsExportMenuBtn.disabled = !rows.length;
-    if (topicsSaveBtn) topicsSaveBtn.disabled = !!t.pending || (!t.allow_new_topics && defs.length === 0);
-
     syncTopicsSubtabUI();
-    renderTopicsBoard(vm);
-    renderTopicsRuns();
     renderTopicDefinitionsList();
   }
 
@@ -2125,44 +1708,557 @@
     });
   }
 
-  function renderTopicCoverage() {
-    if (!summaryTopicSection || !summaryTopicTimeline || !summaryTopicPlaceholder) return;
-    const breakdown = state.summary.topic_breakdown || [];
-    const adherence = state.summary.agenda_adherence_pct;
-
-    if (breakdown.length === 0) {
-      summaryTopicTimeline.innerHTML = "";
-      summaryTopicPlaceholder.classList.remove("hidden");
-      if (summaryAdherenceChip) summaryAdherenceChip.classList.add("hidden");
-      return;
-    }
-
-    summaryTopicPlaceholder.classList.add("hidden");
-
-    // Adherence chip
-    if (summaryAdherenceChip) {
-      if (adherence !== null && adherence !== undefined) {
-        summaryAdherenceChip.textContent = `Adherence ${adherence.toFixed(1)}%`;
-        summaryAdherenceChip.classList.remove("hidden");
-      } else {
-        summaryAdherenceChip.classList.add("hidden");
+  function buildContiguousRanges(sortedNums) {
+    const ranges = [];
+    if (!sortedNums.length) return ranges;
+    let start = sortedNums[0];
+    let prev = sortedNums[0];
+    for (let i = 1; i < sortedNums.length; i += 1) {
+      const cur = sortedNums[i];
+      if (cur === prev + 1) {
+        prev = cur;
+        continue;
       }
+      ranges.push({ start, end: prev });
+      start = cur;
+      prev = cur;
+    }
+    ranges.push({ start, end: prev });
+    return ranges;
+  }
+
+  function buildSummaryUtteranceTimingMap() {
+    const finals = Array.isArray(state.finals) ? state.finals : [];
+    if (finals.length === 0) {
+      return { byId: {}, maxId: 0, totalSec: 0, baselineTs: 0 };
     }
 
-    // Scale: max of all actual_min and planned_min values for proportional bars.
-    const maxVal = Math.max(
+    const entries = finals
+      .slice(-500)
+      .map((f) => {
+        const text = String(f.en || "").trim();
+        if (!text) return null;
+        const itemTs = toFiniteNumber(f.ts, 0);
+        let startTs = toFiniteNumber(f.start_ts, itemTs);
+        let endTs = toFiniteNumber(f.end_ts, itemTs || startTs);
+        if (startTs <= 0 && itemTs > 0) startTs = itemTs;
+        if (endTs < startTs) endTs = startTs;
+        let durationSec = toFiniteNumber(f.duration_sec, endTs - startTs);
+        if (durationSec < 0) durationSec = 0;
+        return {
+          ts: itemTs,
+          start_ts: startTs,
+          end_ts: endTs,
+          duration_sec: durationSec,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => (a.start_ts - b.start_ts) || (a.ts - b.ts));
+
+    if (entries.length === 0) {
+      return { byId: {}, maxId: 0, totalSec: 0, baselineTs: 0 };
+    }
+
+    const baseline = toFiniteNumber(entries[0].start_ts || entries[0].ts, 0);
+    let totalSec = 0;
+    const byId = {};
+    entries.forEach((row, idx) => {
+      const utteranceNum = idx + 1;
+      const utteranceId = `U${String(utteranceNum).padStart(4, "0")}`;
+      const startSec = Math.max(0, toFiniteNumber(row.start_ts, 0) - baseline);
+      const endFromDuration = startSec + Math.max(0, toFiniteNumber(row.duration_sec, 0));
+      const endFromTs = Math.max(startSec, toFiniteNumber(row.end_ts, row.start_ts) - baseline);
+      const endSec = Math.max(endFromDuration, endFromTs);
+      totalSec = Math.max(totalSec, endSec);
+      byId[utteranceId] = {
+        num: utteranceNum,
+        start_sec: startSec,
+        end_sec: endSec,
+        duration_sec: Math.max(0, endSec - startSec),
+        start_ts: toFiniteNumber(row.start_ts, 0),
+        end_ts: toFiniteNumber(row.end_ts, toFiniteNumber(row.start_ts, 0)),
+      };
+    });
+
+    return { byId, maxId: entries.length, totalSec, baselineTs: baseline };
+  }
+
+  function buildTopicCoverageViewModel() {
+    const breakdown = Array.isArray(state.summary.topic_breakdown) ? state.summary.topic_breakdown : [];
+    const groups = Array.isArray(state.summary.topic_key_points) ? state.summary.topic_key_points : [];
+
+    const breakdownMap = new Map();
+    breakdown.forEach((row) => {
+      const name = String(row?.name || "").trim();
+      const key = normalizeTopicKey(name);
+      if (!key) return;
+      breakdownMap.set(key, row);
+    });
+
+    const topicsMap = new Map();
+
+    groups.forEach((group) => {
+      const name = String(group?.topic_name || "").trim();
+      const key = normalizeTopicKey(name);
+      if (!key) return;
+      const b = breakdownMap.get(key);
+      const idsRaw = Array.isArray(group.utterance_ids) ? group.utterance_ids : [];
+      const nums = [];
+      const uniqueNums = new Set();
+      idsRaw.forEach((id) => {
+        const n = parseUtteranceIdNumber(id);
+        if (n === null || uniqueNums.has(n)) return;
+        uniqueNums.add(n);
+        nums.push(n);
+      });
+      nums.sort((a, b2) => a - b2);
+      const actualFromGroup = toFiniteNumber(group.estimated_duration_minutes, NaN);
+      const actualFromBreakdown = toFiniteNumber(b?.actual_min, 0);
+      const actualMin = Number.isFinite(actualFromGroup) && actualFromGroup >= 0
+        ? actualFromGroup
+        : actualFromBreakdown;
+      const plannedRaw = toOptionalNumber(b?.planned_min);
+      const plannedMin = (plannedRaw !== null && plannedRaw > 0) ? plannedRaw : null;
+      const status = String(
+        b?.status
+        || (actualMin > 0 ? "covered" : "not_started")
+      ).trim().toLowerCase();
+      const keyPoints = Array.isArray(group.key_points) ? group.key_points : [];
+      topicsMap.set(key, {
+        key,
+        name: name || String(b?.name || ""),
+        origin: String(group.origin || "").trim() || "Inferred",
+        utterance_nums: nums,
+        utterance_ids: nums.map((n) => `U${String(n).padStart(4, "0")}`),
+        key_points: keyPoints.map((pt) => String(pt || "").trim()).filter(Boolean),
+        actual_min: Math.max(0, actualMin),
+        planned_min: plannedMin,
+        status,
+        color: topicColorByName(name || String(b?.name || "")),
+      });
+    });
+
+    breakdown.forEach((row) => {
+      const name = String(row?.name || "").trim();
+      const key = normalizeTopicKey(name);
+      if (!key || topicsMap.has(key)) return;
+      const plannedRaw = toOptionalNumber(row?.planned_min);
+      const plannedMin = (plannedRaw !== null && plannedRaw > 0) ? plannedRaw : null;
+      topicsMap.set(key, {
+        key,
+        name,
+        origin: "Agenda",
+        utterance_nums: [],
+        utterance_ids: [],
+        key_points: [],
+        actual_min: Math.max(0, toFiniteNumber(row?.actual_min, 0)),
+        planned_min: plannedMin,
+        status: String(row?.status || "not_started").trim().toLowerCase(),
+        color: topicColorByName(name),
+      });
+    });
+
+    const topics = Array.from(topicsMap.values());
+    const timingMap = buildSummaryUtteranceTimingMap();
+    const maxIdFromTopics = topics.reduce((maxSoFar, t) => {
+      if (!t.utterance_nums.length) return maxSoFar;
+      return Math.max(maxSoFar, t.utterance_nums[t.utterance_nums.length - 1]);
+    }, 0);
+    const useRealTiming = (
+      toFiniteNumber(timingMap.maxId, 0) > 0
+      && maxIdFromTopics > 0
+      && Math.abs(toFiniteNumber(timingMap.maxId, 0) - maxIdFromTopics) <= 2
+    );
+    const totalActualMin = topics.reduce((sum, t) => sum + Math.max(0, toFiniteNumber(t.actual_min, 0)), 0);
+    const fallbackTotalSec = Math.max(
+      60,
+      useRealTiming ? toFiniteNumber(timingMap.totalSec, 0) : 0,
+      totalActualMin * 60
+    );
+    const fallbackDenom = Math.max(
       1,
-      ...breakdown.map((t) => Math.max(t.actual_min || 0, t.planned_min || 0))
+      useRealTiming ? toFiniteNumber(timingMap.maxId, 0) : 0,
+      maxIdFromTopics
     );
 
-    summaryTopicTimeline.innerHTML = "";
-    breakdown.forEach((t) => {
-      const actualMin = t.actual_min || 0;
-      const plannedMin = t.planned_min || null;
-      const overUnder = t.over_under_min;
-      const status = t.status || "not_started";
+    topics.forEach((topic) => {
+      const ranges = buildContiguousRanges(topic.utterance_nums);
+      const segments = ranges.map((range) => {
+        const startId = `U${String(range.start).padStart(4, "0")}`;
+        const endId = `U${String(range.end).padStart(4, "0")}`;
+        const startTiming = timingMap.byId[startId];
+        const endTiming = timingMap.byId[endId];
+        let startSec = null;
+        let endSec = null;
+        let startTs = null;
+        let endTs = null;
+        if (useRealTiming && startTiming && endTiming) {
+          startSec = toFiniteNumber(startTiming.start_sec, 0);
+          endSec = Math.max(startSec + 0.6, toFiniteNumber(endTiming.end_sec, startSec));
+          const startTsRaw = toFiniteNumber(startTiming.start_ts, 0);
+          const endTsRaw = toFiniteNumber(endTiming.end_ts, startTsRaw);
+          if (startTsRaw > 0) {
+            startTs = startTsRaw;
+            endTs = Math.max(startTsRaw + (endSec - startSec), endTsRaw);
+          }
+        } else {
+          startSec = ((range.start - 1) / fallbackDenom) * fallbackTotalSec;
+          endSec = Math.max(startSec + 0.6, (range.end / fallbackDenom) * fallbackTotalSec);
+        }
+        return {
+          start_sec: startSec,
+          end_sec: endSec,
+          start_ts: startTs,
+          end_ts: endTs,
+        };
+      });
+      const firstSeg = segments[0] || null;
+      const lastSeg = segments[segments.length - 1] || null;
+      topic.segments = segments;
+      topic.first_sec = firstSeg ? firstSeg.start_sec : null;
+      topic.last_sec = lastSeg ? lastSeg.end_sec : null;
+      topic.first_ts = firstSeg ? firstSeg.start_ts : null;
+      topic.last_ts = lastSeg ? lastSeg.end_ts : null;
+    });
 
-      // Determine bar colour class.
+    // Improve visual differentiation: assign distinct colors by journey order.
+    const colorOrder = topics
+      .slice()
+      .sort((a, b) => {
+        const aStart = a.first_sec === null ? Number.POSITIVE_INFINITY : a.first_sec;
+        const bStart = b.first_sec === null ? Number.POSITIVE_INFINITY : b.first_sec;
+        if (aStart !== bStart) return aStart - bStart;
+        return String(a.name || "").localeCompare(String(b.name || ""));
+      });
+    colorOrder.forEach((topic, idx) => {
+      if (idx < TOPIC_COLORS.length) {
+        topic.color = TOPIC_COLORS[idx];
+      } else {
+        const hue = (idx * 43) % 360;
+        topic.color = `hsl(${hue} 72% 64%)`;
+      }
+    });
+
+    const timelineTotalSec = Math.max(
+      fallbackTotalSec,
+      ...topics.flatMap((t) => t.segments.map((seg) => seg.end_sec))
+    );
+    const timelineStartTs = useRealTiming ? toFiniteNumber(timingMap.baselineTs, 0) : 0;
+    const coveredTopics = topics.filter((t) => t.actual_min > 0);
+    const plannedTopics = topics.filter((t) => t.planned_min !== null);
+    const plannedCovered = plannedTopics.filter((t) => t.actual_min > 0);
+    const dominantTopic = coveredTopics
+      .slice()
+      .sort((a, b) => b.actual_min - a.actual_min)[0] || null;
+    const journeyTopics = coveredTopics
+      .filter((t) => t.segments.length > 0)
+      .slice()
+      .sort((a, b) => {
+        const aStart = a.first_sec === null ? Number.POSITIVE_INFINITY : a.first_sec;
+        const bStart = b.first_sec === null ? Number.POSITIVE_INFINITY : b.first_sec;
+        if (aStart !== bStart) return aStart - bStart;
+        return b.actual_min - a.actual_min;
+      });
+
+    return {
+      breakdown,
+      topics,
+      coveredTopics,
+      journeyTopics,
+      totalActualMin,
+      plannedCount: plannedTopics.length,
+      plannedCoveredCount: plannedCovered.length,
+      inferredCount: topics.filter((t) => t.planned_min === null).length,
+      totalCount: topics.length,
+      dominantTopic,
+      timelineTotalSec,
+      timelineStartTs,
+      hasRealTiming: useRealTiming,
+    };
+  }
+
+  function renderTopicCoverageKpis(vm) {
+    if (!summaryTopicKpis) return;
+    summaryTopicKpis.innerHTML = "";
+
+    const hasPlanned = vm.plannedCount > 0;
+    const coverageCard = hasPlanned
+      ? { label: "Planned Topics Covered", value: `${vm.plannedCoveredCount}/${vm.plannedCount}` }
+      : { label: "Inferred Topics", value: `${vm.coveredTopics.length} active` };
+    const planningCard = hasPlanned
+      ? { label: "Total Topics Seen", value: String(vm.totalCount) }
+      : { label: "Agenda Topics", value: "None" };
+
+    const cards = [
+      coverageCard,
+      planningCard,
+      { label: "Total Topic Time", value: formatMinutesShort(vm.totalActualMin) },
+      { label: "Meeting Span", value: formatMinutesShort(vm.timelineTotalSec / 60) },
+      {
+        label: "Dominant Topic",
+        value: vm.dominantTopic ? clipText(vm.dominantTopic.name, 26) : "--",
+      },
+    ];
+
+    cards.forEach((card) => {
+      const wrap = document.createElement("div");
+      wrap.className = "summary-topic-kpi";
+      const label = document.createElement("div");
+      label.className = "summary-topic-kpi-label";
+      label.textContent = card.label;
+      const value = document.createElement("div");
+      value.className = "summary-topic-kpi-value";
+      value.textContent = card.value;
+      value.title = card.value;
+      wrap.appendChild(label);
+      wrap.appendChild(value);
+      summaryTopicKpis.appendChild(wrap);
+    });
+  }
+
+  function renderTopicJourney(vm) {
+    if (!summaryTopicJourneyWrap || !summaryTopicJourney || !summaryTopicJourneyAxis) return;
+    summaryTopicJourney.innerHTML = "";
+    summaryTopicJourneyAxis.innerHTML = "";
+
+    if (vm.journeyTopics.length === 0) {
+      summaryTopicJourneyWrap.classList.add("hidden");
+      if (summaryTopicJourneyMeta) summaryTopicJourneyMeta.classList.add("hidden");
+      return;
+    }
+    summaryTopicJourneyWrap.classList.remove("hidden");
+
+    if (summaryTopicJourneyMeta) {
+      summaryTopicJourneyMeta.textContent = vm.hasRealTiming
+        ? "Timing from transcript timestamps"
+        : "Timing inferred from utterance order";
+      summaryTopicJourneyMeta.classList.remove("hidden");
+    }
+
+    const axisRow = document.createElement("div");
+    axisRow.className = "summary-topic-axis-row";
+    const axisLabelSpacer = document.createElement("div");
+    axisLabelSpacer.className = "summary-topic-axis-spacer";
+    const axisTrack = document.createElement("div");
+    axisTrack.className = "summary-topic-axis-track";
+    const axisMetaSpacer = document.createElement("div");
+    axisMetaSpacer.className = "summary-topic-axis-spacer";
+
+    for (let i = 0; i <= 4; i += 1) {
+      const tick = document.createElement("span");
+      tick.className = "summary-topic-axis-tick";
+      if (i === 0) tick.classList.add("start");
+      if (i === 4) tick.classList.add("end");
+      const sec = (vm.timelineTotalSec * i) / 4;
+      const tickTs = vm.hasRealTiming ? (toFiniteNumber(vm.timelineStartTs, 0) + sec) : null;
+      tick.textContent = formatTimelinePoint(vm, sec, tickTs);
+      tick.style.left = `${(i / 4) * 100}%`;
+      axisTrack.appendChild(tick);
+    }
+
+    axisRow.appendChild(axisLabelSpacer);
+    axisRow.appendChild(axisTrack);
+    axisRow.appendChild(axisMetaSpacer);
+    summaryTopicJourneyAxis.appendChild(axisRow);
+
+    vm.journeyTopics.forEach((topic) => {
+      const row = document.createElement("div");
+      row.className = "summary-topic-journey-row";
+
+      const label = document.createElement("div");
+      label.className = "summary-topic-journey-label";
+      label.textContent = topic.name;
+      label.title = topic.name;
+
+      const track = document.createElement("div");
+      track.className = "summary-topic-journey-track";
+
+      topic.segments.forEach((seg) => {
+        const segment = document.createElement("div");
+        segment.className = "summary-topic-journey-segment";
+        const left = Math.max(0, Math.min(100, (seg.start_sec / vm.timelineTotalSec) * 100));
+        const width = Math.max(1, Math.min(100 - left, ((seg.end_sec - seg.start_sec) / vm.timelineTotalSec) * 100));
+        segment.style.left = `${left.toFixed(2)}%`;
+        segment.style.width = `${width.toFixed(2)}%`;
+        segment.style.background = topic.color;
+        segment.title = `${topic.name} (${formatTimelinePoint(vm, seg.start_sec, seg.start_ts)} - ${formatTimelinePoint(vm, seg.end_sec, seg.end_ts)})`;
+        track.appendChild(segment);
+      });
+
+      const meta = document.createElement("div");
+      meta.className = "summary-topic-journey-meta";
+      if (topic.first_sec !== null && topic.last_sec !== null) {
+        meta.textContent = `${formatMinutesShort(topic.actual_min)} • ${formatTimelinePoint(vm, topic.first_sec, topic.first_ts)}-${formatTimelinePoint(vm, topic.last_sec, topic.last_ts)}`;
+      } else {
+        meta.textContent = formatMinutesShort(topic.actual_min);
+      }
+
+      row.appendChild(label);
+      row.appendChild(track);
+      row.appendChild(meta);
+      summaryTopicJourney.appendChild(row);
+    });
+  }
+
+  function renderTopicDonut(vm) {
+    if (!summaryTopicDonutWrap || !summaryTopicDonut || !summaryTopicDonutCenter || !summaryTopicDonutLegend) return;
+    summaryTopicDonutLegend.innerHTML = "";
+    summaryTopicDonutCenter.innerHTML = "";
+
+    const slices = vm.coveredTopics
+      .slice()
+      .sort((a, b) => b.actual_min - a.actual_min);
+    const total = vm.totalActualMin;
+    if (!slices.length || total <= 0) {
+      summaryTopicDonutWrap.classList.add("hidden");
+      summaryTopicDonut.style.background = "none";
+      return;
+    }
+    summaryTopicDonutWrap.classList.remove("hidden");
+
+    const maxSlices = 6;
+    const shown = slices.slice(0, maxSlices);
+    const rest = slices.slice(maxSlices);
+    if (rest.length) {
+      const restTotal = rest.reduce((sum, t) => sum + t.actual_min, 0);
+      shown.push({
+        name: "Other Topics",
+        actual_min: restTotal,
+        color: "#7B849A",
+      });
+    }
+
+    let cursor = 0;
+    const stops = shown.map((slice) => {
+      const pct = (slice.actual_min / total) * 100;
+      const start = cursor;
+      cursor += pct;
+      return `${slice.color} ${start.toFixed(2)}% ${cursor.toFixed(2)}%`;
+    });
+    summaryTopicDonut.style.background = `conic-gradient(${stops.join(", ")})`;
+
+    const totalEl = document.createElement("div");
+    totalEl.className = "summary-topic-donut-total";
+    totalEl.textContent = formatMinutesShort(total);
+    const captionEl = document.createElement("div");
+    captionEl.className = "summary-topic-donut-caption";
+    captionEl.textContent = `${vm.coveredTopics.length} active topics`;
+    summaryTopicDonutCenter.appendChild(totalEl);
+    summaryTopicDonutCenter.appendChild(captionEl);
+
+    shown.forEach((slice) => {
+      const row = document.createElement("div");
+      row.className = "summary-topic-donut-item";
+      const dot = document.createElement("span");
+      dot.className = "summary-topic-donut-dot";
+      dot.style.background = slice.color;
+      const label = document.createElement("span");
+      label.className = "summary-topic-donut-label";
+      label.textContent = slice.name;
+      label.title = slice.name;
+      const value = document.createElement("span");
+      value.className = "summary-topic-donut-value";
+      value.textContent = `${((slice.actual_min / total) * 100).toFixed(1)}% • ${formatMinutesShort(slice.actual_min)}`;
+      row.appendChild(dot);
+      row.appendChild(label);
+      row.appendChild(value);
+      summaryTopicDonutLegend.appendChild(row);
+    });
+  }
+
+  function renderTopicBriefs(vm, options = {}) {
+    if (!summaryTopicGroupsWrap || !summaryTopicGroups) return;
+    summaryTopicGroups.innerHTML = "";
+    const hasPlannedAgenda = !!options.hasPlannedAgenda;
+
+    const cards = vm.coveredTopics
+      .slice()
+      .sort((a, b) => {
+        const aStart = a.first_sec === null ? Number.POSITIVE_INFINITY : a.first_sec;
+        const bStart = b.first_sec === null ? Number.POSITIVE_INFINITY : b.first_sec;
+        if (aStart !== bStart) return aStart - bStart;
+        return b.actual_min - a.actual_min;
+      });
+
+    if (cards.length === 0) {
+      summaryTopicGroupsWrap.classList.add("hidden");
+      return;
+    }
+    summaryTopicGroupsWrap.classList.remove("hidden");
+
+    cards.forEach((topic) => {
+      const card = document.createElement("article");
+      card.className = "summary-topic-group-card";
+      card.style.borderLeft = `3px solid ${topic.color}`;
+
+      const head = document.createElement("div");
+      head.className = "summary-topic-group-head";
+      const name = document.createElement("div");
+      name.className = "summary-topic-group-name";
+      name.textContent = topic.name;
+      name.title = topic.name;
+
+      const share = vm.totalActualMin > 0 ? (topic.actual_min / vm.totalActualMin) * 100 : 0;
+      const meta = document.createElement("div");
+      meta.className = "summary-topic-group-meta";
+      meta.textContent = `${formatMinutesShort(topic.actual_min)} • ${share.toFixed(1)}%`;
+      head.appendChild(name);
+      head.appendChild(meta);
+      card.appendChild(head);
+
+      const windowLine = document.createElement("div");
+      windowLine.className = "summary-topic-group-meta";
+      const originLabel = hasPlannedAgenda ? topic.origin : "Inferred";
+      if (topic.first_sec !== null && topic.last_sec !== null) {
+        windowLine.textContent = `Window ${formatTimelinePoint(vm, topic.first_sec, topic.first_ts)} - ${formatTimelinePoint(vm, topic.last_sec, topic.last_ts)} • ${originLabel}`;
+      } else {
+        windowLine.textContent = `${originLabel} • No utterance map`;
+      }
+      card.appendChild(windowLine);
+
+      if (topic.key_points.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "summary-topic-group-empty";
+        empty.textContent = "No specific key points were grouped under this topic.";
+        card.appendChild(empty);
+      } else {
+        const list = document.createElement("ul");
+        list.className = "summary-topic-group-points";
+        topic.key_points.slice(0, 4).forEach((point) => {
+          const li = document.createElement("li");
+          li.textContent = point;
+          list.appendChild(li);
+        });
+        card.appendChild(list);
+      }
+      summaryTopicGroups.appendChild(card);
+    });
+  }
+
+  function renderAgendaVsActualBars(breakdown) {
+    if (!summaryTopicTimeline) return;
+    summaryTopicTimeline.innerHTML = "";
+    if (breakdown.length === 0) return;
+
+    const maxVal = Math.max(
+      1,
+      ...breakdown.map((t) => {
+        const planned = toOptionalNumber(t.planned_min);
+        return Math.max(
+          toFiniteNumber(t.actual_min, 0),
+          planned !== null && planned > 0 ? planned : 0
+        );
+      })
+    );
+
+    breakdown.forEach((t) => {
+      const actualMin = Math.max(0, toFiniteNumber(t.actual_min, 0));
+      const plannedRaw = toOptionalNumber(t.planned_min);
+      const plannedMin = (plannedRaw !== null && plannedRaw > 0) ? plannedRaw : null;
+      const overUnderRaw = toOptionalNumber(t.over_under_min);
+      const overUnder = overUnderRaw !== null ? overUnderRaw : null;
+      const status = String(t.status || "not_started");
+
       let barClass = "status-" + status;
       if (status === "covered" && overUnder !== null && overUnder > 0) {
         barClass = "status-over";
@@ -2171,13 +2267,11 @@
       const row = document.createElement("div");
       row.className = "topic-row";
 
-      // Label
       const label = document.createElement("div");
       label.className = "topic-row-label";
-      label.textContent = t.name || "";
-      label.title = t.name || "";
+      label.textContent = String(t.name || "");
+      label.title = String(t.name || "");
 
-      // Bar wrap + bar + optional planned marker
       const barWrap = document.createElement("div");
       barWrap.className = "topic-row-bar-wrap";
 
@@ -2190,29 +2284,27 @@
         const marker = document.createElement("div");
         marker.className = "topic-planned-marker";
         marker.style.left = `${Math.max(0, Math.min(100, (plannedMin / maxVal) * 100)).toFixed(1)}%`;
-        marker.title = `Planned: ${plannedMin} min`;
+        marker.title = `Planned: ${formatMinutesShort(plannedMin)}`;
         barWrap.appendChild(marker);
       }
 
-      // Stats text
       const stats = document.createElement("div");
       stats.className = "topic-row-stats";
       if (plannedMin !== null) {
-        const sign = overUnder > 0 ? "+" : "";
         const overEl = document.createElement("span");
-        overEl.textContent = `${actualMin} / ${plannedMin} min`;
+        overEl.textContent = `${formatMinutesShort(actualMin)} / ${formatMinutesShort(plannedMin)}`;
         if (overUnder !== null && overUnder !== 0) {
           overEl.className = overUnder > 0 ? "stat-over" : "";
           stats.appendChild(overEl);
           const extra = document.createElement("span");
           extra.className = overUnder > 0 ? "stat-over" : "";
-          extra.textContent = ` (${sign}${overUnder})`;
+          extra.textContent = ` (${formatMinutesDelta(overUnder)})`;
           stats.appendChild(extra);
         } else {
           stats.appendChild(overEl);
         }
       } else {
-        stats.textContent = `${actualMin} min`;
+        stats.textContent = formatMinutesShort(actualMin);
       }
 
       row.appendChild(label);
@@ -2222,8 +2314,127 @@
     });
   }
 
+  function renderTopicCoverage() {
+    if (!summaryTopicSection || !summaryTopicTimeline || !summaryTopicPlaceholder) return;
+    const hasBreakdown = Array.isArray(state.summary.topic_breakdown) && state.summary.topic_breakdown.length > 0;
+    const hasTopicGroups = Array.isArray(state.summary.topic_key_points) && state.summary.topic_key_points.length > 0;
+    const adherence = state.summary.agenda_adherence_pct;
+
+    if (!hasBreakdown && !hasTopicGroups) {
+      summaryTopicTimeline.innerHTML = "";
+      if (summaryTopicKpis) summaryTopicKpis.innerHTML = "";
+      if (summaryTopicJourney) summaryTopicJourney.innerHTML = "";
+      if (summaryTopicJourneyAxis) summaryTopicJourneyAxis.innerHTML = "";
+      if (summaryTopicDonut) summaryTopicDonut.style.background = "none";
+      if (summaryTopicDonutCenter) summaryTopicDonutCenter.innerHTML = "";
+      if (summaryTopicDonutLegend) summaryTopicDonutLegend.innerHTML = "";
+      if (summaryTopicGroups) summaryTopicGroups.innerHTML = "";
+      if (summaryTopicJourneyWrap) summaryTopicJourneyWrap.classList.add("hidden");
+      if (summaryTopicDonutWrap) summaryTopicDonutWrap.classList.add("hidden");
+      if (summaryTopicGroupsWrap) summaryTopicGroupsWrap.classList.add("hidden");
+      if (summaryAgendaActualHead) summaryAgendaActualHead.classList.remove("hidden");
+      if (summaryAgendaActualWrap) summaryAgendaActualWrap.classList.remove("hidden");
+      summaryTopicPlaceholder.textContent = "No topic definitions are defined for this summary.";
+      summaryTopicPlaceholder.classList.remove("hidden");
+      if (summaryAdherenceChip) summaryAdherenceChip.classList.add("hidden");
+      return;
+    }
+
+    if (summaryAdherenceChip) {
+      if (adherence !== null && adherence !== undefined) {
+        summaryAdherenceChip.textContent = `Adherence ${adherence.toFixed(1)}%`;
+        summaryAdherenceChip.classList.remove("hidden");
+      } else {
+        summaryAdherenceChip.classList.add("hidden");
+      }
+    }
+
+    const vm = buildTopicCoverageViewModel();
+    renderTopicCoverageKpis(vm);
+    renderTopicJourney(vm);
+    renderTopicDonut(vm);
+    
+    const hasPlannedAgenda = vm.breakdown.some((row) => {
+      const planned = toOptionalNumber(row?.planned_min);
+      return planned !== null && planned > 0;
+    });
+    renderTopicBriefs(vm, { hasPlannedAgenda });
+
+    if (!hasPlannedAgenda) {
+      if (summaryAgendaActualHead) summaryAgendaActualHead.classList.add("hidden");
+      if (summaryAgendaActualWrap) summaryAgendaActualWrap.classList.add("hidden");
+      summaryTopicTimeline.innerHTML = "";
+      summaryTopicPlaceholder.textContent = "No agenda topics are defined for this summary. Inferred topic coverage is shown above.";
+      summaryTopicPlaceholder.classList.add("hidden");
+    } else {
+      if (summaryAgendaActualHead) summaryAgendaActualHead.classList.remove("hidden");
+      if (summaryAgendaActualWrap) summaryAgendaActualWrap.classList.remove("hidden");
+      renderAgendaVsActualBars(vm.breakdown);
+      summaryTopicPlaceholder.textContent = "No topic definitions are defined for this summary.";
+      summaryTopicPlaceholder.classList.add("hidden");
+    }
+  }
+
+  function buildSummaryTopicCoverageExport() {
+    const vm = buildTopicCoverageViewModel();
+    const modeRaw = String(state.currentConfig?.summary_topic_duration_mode || "coverage_with_gaps").trim();
+    const durationMode = ["coverage_with_gaps", "speech_only"].includes(modeRaw)
+      ? modeRaw
+      : "coverage_with_gaps";
+    const gapThresholdSec = clampNumber(
+      state.currentConfig?.summary_topic_gap_threshold_sec,
+      0,
+      300,
+      30
+    );
+    const journey = vm.journeyTopics.map((topic) => {
+      const sharePct = vm.totalActualMin > 0 ? (topic.actual_min / vm.totalActualMin) * 100 : 0;
+      return {
+        name: topic.name,
+        origin: topic.origin,
+        status: topic.status,
+        color: topic.color,
+        actual_min: toFiniteNumber(topic.actual_min, 0),
+        actual_text: formatMinutesShort(topic.actual_min),
+        share_pct: Number(sharePct.toFixed(1)),
+        utterance_ids: Array.isArray(topic.utterance_ids) ? topic.utterance_ids : [],
+        key_points: Array.isArray(topic.key_points) ? topic.key_points : [],
+        first_sec: topic.first_sec,
+        last_sec: topic.last_sec,
+        first_clock: topic.first_sec !== null ? formatTimelinePoint(vm, topic.first_sec, topic.first_ts) : null,
+        last_clock: topic.last_sec !== null ? formatTimelinePoint(vm, topic.last_sec, topic.last_ts) : null,
+        segments: Array.isArray(topic.segments)
+          ? topic.segments.map((seg) => ({
+            start_sec: seg.start_sec,
+            end_sec: seg.end_sec,
+            start_clock: formatTimelinePoint(vm, seg.start_sec, seg.start_ts),
+            end_clock: formatTimelinePoint(vm, seg.end_sec, seg.end_ts),
+          }))
+          : [],
+      };
+    });
+    return {
+      duration_mode: durationMode,
+      gap_threshold_sec: gapThresholdSec,
+      has_real_timing: !!vm.hasRealTiming,
+      timeline_start_ts: vm.hasRealTiming ? toFiniteNumber(vm.timelineStartTs, 0) : null,
+      timeline_start_clock: vm.hasRealTiming ? formatClockTime(vm.timelineStartTs) : null,
+      meeting_span_sec: toFiniteNumber(vm.timelineTotalSec, 0),
+      meeting_span_text: formatMinutesShort(vm.timelineTotalSec / 60),
+      total_topic_time_min: toFiniteNumber(vm.totalActualMin, 0),
+      total_topic_time_text: formatMinutesShort(vm.totalActualMin),
+      dominant_topic: vm.dominantTopic ? vm.dominantTopic.name : null,
+      total_topics_seen: vm.totalCount,
+      active_topics: vm.coveredTopics.length,
+      planned_topics_count: vm.plannedCount,
+      planned_topics_covered: vm.plannedCoveredCount,
+      journey,
+    };
+  }
+
   function exportSummaryJson() {
     const s = state.summary;
+    const topicCoverage = buildSummaryTopicCoverageExport();
     const blob = new Blob([JSON.stringify({
       metadata: s.metadata,
       executive_summary: s.executive_summary,
@@ -2238,6 +2449,7 @@
       agenda_adherence_pct: s.agenda_adherence_pct,
       meeting_insights: s.meeting_insights,
       keyword_index: s.keyword_index,
+      topic_coverage: topicCoverage,
       generated_ts: s.generated_ts,
     }, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -2250,6 +2462,7 @@
 
   function exportSummaryTxt() {
     const s = state.summary;
+    const topicCoverage = buildSummaryTopicCoverageExport();
     const lines = [];
     if (s.metadata && (s.metadata.meeting_type || s.metadata.sentiment_arc)) {
       lines.push("SESSION METADATA", "=".repeat(40));
@@ -2300,17 +2513,50 @@
       });
       lines.push("");
     }
-    if (s.topic_breakdown && s.topic_breakdown.length) {
+    if ((s.topic_breakdown && s.topic_breakdown.length) || topicCoverage.journey.length) {
       lines.push("TOPIC COVERAGE", "=".repeat(40));
       if (s.agenda_adherence_pct !== null && s.agenda_adherence_pct !== undefined) {
         lines.push(`Agenda Adherence: ${s.agenda_adherence_pct.toFixed(1)}%`);
       }
-      s.topic_breakdown.forEach((t) => {
-        const planned = t.planned_min !== null ? ` / ${t.planned_min} min planned` : "";
+      lines.push(`Duration mode: ${topicCoverage.duration_mode}`);
+      lines.push(`Gap threshold: ${topicCoverage.gap_threshold_sec}s`);
+      lines.push(`Total topic time: ${topicCoverage.total_topic_time_text}`);
+      lines.push(`Meeting span: ${topicCoverage.meeting_span_text}`);
+      if (topicCoverage.dominant_topic) {
+        lines.push(`Dominant topic: ${topicCoverage.dominant_topic}`);
+      }
+      (Array.isArray(s.topic_breakdown) ? s.topic_breakdown : []).forEach((t) => {
+        const actualText = formatMinutesShort(toFiniteNumber(t.actual_min, 0));
+        const planned = t.planned_min !== null ? ` / ${formatMinutesShort(toFiniteNumber(t.planned_min, 0))} planned` : "";
         const delta = (t.over_under_min !== null && t.over_under_min !== 0)
-          ? ` (${t.over_under_min > 0 ? "+" : ""}${t.over_under_min})`
+          ? ` (${formatMinutesDelta(toFiniteNumber(t.over_under_min, 0))})`
           : "";
-        lines.push(`- ${t.name}: ${t.status}, ${t.actual_min} min actual${planned}${delta}`);
+        lines.push(`- ${t.name}: ${t.status}, ${actualText} actual${planned}${delta}`);
+      });
+      if (topicCoverage.journey.length) {
+        lines.push("");
+        lines.push("Topic journey:");
+        topicCoverage.journey.forEach((row) => {
+          const windowText = row.first_clock && row.last_clock
+            ? `${row.first_clock} - ${row.last_clock}`
+            : "--";
+          lines.push(
+            `- ${row.name}: ${row.actual_text}, ${row.share_pct.toFixed(1)}%, window ${windowText}, segments ${row.segments.length}`
+          );
+        });
+      }
+      lines.push("");
+    }
+    if (topicCoverage.journey.length) {
+      lines.push("TOPIC BRIEFS", "=".repeat(40));
+      topicCoverage.journey.forEach((row) => {
+        lines.push(`- ${row.name} (${row.actual_text})`);
+        const points = Array.isArray(row.key_points) ? row.key_points : [];
+        if (!points.length) {
+          lines.push("  • No grouped key points");
+        } else {
+          points.slice(0, 6).forEach((pt) => lines.push(`  • ${pt}`));
+        }
       });
       lines.push("");
     }
@@ -2378,6 +2624,17 @@
     cfgDebug.checked = !!config.debug;
     if (cfgTranslationEnabled) cfgTranslationEnabled.checked = !!(config.translation_enabled ?? true);
     if (cfgSummaryEnabled) cfgSummaryEnabled.checked = !!(config.summary_enabled ?? true);
+    if (cfgSummaryTopicDurationMode) {
+      const mode = String(config.summary_topic_duration_mode || "coverage_with_gaps").trim();
+      cfgSummaryTopicDurationMode.value = ["coverage_with_gaps", "speech_only"].includes(mode)
+        ? mode
+        : "coverage_with_gaps";
+    }
+    if (cfgSummaryTopicGapThresholdSec) {
+      cfgSummaryTopicGapThresholdSec.value = String(
+        clampNumber(config.summary_topic_gap_threshold_sec, 0, 300, 30)
+      );
+    }
     cfgCoachEnabled.checked = !!config.coach_enabled;
     const trigger = String(config.coach_trigger_speaker || "remote");
     cfgCoachTriggerSpeaker.value = trigger === "default" ? "remote" : trigger;
@@ -2664,12 +2921,7 @@
         }
       }
       if (parsed.pageSubtabs && typeof parsed.pageSubtabs === "object") {
-        const topicsSubtab = String(parsed.pageSubtabs.topics || "").trim().toLowerCase();
-        if (["board", "definitions", "runs", "settings"].includes(topicsSubtab)) {
-          state.ui.pageSubtabs.topics = topicsSubtab;
-        } else if (topicsSubtab === "activity") {
-          state.ui.pageSubtabs.topics = "runs";
-        }
+        state.ui.pageSubtabs.topics = "definitions";
       }
       if (parsed.transcriptView && typeof parsed.transcriptView === "object") {
         const preset = String(parsed.transcriptView.preset || "").trim();
@@ -2768,13 +3020,12 @@
   }
 
   function closeExportMenus() {
-    const menus = [transcriptExportMenu, topicsExportMenu, summaryExportMenu];
+    const menus = [transcriptExportMenu, summaryExportMenu];
     menus.forEach((menu) => {
       if (!menu) return;
       menu.classList.add("hidden");
     });
     if (transcriptExportMenuBtn) transcriptExportMenuBtn.setAttribute("aria-expanded", "false");
-    if (topicsExportMenuBtn) topicsExportMenuBtn.setAttribute("aria-expanded", "false");
     if (summaryExportMenuBtn) summaryExportMenuBtn.setAttribute("aria-expanded", "false");
   }
 
@@ -2894,16 +3145,25 @@
     if (!settingsSummary) return;
     const rows = [];
     rows.push(state.configDirty ? "Pending changes are not yet applied." : "All settings are synced.");
-    rows.push(`Capture mode: ${cfgCaptureMode?.value || "single"}`);
-    rows.push(`Coach: ${cfgCoachEnabled?.checked ? "enabled" : "disabled"}`);
-    rows.push(`Translation: ${cfgTranslationEnabled?.checked !== false ? "enabled" : "off"}`);
-    rows.push(`Summary: ${cfgSummaryEnabled?.checked !== false ? "enabled" : "off"}`);
+    const captureMode = cfgCaptureMode?.value === "dual" ? "Dual Input" : "Single Input";
+    rows.push(`Microphone layout: ${captureMode}`);
+    rows.push(`Live coach: ${cfgCoachEnabled?.checked ? "enabled" : "disabled"}`);
+    rows.push(`Arabic translation: ${cfgTranslationEnabled?.checked !== false ? "enabled" : "off"}`);
+    rows.push(`Auto summary: ${cfgSummaryEnabled?.checked !== false ? "enabled" : "off"}`);
+    if (cfgSummaryTopicDurationMode) {
+      const mode = String(cfgSummaryTopicDurationMode.value || "coverage_with_gaps");
+      const modeLabel = mode === "speech_only" ? "Speech Only" : "Coverage with Gaps";
+      rows.push(`Topic timing method: ${modeLabel}`);
+    }
+    if (cfgSummaryTopicGapThresholdSec) {
+      rows.push(`Gap merge threshold: ${clampNumber(cfgSummaryTopicGapThresholdSec.value, 0, 300, 30)} sec`);
+    }
     if (cfgAutoStopSilenceSec) {
       const mins = clampDecimal(cfgAutoStopSilenceSec.value, 0, 5, 1.25, 2);
-      rows.push(mins > 0 ? `Auto-stop: ${mins} minute silence` : "Auto-stop: off");
+      rows.push(mins > 0 ? `Auto-stop after silence: ${mins} min` : "Auto-stop after silence: off");
     }
     if (cfgPartialTranslateMinIntervalSec) {
-      rows.push(`Partial translate interval: ${cfgPartialTranslateMinIntervalSec.value}s`);
+      rows.push(`Translation update interval: ${cfgPartialTranslateMinIntervalSec.value} sec`);
     }
     settingsSummary.innerHTML = "";
     rows.forEach((line) => {
@@ -3187,19 +3447,7 @@
     const topics = msg.topics || {};
     state.topics = {
       ...state.topics,
-      configured: !!topics.configured,
-      settings_saved: !!topics.settings_saved,
-      enabled: !!topics.enabled,
-      allow_new_topics: !!topics.allow_new_topics,
-      interval_sec: clampNumber(topics.interval_sec, 30, 300, 60),
-      pending: !!topics.pending,
-      last_run_ts: Number(topics.last_run_ts || 0),
-      last_final_index: Number(topics.last_final_index || 0),
-      last_error: String(topics.last_error || ""),
-      agenda: Array.isArray(topics.agenda) ? topics.agenda : [],
       definitions: Array.isArray(topics.definitions) ? topics.definitions : (Array.isArray(state.topics.definitions) ? state.topics.definitions : []),
-      items: Array.isArray(topics.items) ? topics.items : [],
-      runs: Array.isArray(topics.runs) ? topics.runs : [],
     };
 
     state.sessionStartedTs = msg.session_started_ts || null;
@@ -3295,6 +3543,14 @@
       max_finals: Number(cfgMaxFinals.value),
       translation_enabled: cfgTranslationEnabled ? cfgTranslationEnabled.checked : !!(existing.translation_enabled ?? true),
       summary_enabled: cfgSummaryEnabled ? cfgSummaryEnabled.checked : !!(existing.summary_enabled ?? true),
+      summary_topic_duration_mode: cfgSummaryTopicDurationMode
+        ? (["coverage_with_gaps", "speech_only"].includes(String(cfgSummaryTopicDurationMode.value || ""))
+          ? cfgSummaryTopicDurationMode.value
+          : "coverage_with_gaps")
+        : String(existing.summary_topic_duration_mode || "coverage_with_gaps"),
+      summary_topic_gap_threshold_sec: cfgSummaryTopicGapThresholdSec
+        ? clampNumber(cfgSummaryTopicGapThresholdSec.value, 0, 300, 30)
+        : Number(existing.summary_topic_gap_threshold_sec || 30),
       debug: cfgDebug.checked,
     };
     const out = await request("/api/config", "PUT", payload);
@@ -3500,71 +3756,6 @@
     );
   }
 
-  function exportTopicsJson() {
-    const t = state.topics || {};
-    const data = {
-      exported_at: new Date().toISOString(),
-      configured: !!t.configured,
-      settings_saved: !!t.settings_saved,
-      enabled: !!t.enabled,
-      allow_new_topics: !!t.allow_new_topics,
-      interval_sec: Number(t.interval_sec || 60),
-      last_final_index: Number(t.last_final_index || 0),
-      agenda: Array.isArray(t.agenda) ? t.agenda : [],
-      definitions: Array.isArray(t.definitions) ? t.definitions : [],
-      items: Array.isArray(t.items) ? t.items : [],
-      runs: Array.isArray(t.runs) ? t.runs : [],
-    };
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    downloadFile(
-      `topics-${stamp}.json`,
-      `${JSON.stringify(data, null, 2)}\n`,
-      "application/json;charset=utf-8"
-    );
-  }
-
-  function exportTopicsCsv() {
-    const t = state.topics || {};
-    const lines = ["topic,status,time_seconds,time_human,statement_time,statement_speaker,statement_text"];
-    const items = Array.isArray(t.items) ? t.items : [];
-    items.forEach((item) => {
-      const statements = Array.isArray(item.key_statements) ? item.key_statements : [];
-      if (!statements.length) {
-        lines.push(
-          [
-            escapeCsv(item.name || ""),
-            escapeCsv(item.status || ""),
-            Number(item.time_seconds || 0),
-            escapeCsv(formatTopicSeconds(item.time_seconds || 0)),
-            "",
-            "",
-            "",
-          ].join(",")
-        );
-        return;
-      }
-      statements.forEach((row) => {
-        lines.push(
-          [
-            escapeCsv(item.name || ""),
-            escapeCsv(item.status || ""),
-            Number(item.time_seconds || 0),
-            escapeCsv(formatTopicSeconds(item.time_seconds || 0)),
-            escapeCsv(row.ts ? formatTime(row.ts) : ""),
-            escapeCsv(row.speaker || ""),
-            escapeCsv(row.text || ""),
-          ].join(",")
-        );
-      });
-    });
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    downloadFile(
-      `topics-${stamp}.csv`,
-      `\ufeff${lines.join("\r\n")}\r\n`,
-      "text/csv;charset=utf-8"
-    );
-  }
-
   async function copyLogs() {
     const text = state.logs.map((log) => logLineText(log)).join("\n");
     if (!text.trim()) return;
@@ -3683,20 +3874,11 @@
   }
 
   async function saveTopicsSetup() {
-    const agenda = agendaLinesFromInput();
     const definitions = ensureTopicDefinitions().map((row, idx) => ({
       ...row,
       order: idx,
     }));
-    const allowNew = !!topicsAllowNew?.checked;
-    if (!allowNew && definitions.length === 0) {
-      throw new Error("Add at least one topic definition when custom topics are disabled.");
-    }
     const payload = {
-      agenda,
-      enabled: !!topicsEnableAuto?.checked,
-      allow_new_topics: allowNew,
-      interval_sec: clampNumber(topicsIntervalSec?.value, 30, 300, 60),
       definitions,
     };
     const out = await request("/api/topics/configure", "POST", payload);
@@ -3704,14 +3886,6 @@
       state.topics = { ...state.topics, ...out.topics };
       saveUiPrefs();
       setTopicsUIFromState();
-      renderTopics();
-    }
-  }
-
-  async function analyzeTopicsNow() {
-    const out = await request("/api/topics/analyze-now", "POST");
-    if (out?.topics) {
-      state.topics = { ...state.topics, ...out.topics };
       renderTopics();
     }
   }
@@ -3831,19 +4005,7 @@
       const topics = msg.topics || {};
       state.topics = {
         ...state.topics,
-        configured: !!topics.configured,
-        settings_saved: !!topics.settings_saved,
-        enabled: !!topics.enabled,
-        allow_new_topics: !!topics.allow_new_topics,
-        interval_sec: clampNumber(topics.interval_sec, 30, 300, 60),
-        pending: !!topics.pending,
-        last_run_ts: Number(topics.last_run_ts || 0),
-        last_final_index: Number(topics.last_final_index || 0),
-        last_error: String(topics.last_error || ""),
-        agenda: Array.isArray(topics.agenda) ? topics.agenda : [],
         definitions: Array.isArray(topics.definitions) ? topics.definitions : (Array.isArray(state.topics.definitions) ? state.topics.definitions : []),
-        items: Array.isArray(topics.items) ? topics.items : [],
-        runs: Array.isArray(topics.runs) ? topics.runs : [],
       };
       setTopicsUIFromState();
       renderTopics();
@@ -3977,11 +4139,6 @@
   if (transcriptExportMenuBtn && transcriptExportMenu) {
     transcriptExportMenuBtn.addEventListener("click", () => {
       toggleExportMenu(transcriptExportMenuBtn, transcriptExportMenu);
-    });
-  }
-  if (topicsExportMenuBtn && topicsExportMenu) {
-    topicsExportMenuBtn.addEventListener("click", () => {
-      toggleExportMenu(topicsExportMenuBtn, topicsExportMenu);
     });
   }
   if (summaryExportMenuBtn && summaryExportMenu) {
@@ -4449,60 +4606,6 @@
       renderLogs();
     });
   }
-  if (topicsGroupBy) {
-    topicsGroupBy.addEventListener("change", () => {
-      state.ui.topicsView.groupBy = topicsGroupBy.value;
-      saveUiPrefs();
-      renderTopics();
-    });
-  }
-  if (topicsSortBy) {
-    topicsSortBy.addEventListener("change", () => {
-      state.ui.topicsView.sortBy = topicsSortBy.value;
-      saveUiPrefs();
-      renderTopics();
-    });
-  }
-  if (topicsSearch) {
-    topicsSearch.addEventListener("input", () => {
-      state.ui.topicsView.search = topicsSearch.value;
-      saveUiPrefs();
-      renderTopics();
-    });
-  }
-  if (topicsDensityToggle) {
-    topicsDensityToggle.addEventListener("click", () => {
-      state.ui.topicsView.density = state.ui.topicsView.density === "compact" ? "comfortable" : "compact";
-      saveUiPrefs();
-      setTopicsUIFromState();
-      renderTopics();
-    });
-  }
-  if (topicsEnableAuto) {
-    topicsEnableAuto.addEventListener("change", () => {
-      state.topics.enabled = !!topicsEnableAuto.checked;
-      syncTopicsSettingsControls();
-      renderTopics();
-    });
-  }
-  if (topicsAllowNew) {
-    topicsAllowNew.addEventListener("change", () => {
-      state.topics.allow_new_topics = !!topicsAllowNew.checked;
-      renderTopics();
-    });
-  }
-  if (topicsSubtabButtons.length) {
-    topicsSubtabButtons.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const tab = String(btn.getAttribute("data-topics-tab") || "board");
-        state.ui.pageSubtabs.topics = ["board", "definitions", "runs", "settings"].includes(tab) ? tab : "board";
-        closeExportMenus();
-        saveUiPrefs();
-        syncTopicsSubtabUI();
-        renderTopics();
-      });
-    });
-  }
   if (topicDefCancelBtn) {
     topicDefCancelBtn.addEventListener("click", () => {
       resetTopicDefinitionEditor();
@@ -4533,24 +4636,6 @@
 
   askCoachBtn.addEventListener("click", () => askCoach().catch(notifyError));
   clearCoachBtn.addEventListener("click", () => clearCoach().catch(notifyError));
-  if (topicsSaveBtn) {
-    topicsSaveBtn.addEventListener("click", () => withBusy(topicsSaveBtn, "Saving", async () => {
-      await saveTopicsSetup();
-      showToast("Topics setup saved.", "success");
-    }).catch(notifyError));
-  }
-  if (topicsAnalyzeBtn) {
-    topicsAnalyzeBtn.addEventListener("click", () => withBusy(topicsAnalyzeBtn, "Analyzing", async () => {
-      await analyzeTopicsNow();
-      showToast("Topics analyzed.", "success");
-    }).catch(notifyError));
-  }
-  if (topicsClearBtn) {
-    topicsClearBtn.addEventListener("click", () => withBusy(topicsClearBtn, "Clearing", async () => {
-      await clearTopics();
-      showToast("Topics cleared.", "info");
-    }).catch(notifyError));
-  }
 
   copyLogsBtn.addEventListener("click", () => copyLogs().then(() => showToast("Logs copied.", "success")).catch(notifyError));
   clearLogsBtn.addEventListener("click", () => withBusy(clearLogsBtn, "Clearing", async () => {
@@ -4587,20 +4672,6 @@
       exportBookmarksCsv();
       closeExportMenus();
       showToast("Bookmarks CSV exported.", "success");
-    });
-  }
-  if (exportTopicsJsonBtn) {
-    exportTopicsJsonBtn.addEventListener("click", () => {
-      exportTopicsJson();
-      closeExportMenus();
-      showToast("Topics JSON exported.", "success");
-    });
-  }
-  if (exportTopicsCsvBtn) {
-    exportTopicsCsvBtn.addEventListener("click", () => {
-      exportTopicsCsv();
-      closeExportMenus();
-      showToast("Topics CSV exported.", "success");
     });
   }
   if (exportSummaryJsonBtn) {
@@ -4701,7 +4772,7 @@
       return;
     }
     if (ev.key === "Escape" && !typing) {
-      if ((transcriptExportMenu && !transcriptExportMenu.classList.contains("hidden")) || (topicsExportMenu && !topicsExportMenu.classList.contains("hidden")) || (summaryExportMenu && !summaryExportMenu.classList.contains("hidden"))) {
+      if ((transcriptExportMenu && !transcriptExportMenu.classList.contains("hidden")) || (summaryExportMenu && !summaryExportMenu.classList.contains("hidden"))) {
         ev.preventDefault();
         closeExportMenus();
         return;

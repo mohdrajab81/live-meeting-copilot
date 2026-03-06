@@ -50,10 +50,6 @@ async def lifespan(_app: FastAPI):
     except Exception:
         pass
     try:
-        controller.topic_tracker.close()
-    except Exception:
-        pass
-    try:
         controller.summary_service.close()
     except Exception:
         pass

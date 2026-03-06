@@ -31,7 +31,7 @@ Compute purely from existing transcript data — no new agents or services neede
 - **Speaking balance**: per-speaker word count and share of total airtime/words. Show as bar chart. ✅ v1 shipped
 - **Turn-taking**: number of speaker turns, average turn length, longest monologue. ✅ v1 shipped
 - **Pace**: words per minute per speaker (timestamps already in transcript). ✅ v1 shipped
-- **Topic drift**: flag segments where coach/topic agent detected off-agenda content.
+- **Topic drift**: flag transcript segments where summary topic grouping indicates off-agenda discussion.
 - **Meeting health score**: composite 0–100 score with short recommendations (e.g. "One speaker dominated 80% of airtime"). ✅ v1 shipped
 - Export in JSON and TXT summary. ✅ v1 shipped
 

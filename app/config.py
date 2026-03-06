@@ -72,4 +72,6 @@ class RuntimeConfig(BaseModel):
     max_finals: int = Field(default=5000, ge=100, le=10000)
     translation_enabled: bool = True
     summary_enabled: bool = True
+    summary_topic_duration_mode: Literal["speech_only", "coverage_with_gaps"] = "coverage_with_gaps"
+    summary_topic_gap_threshold_sec: int = Field(default=30, ge=0, le=300)
     debug: bool = False

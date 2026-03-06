@@ -75,7 +75,6 @@ If you have an Azure AI Foundry project set up (see [`docs/AZURE_PROVISIONING.md
 ```env
 PROJECT_ENDPOINT=https://<resource>.services.ai.azure.com/api/projects/<project>
 GUIDANCE_AGENT_NAME=<your coaching agent name>
-TOPIC_AGENT_NAME=<your topic tracking agent name>
 SUMMARY_AGENT_NAME=<your summary agent name>
 ```
 
@@ -85,7 +84,7 @@ Then authenticate with Azure:
 az login
 ```
 
-Restart `run.ps1`. The Coaching, Topics, and Summary panels in the UI become active.
+Restart `run.ps1`. The Coaching and Summary panels in the UI become active.
 
 ---
 

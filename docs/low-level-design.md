@@ -1,9 +1,8 @@
 # Live Meeting Copilot - Low-Level Design
 
 ## 1. Scope and goals
-The system captures live speech, produces EN transcript, optionally translates EN->AR, broadcasts updates to the UI, and can invoke three optional agent features:
+The system captures live speech, produces EN transcript, optionally translates EN->AR, broadcasts updates to the UI, and can invoke optional agent features:
 - conversation coach hints,
-- meeting topic tracking,
 - session summary generation.
 
 Primary goals:
@@ -25,7 +24,7 @@ Primary goals:
 - `app/controller/session_manager.py`:
   - handles incoming speech events,
   - controls session start/stop,
-  - runs watchdog for auto-stop and scheduled topic analysis.
+  - runs watchdog for auto-stop.
 - `app/controller/transcript_store.py`:
   - owns transcript/live partial state,
   - applies translation results,
@@ -35,10 +34,7 @@ Primary goals:
   - builds prompts from transcript deltas,
   - manages queued trigger while busy.
 - `app/controller/topic_orchestrator.py`:
-  - stores topic config and runtime state,
-  - prepares topic agent input,
-  - normalizes and merges agent responses,
-  - allocates chunk time and maintains topic runs.
+  - stores topic definitions and derived agenda names for summary context.
 - `app/controller/summary_orchestrator.py`:
   - builds transcript prompt from final turns,
   - runs summary generation (auto on stop/manual endpoint),
@@ -52,7 +48,6 @@ Primary goals:
 - `app/services/speech.py`: Azure Speech recognizer(s), emits normalized speech/status events.
 - `app/services/translation_pipeline.py`: async queue worker with priority and stale guards.
 - `app/services/coach.py`: Azure AI Foundry coach client with conversation continuity.
-- `app/services/topic_tracker.py`: Azure AI Foundry topic tracker client with retry + JSON extraction.
 - `app/services/summary.py`: Azure AI Foundry summary client with structured JSON extraction.
 - `app/services/meeting_insights.py`: deterministic analytics + keyword index computation.
 - `app/services/topic_summary.py`: deterministic summary-topic duration and breakdown helpers.
@@ -93,9 +88,8 @@ Primary goals:
 - `log`
 
 ### 4.3 Topic API contracts
-- `POST /api/topics/configure`: settings + agenda + definitions.
-- `POST /api/topics/analyze-now`: manual run.
-- `POST /api/topics/clear`: resets topic runtime state.
+- `POST /api/topics/configure`: definitions-only setup used by summary.
+- `POST /api/topics/clear`: clears topic definitions.
 
 ### 4.4 Summary API contracts
 - `POST /api/summary/generate`: manual summary trigger.
@@ -134,7 +128,7 @@ Per speaker:
 ### 5.4 Optional translation mode
 - `RuntimeConfig.translation_enabled` controls whether translation requests are enqueued.
 - When disabled, EN transcript flow continues unchanged while AR translation work is skipped.
-- Coach and topics continue to operate from EN transcript data.
+- Coach and summary continue to operate from EN transcript data.
 
 ## 6. Coach design details
 - Triggered on final turns based on `coach_trigger_speaker` and cooldown.
@@ -144,34 +138,16 @@ Per speaker:
 - Manual asks (`/api/coach/ask`) run in same conversation session.
 
 ## 7. Topics design details
-
-### 7.1 Execution modes
-- Manual via `/api/topics/analyze-now`.
-- Automatic via watchdog when:
-  - app running,
-  - topics enabled,
-  - tracker configured,
-  - interval elapsed,
-  - no pending topic run.
-
-### 7.2 Agent payload strategy
-`TopicOrchestrator` maintains a rich internal `topic_call` context for merge logic, but sends a reduced payload to the agent (agenda/definitions/current topics/chunk/recent context/reset hint) to reduce prompt noise.
-
-### 7.3 Merge semantics (high-level)
-- Normalize and validate incoming topic rows.
-- Match names against known agenda/runtime topics.
-- Apply confidence thresholding and allow-new rules.
-- Merge status/time/statements into persisted topic state.
-- Auto-cover stale active topics after inactivity thresholds.
-- Broadcast updated topic snapshot.
+- Topics are definitions-only in current design.
+- Definitions are persisted from the Topics panel and supplied as agenda context to summary generation.
+- No automatic/manual topic agent analysis is performed.
 
 ## 8. Watchdog behavior
 Runs once per second:
 - auto-stops session on:
   - inactivity (`auto_stop_silence_sec`),
   - max session duration (`max_session_sec`),
-- schedules topic auto-analysis when eligible.
-- on stop, `SessionManager.stop_async()` runs one final topic flush then summary generation.
+- on stop, `SessionManager.stop_async()` runs summary generation.
 
 ## 9. API security and rate limiting
 - API and websocket auth:
@@ -179,7 +155,6 @@ Runs once per second:
   - otherwise loopback clients only.
 - Rate limits:
   - `/api/coach/ask`: 6/min/client IP,
-  - `/api/topics/analyze-now`: 4/min/client IP,
   - `/api/summary/generate`: 2/min/client IP,
   - `/api/summary/from-transcript`: shares the same 2/min pool as `/api/summary/generate`.
 
@@ -188,12 +163,11 @@ Runs once per second:
 - One translation worker task at a time.
 - `finals` capped by `max_finals`.
 - Coach hints capped to 120 entries.
-- Topic runs capped to 160 entries.
 - Logs capped to 1000 entries.
 
 ## 11. Failure handling
 - Translator errors: logged; app continues.
-- Coach/topic agent errors: logged and surfaced; app continues.
+- Coach and summary agent errors: logged and surfaced; app continues.
 - Speech failures: recognition loop stops and status/log events emitted.
 - Missing config file at startup: defaults kept; reload is optional.
 
@@ -202,7 +176,7 @@ Runs once per second:
 - Dual-mode speaker separation and bleed-suppression behavior.
 - Stop/reset during heavy partial load (stale translation guard).
 - Coach enabled/disabled, cooldown, queue-latest behavior.
-- Topics manual + auto runs, allow-new on/off, context resets.
+- Topics definitions add/edit/delete and summary context propagation.
 - Summary auto-on-stop, manual `/api/summary/generate`, and `/api/summary/from-transcript`.
 - Deterministic topic duration resolution from `utterance_ids` and adherence computation.
 - Auth modes: loopback-only and token-required.

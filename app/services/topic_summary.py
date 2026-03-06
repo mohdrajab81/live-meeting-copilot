@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 
 def _norm(value: Any) -> str:
@@ -230,12 +230,17 @@ def render_transcript_for_prompt(rows: list[dict[str, Any]] | None) -> str:
 def apply_topic_durations_from_utterance_ids(
     topic_groups: list[dict[str, Any]] | None,
     rows: list[dict[str, Any]] | None,
+    *,
+    duration_mode: Literal["speech_only", "coverage_with_gaps"] | str = "coverage_with_gaps",
+    gap_threshold_sec: float = 30.0,
 ) -> list[dict[str, Any]]:
-    """Set topic estimated_duration_minutes from deterministic utterance durations only.
+    """Set topic estimated_duration_minutes from deterministic utterance timings.
 
     If a topic has no valid utterance_ids in this transcript, duration is None.
     """
     id_to_duration: dict[str, float] = {}
+    id_to_start: dict[str, float] = {}
+    id_to_end: dict[str, float] = {}
     all_ids_in_order: list[str] = []
     for row in rows or []:
         if not isinstance(row, dict):
@@ -244,11 +249,39 @@ def apply_topic_durations_from_utterance_ids(
         if not uid:
             continue
         try:
+            ts = float(row.get("ts") or 0.0)
+        except (TypeError, ValueError):
+            ts = 0.0
+        try:
+            start_ts = float(row.get("start_ts", ts) or ts)
+        except (TypeError, ValueError):
+            start_ts = ts
+        try:
+            end_ts = float(row.get("end_ts", ts) or ts)
+        except (TypeError, ValueError):
+            end_ts = ts
+        if start_ts <= 0 and ts > 0:
+            start_ts = ts
+        if end_ts < start_ts:
+            end_ts = start_ts
+        try:
             duration = max(0.0, float(row.get("duration_sec") or 0.0))
         except (TypeError, ValueError):
-            duration = 0.0
+            duration = max(0.0, end_ts - start_ts)
+        if duration <= 0.0 and end_ts > start_ts:
+            duration = max(0.0, end_ts - start_ts)
         id_to_duration[uid] = duration
+        id_to_start[uid] = start_ts
+        id_to_end[uid] = max(end_ts, start_ts + duration)
         all_ids_in_order.append(uid)
+
+    mode = str(duration_mode or "coverage_with_gaps").strip().lower()
+    if mode not in {"speech_only", "coverage_with_gaps"}:
+        mode = "coverage_with_gaps"
+    try:
+        gap_limit_sec = max(0.0, float(gap_threshold_sec))
+    except (TypeError, ValueError):
+        gap_limit_sec = 30.0
 
     out: list[dict[str, Any]] = []
     globally_assigned: set[str] = set()
@@ -280,13 +313,8 @@ def apply_topic_durations_from_utterance_ids(
             globally_assigned.add(uid)
             normalized_ids.append(uid)
         topic["utterance_ids"] = normalized_ids
-
-        matched = normalized_ids
-        if matched:
-            total_sec = sum(id_to_duration[uid] for uid in matched)
-            topic["estimated_duration_minutes"] = round(total_sec / 60.0, 1)
-        else:
-            topic["estimated_duration_minutes"] = None
+        # Deterministic durations are computed below, after all topics are resolved.
+        topic["estimated_duration_minutes"] = None
         out.append(topic)
 
     # Ensure full speech coverage even when the model omits some utterances.
@@ -304,4 +332,80 @@ def apply_topic_durations_from_utterance_ids(
                 "key_points": [],
             }
         )
+
+    id_to_topic_idx: dict[str, int] = {}
+    for idx, topic in enumerate(out):
+        ids = list(topic.get("utterance_ids") or [])
+        for uid in ids:
+            normalized = str(uid or "").strip().upper()
+            if normalized and normalized in id_to_duration:
+                id_to_topic_idx[normalized] = idx
+
+    if mode == "speech_only":
+        for idx, topic in enumerate(out):
+            ids = [str(uid).strip().upper() for uid in list(topic.get("utterance_ids") or [])]
+            matched = [uid for uid in ids if uid in id_to_duration]
+            if matched:
+                total_sec = sum(id_to_duration[uid] for uid in matched)
+                topic["estimated_duration_minutes"] = round(total_sec / 60.0, 1)
+            else:
+                topic["estimated_duration_minutes"] = None
+        return out
+
+    # coverage_with_gaps:
+    # - Base duration from each utterance.
+    # - Small gap (<= threshold): same topic => merged into same topic.
+    # - Small gap between different topics => full gap goes to NEXT topic.
+    topic_seconds: dict[int, float] = {idx: 0.0 for idx in range(len(out))}
+    assigned_rows: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for uid in all_ids_in_order:
+        if uid in seen_ids:
+            continue
+        seen_ids.add(uid)
+        topic_idx = id_to_topic_idx.get(uid)
+        if topic_idx is None:
+            continue
+        start_ts = float(id_to_start.get(uid, 0.0) or 0.0)
+        end_ts = float(id_to_end.get(uid, start_ts) or start_ts)
+        if end_ts < start_ts:
+            end_ts = start_ts
+        base_duration = max(0.0, float(id_to_duration.get(uid, 0.0) or 0.0))
+        topic_seconds[topic_idx] = topic_seconds.get(topic_idx, 0.0) + base_duration
+        assigned_rows.append(
+            {
+                "uid": uid,
+                "topic_idx": topic_idx,
+                "start_ts": start_ts,
+                "end_ts": end_ts,
+            }
+        )
+    assigned_rows.sort(key=lambda row: (float(row.get("start_ts", 0.0) or 0.0), str(row.get("uid", ""))))
+
+    for i in range(len(assigned_rows) - 1):
+        current = assigned_rows[i]
+        nxt = assigned_rows[i + 1]
+        curr_end = float(current.get("end_ts", 0.0) or 0.0)
+        next_start = float(nxt.get("start_ts", 0.0) or 0.0)
+        gap = max(0.0, next_start - curr_end)
+        if gap <= 0.0 or gap > gap_limit_sec:
+            continue
+        curr_idx = int(current.get("topic_idx", -1))
+        next_idx = int(nxt.get("topic_idx", -1))
+        if curr_idx < 0 or next_idx < 0:
+            continue
+        if curr_idx == next_idx:
+            topic_seconds[curr_idx] = topic_seconds.get(curr_idx, 0.0) + gap
+        else:
+            # User-selected rule: small inter-topic gaps go fully to the next topic.
+            topic_seconds[next_idx] = topic_seconds.get(next_idx, 0.0) + gap
+
+    for idx, topic in enumerate(out):
+        ids = [str(uid).strip().upper() for uid in list(topic.get("utterance_ids") or [])]
+        matched = [uid for uid in ids if uid in id_to_duration]
+        if not matched:
+            topic["estimated_duration_minutes"] = None
+            continue
+        total_sec = max(0.0, float(topic_seconds.get(idx, 0.0) or 0.0))
+        topic["estimated_duration_minutes"] = round(total_sec / 60.0, 1)
     return out

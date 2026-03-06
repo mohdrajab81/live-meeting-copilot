@@ -16,7 +16,6 @@ from app.config import RuntimeConfig, Settings
 from app.services.coach import CoachService
 from app.services.speech import SpeechService
 from app.services.summary import SummaryService
-from app.services.topic_tracker import TopicTrackerService
 from app.services.translation_pipeline import TranslationPipeline
 
 from .broadcast_service import BroadcastService
@@ -41,7 +40,6 @@ class AppController:
 
         # ── Services ──────────────────────────────────────────────────────────
         self.coach = CoachService.from_environment()
-        self.topic_tracker = TopicTrackerService.from_environment()
         self.summary_service = SummaryService.from_environment()
 
         # ── Shared-lock modules (receive the RLock) ────────────────────────────
@@ -75,7 +73,6 @@ class AppController:
 
         self.topic_orch = TopicOrchestrator(
             lock=self.lock,
-            topic_tracker=self.topic_tracker,
             broadcast=self.broadcast_svc.broadcast,
             broadcast_log=self.broadcast_svc.broadcast_log,
             get_finals=self.transcript_store.get_finals,
@@ -185,7 +182,6 @@ class AppController:
             self.coach_orch.clear_queued_trigger_unlocked()
             self.topic_orch.clear_for_transcript_unlocked()
         self.coach.clear_conversation()
-        self.topic_tracker.clear_conversation()
 
     def clear_logs(self) -> None:
         self.broadcast_svc.clear_logs()
@@ -217,11 +213,8 @@ class AppController:
             definitions=definitions,
         )
 
-    async def analyze_topics_now(self) -> dict[str, Any]:
-        return await self.topic_orch.analyze_now()
-
     def clear_topics(self) -> None:
-        self.topic_orch.clear(topic_tracker=self.topic_tracker)
+        self.topic_orch.clear()
 
     # ── Public API: summary ───────────────────────────────────────────────────
 
