@@ -17,7 +17,7 @@ Primary goals:
 - `app/main.py`: creates FastAPI app, wires lifespan, starts translation worker, starts watchdog.
 - `app/api/routes.py`: authenticated REST endpoints for config, session, coach, topics, and summary.
 - `app/api/websocket.py`: authenticated websocket endpoint; sends snapshot on connect.
-- `app/api/auth.py`: loopback-only fallback or token-based auth (`API_AUTH_TOKEN`).
+- `app/api/auth.py`: loopback-only HTTP/WebSocket authorization.
 
 ### 2.2 Controller layer
 - `app/controller/__init__.py` (`AppController`): wiring and facade only.
@@ -45,7 +45,9 @@ Primary goals:
 - `app/controller/broadcast_service.py`: websocket fanout and log buffering.
 
 ### 2.3 Service layer
+- `app/services/speech_provider.py`: speech backend router and provider selection.
 - `app/services/speech.py`: Azure Speech recognizer(s), emits normalized speech/status events.
+- `app/services/speech_nova3.py`: Nova-3 preview backend; lazy-loads optional runtime dependencies.
 - `app/services/translation_pipeline.py`: async queue worker with priority and stale guards.
 - `app/services/coach.py`: Azure AI Foundry coach client with conversation continuity.
 - `app/services/summary.py`: Azure AI Foundry summary client with structured JSON extraction.
@@ -71,6 +73,7 @@ Primary goals:
 
 ### 4.1 Inbound speech events (to `SessionManager`)
 - `partial`: `{type, speaker, speaker_label, en, ...}`
+- `partial_clear`: `{type, speaker, reason, ...}`
 - `final`: `{type, speaker, speaker_label, en, ts, ...}`
 - `status` / `log`
 
@@ -78,6 +81,7 @@ Primary goals:
 - `snapshot`
 - `status`
 - `partial`
+- `partial_clear`
 - `final`
 - `final_patch`
 - `telemetry`
@@ -151,8 +155,7 @@ Runs once per second:
 
 ## 9. API security and rate limiting
 - API and websocket auth:
-  - token mode when `API_AUTH_TOKEN` is set,
-  - otherwise loopback clients only.
+  - loopback clients only.
 - Rate limits:
   - `/api/coach/ask`: 6/min/client IP,
   - `/api/summary/generate`: 2/min/client IP,
@@ -168,7 +171,7 @@ Runs once per second:
 ## 11. Failure handling
 - Translator errors: logged; app continues.
 - Coach and summary agent errors: logged and surfaced; app continues.
-- Speech failures: recognition loop stops and status/log events emitted.
+- Speech failures: backend-specific status/log events emitted; Nova selection auto-falls back to Azure when Nova cannot start.
 - Missing config file at startup: defaults kept; reload is optional.
 
 ## 12. Suggested validation matrix

@@ -30,7 +30,7 @@ This document explains every significant technical concept in the Live Meeting C
 
 The system does six things during a live meeting session:
 
-1. **Captures speech** from one or two microphones using Azure Speech SDK.
+1. **Captures speech** from one or two microphones using a speech provider layer (Azure Speech by default, optional Nova-3 preview).
 2. **Produces a live English transcript** — both partial (live preview) and final (committed) text.
 3. **Optionally translates English to Arabic** asynchronously in the background.
 4. **Optionally provides AI coaching hints** based on what the remote speaker just said.
@@ -40,6 +40,8 @@ The system does six things during a live meeting session:
 All of this streams to the browser in real time over a WebSocket connection.
 
 The backend is built with **FastAPI** (Python's async web framework). The frontend is plain HTML/CSS/JavaScript — no framework. The AI features use **Azure AI Foundry** agents.
+
+Azure Speech remains the default and most mature backend. Where this document goes deep on callback behavior and timing, it uses the Azure path as the reference model because that callback model still drives most of the concurrency design.
 
 ---
 
@@ -204,7 +206,7 @@ The pipeline tracks:
 
 1. **Idle**: No recognition running. Config can be changed freely.
 2. **Running**: Azure recognizers are active, speech events flowing, watchdog running.
-3. **Stopping/Finalized**: All recognizers stopped, coach conversation cleared, final state broadcast to UI.
+3. **Stopping/Finalized**: All recognizers stopped, runtime state finalized, and final state broadcast to UI. The coach conversation is retained until the user explicitly clears coach history.
 
 ### The finalization invariant
 
@@ -245,7 +247,7 @@ All of these must be true to trigger:
 
 The coach maintains a conversation across the whole session. Each prompt only sends the *new* transcript since the last coach call — not the entire session transcript. This is called a "delta". The AI coach remembers the earlier context through the conversation history maintained by the Azure AI Foundry service.
 
-Exception: the first call of a session sends the full transcript so far, to give the coach full context.
+Exception: the first call of a session sends the full transcript so far, plus any meeting brief entered in Settings, to give the coach full context.
 
 ### The queue (depth 1)
 
@@ -255,7 +257,7 @@ After the current hint is done, the system checks if something is queued. If yes
 
 ### Conversation continuity
 
-The coach service keeps a `conversation_id` (with `previous_response_id` as fallback when needed). This means the AI model genuinely remembers earlier exchanges in the session — it's not reconstructing context from the transcript alone. This is more efficient and produces more contextually relevant hints.
+The coach service keeps a `conversation_id` (with `previous_response_id` as fallback when needed). This means the AI model genuinely remembers earlier exchanges in the session — it's not reconstructing context from the transcript alone. This is more efficient and produces more contextually relevant hints. That conversation now persists across meeting stop/start events while the backend process stays alive, and is cleared only when the user explicitly resets coach history.
 
 ---
 
@@ -296,6 +298,7 @@ The server sends structured JSON messages over WebSocket. Each message has a `ty
 | `snapshot` | On initial connection | Full current state (transcript, topics, logs, config, status) |
 | `status` | When session starts/stops | `running: bool`, `status: string` |
 | `partial` | While speaking | Live preview text (EN + AR) |
+| `partial_clear` | When a live hypothesis is abandoned | Removes stale live text for one speaker |
 | `final` | After each utterance | Committed sentence (EN + empty AR initially) |
 | `final_patch` | After translation completes | Updated AR text for an existing final |
 | `telemetry` | After each translation | Latency, cost, character count |
@@ -319,11 +322,7 @@ WebSocket connections can go stale without either side knowing. When the server 
 
 ### Authentication
 
-Two modes:
-1. **Token-based** (for remote access): Set the `API_AUTH_TOKEN` environment variable. Clients must send this token as a Bearer token, `X-API-Key` header, or URL query parameter.
-2. **Loopback-only** (default): If no token is set, only requests from `localhost` / `127.0.0.1` / `::1` are allowed. Safe for local use.
-
-**Timing-safe comparison**: Token comparison uses `secrets.compare_digest()` instead of `==`. The reason: a normal string comparison short-circuits as soon as it finds a mismatch, so an attacker can measure response times to guess the token character by character. `compare_digest` always takes the same time regardless of where the mismatch is.
+The app is loopback-only. HTTP and WebSocket access is allowed only from `localhost` / `127.0.0.1` / `::1` (plus the test client host used in automated tests). This keeps the local tool simple and avoids maintaining a second remote-token auth mode in the browser and backend.
 
 ### Rate limiting
 
@@ -470,4 +469,4 @@ This removes dependence on model-side time math and makes durations reproducible
 
 ---
 
-*Last updated: 2026-02-27*
+*Last updated: 2026-03-06*

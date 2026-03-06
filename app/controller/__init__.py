@@ -14,7 +14,7 @@ from fastapi import WebSocket
 
 from app.config import RuntimeConfig, Settings
 from app.services.coach import CoachService
-from app.services.speech import SpeechService
+from app.services.speech_provider import SpeechProviderService
 from app.services.summary import SummaryService
 from app.services.translation_pipeline import TranslationPipeline
 
@@ -94,7 +94,7 @@ class AppController:
 
         self.session_mgr = SessionManager(
             lock=self.lock,
-            speech=SpeechService(
+            speech=SpeechProviderService(
                 settings=settings,
                 on_event=self._handle_speech_event_internal,
                 get_runtime_config=self.config_store.get,
@@ -181,7 +181,6 @@ class AppController:
             self.coach_orch.reset_sent_index_unlocked(new_index=0)
             self.coach_orch.clear_queued_trigger_unlocked()
             self.topic_orch.clear_for_transcript_unlocked()
-        self.coach.clear_conversation()
 
     def clear_logs(self) -> None:
         self.broadcast_svc.clear_logs()

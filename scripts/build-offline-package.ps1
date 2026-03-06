@@ -33,7 +33,9 @@ $items = @(
   "README.md",
   "INSTALL.md",
   "requirements.txt",
+  "requirements-nova3.txt",
   ".env.example",
+  "web_translator_settings.example.json",
   "setup.ps1",
   "run.ps1"
 )
@@ -83,10 +85,17 @@ Get-ChildItem -Path $stageDir -Recurse -Include *.pyc,*.pyo -File -ErrorAction S
   Remove-Item -Force -ErrorAction SilentlyContinue
 
 $requirementsPath = Join-Path $repoRoot "requirements.txt"
+$novaRequirementsPath = Join-Path $repoRoot "requirements-nova3.txt"
 Write-Host "Downloading dependency wheels for offline install..." -ForegroundColor Cyan
 & $PythonCmd -m pip download --dest $wheelhouseDir --requirement $requirementsPath --prefer-binary
 if ($LASTEXITCODE -ne 0) {
   throw "pip download failed. Offline package not created."
+}
+if (Test-Path $novaRequirementsPath) {
+  & $PythonCmd -m pip download --dest $wheelhouseDir --requirement $novaRequirementsPath --prefer-binary
+  if ($LASTEXITCODE -ne 0) {
+    throw "pip download for requirements-nova3.txt failed. Offline package not created."
+  }
 }
 
 if (Test-Path $outputPath) {

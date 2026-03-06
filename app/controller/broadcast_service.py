@@ -95,13 +95,20 @@ class BroadcastService:
         revision = int(payload.get("revision", 0) or 0)
         en_len = len(str(payload.get("en", "") or ""))
         ar_len = len(str(payload.get("ar", "") or ""))
+        reason = str(payload.get("reason", "") or "")
+        session_id = str(payload.get("recognizer_session_id", "") or "")
+        en_preview = self.preview_text(str(payload.get("en", "") or ""), 60)
+        ar_preview = self.preview_text(str(payload.get("ar", "") or ""), 60)
         return self.append_log(
             "debug",
             (
                 "UI emit: "
                 f"channel={channel}, type={msg_type}, speaker={speaker or '-'}, "
                 f"segment_id={segment_id or '-'}, revision={revision}, "
-                f"en_len={en_len}, ar_len={ar_len}, connections={len(self.connections)}"
+                f"en_len={en_len}, ar_len={ar_len}, "
+                f"reason={reason or '-'}, session_id={session_id or '-'}, "
+                f"en_preview='{en_preview or '-'}', ar_preview='{ar_preview or '-'}', "
+                f"connections={len(self.connections)}"
             ),
         )
 

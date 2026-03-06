@@ -359,6 +359,13 @@ class SummaryOrchestrator:
                 f"topics={len(final_breakdown)}, "
                 f"keywords={len(keyword_index)}",
             )
+        except asyncio.CancelledError:
+            # Task was cancelled (e.g. asyncio.wait_for timeout from the caller).
+            # Must reset summary_pending so manual generation isn't permanently blocked.
+            with self._lock:
+                self.summary_pending = False
+                self.summary_error = "cancelled"
+            raise
         except Exception as ex:
             with self._lock:
                 self.summary_pending = False

@@ -204,6 +204,46 @@ class TestClearUnlocked:
         assert store.live_partials == {}
 
 
+class TestClearLivePartial:
+    def test_removes_only_target_speaker(self, store):
+        store.live_partials["local"] = {
+            "speaker": "local",
+            "speaker_label": "You",
+            "segment_id": "seg-1",
+            "revision": 2,
+            "en": "stuck partial",
+            "ar": "",
+            "ts": 10.0,
+        }
+        store.live_partials["remote"] = {
+            "speaker": "remote",
+            "speaker_label": "Remote",
+            "segment_id": "seg-2",
+            "revision": 1,
+            "en": "other partial",
+            "ar": "ترجمة",
+            "ts": 20.0,
+        }
+        store.en_live = "stuck partial"
+        store.ar_live = ""
+
+        removed = store.clear_live_partial_unlocked("local")
+
+        assert removed == {
+            "speaker": "local",
+            "speaker_label": "You",
+            "segment_id": "seg-1",
+            "revision": 2,
+        }
+        assert "local" not in store.live_partials
+        assert "remote" in store.live_partials
+        assert store.en_live == "other partial"
+        assert store.ar_live == "ترجمة"
+
+    def test_returns_none_when_speaker_missing(self, store):
+        assert store.clear_live_partial_unlocked("missing") is None
+
+
 # ---------------------------------------------------------------------------
 # build_telemetry_unlocked
 # ---------------------------------------------------------------------------

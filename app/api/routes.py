@@ -5,7 +5,7 @@ import json
 import threading
 import time
 from collections import deque
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
@@ -31,6 +31,24 @@ _coach_rate_buckets: dict[str, deque[float]] = {}
 _summary_rate_window_sec = 60
 _summary_rate_limit = 2
 _summary_rate_buckets: dict[str, deque[float]] = {}
+
+
+async def _run_summary_after_stop(controller: Any) -> None:
+    """Best-effort summary generation after stop without blocking the API response."""
+    try:
+        config = controller.get_runtime_config()
+        if not config.summary_enabled:
+            return
+        if not controller.summary_service.is_configured:
+            return
+        await asyncio.wait_for(controller.generate_summary(), timeout=60.0)
+    except asyncio.TimeoutError:
+        await controller.broadcast_log("warning", "Auto-summary timed out after 60 s.")
+    except ValueError as ex:
+        # e.g. "already in progress" — not an error worth surfacing
+        await controller.broadcast_log("info", f"Auto-summary skipped: {ex}")
+    except Exception as ex:
+        await controller.broadcast_log("warning", f"Auto-summary failed: {ex}")
 
 
 def _enforce_rate_limit(
@@ -143,10 +161,43 @@ async def start(request: Request) -> dict:
 @router.post("/stop")
 async def stop(request: Request) -> dict:
     controller = request.app.state.controller
-    stopped = await controller.stop_async()
+    try:
+        # Keep stop endpoint fast and predictable for the browser.
+        stopped = await asyncio.to_thread(controller.stop)
+    except Exception as ex:
+        await controller.broadcast_log("error", f"Stop failed: {ex}")
+        raise HTTPException(status_code=500, detail="Stop failed unexpectedly")
+    auto_summary_scheduled = False
     if stopped:
         await controller.broadcast_log("info", "Stop requested from web")
-    return {"ok": True, "stopped": stopped}
+        auto_summary_scheduled = True
+    else:
+        # Handle race where provider/session are transitioning to stopped
+        # shortly after stop() returns False.
+        poll_interval_sec = 0.1
+        poll_attempts = 50  # 5 seconds
+        for _ in range(poll_attempts):
+            if not controller.running:
+                auto_summary_scheduled = True
+                break
+            await asyncio.sleep(poll_interval_sec)
+        if auto_summary_scheduled:
+            await controller.broadcast_log(
+                "info",
+                "Stop acknowledged while already stopping/stopped; auto-summary scheduled.",
+            )
+        else:
+            await controller.broadcast_log(
+                "warning",
+                "Stop acknowledged but session is still running; auto-summary deferred.",
+            )
+    if auto_summary_scheduled:
+        asyncio.create_task(_run_summary_after_stop(controller))
+    return {
+        "ok": True,
+        "stopped": stopped,
+        "auto_summary_scheduled": auto_summary_scheduled,
+    }
 
 
 @router.post("/logs/clear")
@@ -213,7 +264,7 @@ async def ask_coach(payload: CoachAskRequest, request: Request) -> dict:
             msg = (
                 "Coach authentication failed. Sign in to the correct Azure tenant "
                 "for AI Foundry, then retry. Example: "
-                "az logout && az login --tenant \"7bff966e-1643-4ea5-b536-e449cd5de230\" "
+                "az logout && az login --tenant \"<your-tenant-id>\" "
                 "--scope \"https://ai.azure.com/.default\""
             )
         raise HTTPException(status_code=502, detail=msg)

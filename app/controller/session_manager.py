@@ -15,7 +15,7 @@ from typing import Any, Awaitable, Callable
 
 from app.config import RuntimeConfig
 from app.services.coach import CoachService
-from app.services.speech import SpeechService
+from app.services.speech_provider import SpeechProviderService
 from app.services.translation_pipeline import TranslationPipeline
 
 from .coach_orchestrator import CoachOrchestrator
@@ -35,7 +35,7 @@ class SessionManager:
     def __init__(
         self,
         lock: threading.RLock,
-        speech: SpeechService,
+        speech: SpeechProviderService,
         translation: TranslationPipeline,
         transcript_store: TranscriptStore,
         coach_orch: CoachOrchestrator,
@@ -83,7 +83,8 @@ class SessionManager:
         return int(total_ms)
 
     def _can_start_unlocked(self, config: RuntimeConfig) -> tuple[bool, str]:
-        if config.capture_mode == "dual":
+        provider = str(getattr(config, "speech_provider", "azure") or "azure").strip().lower()
+        if config.capture_mode == "dual" and provider != "nova3":
             local_device = (config.local_input_device_id or "").strip()
             remote_device = (config.remote_input_device_id or "").strip()
             missing: list[str] = []
@@ -172,6 +173,10 @@ class SessionManager:
                         )
                     return
             self._handle_partial_event(payload, config)
+            return
+
+        if kind == "partial_clear":
+            self._handle_partial_clear_event(payload, config)
             return
 
         if kind == "final":
@@ -286,6 +291,29 @@ class SessionManager:
         if req and config.translation_enabled:
             self._translation.enqueue_from_thread(req)
 
+    def _handle_partial_clear_event(
+        self, payload: dict[str, Any], config: RuntimeConfig
+    ) -> None:
+        speaker = str(payload.get("speaker", "default") or "default")
+        reason = str(payload.get("reason", "unspecified") or "unspecified")
+        with self._lock:
+            self._translation.discard_speaker_live_unlocked(speaker)
+            cleared = self._transcript.clear_live_partial_unlocked(speaker)
+        if not cleared:
+            return
+        out = {
+            "type": "partial_clear",
+            "speaker": speaker,
+            "speaker_label": cleared.get("speaker_label", "Speaker"),
+            "segment_id": cleared.get("segment_id", ""),
+            "revision": int(cleared.get("revision", 0) or 0),
+            "reason": reason,
+        }
+        self._broadcast_from_thread(out)
+        self._emit_trace_from_thread(
+            out, channel="speech_partial_clear", debug=config.debug
+        )
+
     def _handle_final_event(
         self, payload: dict[str, Any], config: RuntimeConfig
     ) -> None:
@@ -398,7 +426,6 @@ class SessionManager:
         with self._lock:
             self._coach_orch.reset_runtime_unlocked(keep_history=True)
             self._translation.reset_unlocked()
-        self._coach.clear_conversation()
 
     # ── Watchdog ──────────────────────────────────────────────────────────────
 

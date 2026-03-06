@@ -51,6 +51,7 @@ if (Test-Path (Join-Path $venvPath "Scripts\python.exe")) {
 # ── 3. Install dependencies ──────────────────────────────────────────────────
 $pip = Join-Path $venvPath "Scripts\pip.exe"
 $reqFile = Join-Path $root "requirements.txt"
+$novaReqFile = Join-Path $root "requirements-nova3.txt"
 $wheelhouse = Join-Path $root "wheelhouse"
 
 if (Test-Path $wheelhouse) {
@@ -59,6 +60,9 @@ if (Test-Path $wheelhouse) {
         Write-Host "  Offline package detected (wheelhouse found)." -ForegroundColor Cyan
         Write-Host "  Installing dependencies from local wheelhouse..." -ForegroundColor Cyan
         & $pip install --no-index --find-links $wheelhouse -r $reqFile --quiet
+        if (Test-Path $novaReqFile) {
+            & $pip install --no-index --find-links $wheelhouse -r $novaReqFile --quiet
+        }
         Write-Host "  [OK] Offline dependencies installed." -ForegroundColor Green
     } else {
         Write-Host "  Wheelhouse folder exists but has no .whl files. Falling back to online install..." -ForegroundColor Yellow
@@ -66,6 +70,9 @@ if (Test-Path $wheelhouse) {
         & $pip install --upgrade pip --quiet
         Write-Host "  Installing dependencies (this may take a minute)..." -ForegroundColor Cyan
         & $pip install -r $reqFile --quiet
+        if (Test-Path $novaReqFile) {
+            & $pip install -r $novaReqFile --quiet
+        }
         Write-Host "  [OK] Dependencies installed." -ForegroundColor Green
     }
 } else {
@@ -73,6 +80,9 @@ if (Test-Path $wheelhouse) {
     & $pip install --upgrade pip --quiet
     Write-Host "  Installing dependencies (this may take a minute)..." -ForegroundColor Cyan
     & $pip install -r $reqFile --quiet
+    if (Test-Path $novaReqFile) {
+        & $pip install -r $novaReqFile --quiet
+    }
     Write-Host "  [OK] Dependencies installed." -ForegroundColor Green
 }
 

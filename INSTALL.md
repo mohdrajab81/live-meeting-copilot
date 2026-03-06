@@ -51,6 +51,7 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1
 - Detects and verifies your Python installation
 - Creates a virtual environment (`.venv`)
 - Downloads and installs all dependencies from the internet
+- Installs optional Nova-3 preview dependencies when `requirements-nova3.txt` is included in the package
 - Creates `.env` from the built-in template
 - Opens `.env` in Notepad and waits for you to save it
 
@@ -81,7 +82,7 @@ Your browser opens automatically to `http://localhost:8000`. If it does not open
 
 The offline package is identical to the online package, except that all Python dependencies are pre-bundled in a `wheelhouse/` folder. No internet connection is needed on the target machine.
 
-The `setup.ps1` script automatically detects the `wheelhouse/` folder and installs from it without downloading anything. Prerequisites and installation steps are otherwise identical to Option A.
+The `setup.ps1` script automatically detects the `wheelhouse/` folder, installs both the base dependencies and the optional Nova-3 preview wheels when present, and does not download anything. Prerequisites and installation steps are otherwise identical to Option A.
 
 ---
 
@@ -176,7 +177,7 @@ See `docs/AZURE_PROVISIONING.md` for how to create and name these agents.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `TRANSLATION_COST_PER_MILLION_USD` | `10.0` | Used for on-screen cost estimates only; does not affect translation |
-| `API_AUTH_TOKEN` | *(empty)* | When set, all API requests must supply this token. Recommended for non-localhost deployments. |
+| `NOVA3_API_KEY` | *(empty)* | Optional key for Nova-3 STT preview. Python-based installs pull the optional Nova deps from `requirements-nova3.txt` during setup when that file is packaged. The EXE package uses Nova only when those optional deps were bundled by the maintainer; otherwise it auto-falls back to Azure. |
 
 ---
 

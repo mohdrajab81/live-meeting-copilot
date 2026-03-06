@@ -237,6 +237,33 @@ class TestResetUnlocked:
 
 
 # ---------------------------------------------------------------------------
+# discard_speaker_live_unlocked
+# ---------------------------------------------------------------------------
+
+class TestDiscardSpeakerLiveUnlocked:
+    def test_discards_only_target_speaker_state(self, pipeline, cfg):
+        t = time.time()
+        pipeline.prepare_partial_unlocked(
+            speaker="local", speaker_label="You", en="local text", prev_ar="",
+            now_ts=t, cfg=cfg,
+        )
+        pipeline.prepare_partial_unlocked(
+            speaker="remote", speaker_label="Remote", en="remote text", prev_ar="",
+            now_ts=t + 0.2, cfg=cfg,
+        )
+        pipeline.partial_backlog["local"] = {"kind": "partial", "speaker": "local"}
+        pipeline.partial_inflight["local"] = True
+
+        pipeline.discard_speaker_live_unlocked("local")
+
+        assert "local" not in pipeline.active_segments
+        assert "local" not in pipeline.partial_translate_last_emit_ts
+        assert "local" not in pipeline.partial_backlog
+        assert "local" not in pipeline.partial_inflight
+        assert "remote" in pipeline.active_segments
+
+
+# ---------------------------------------------------------------------------
 # is_current_partial_unlocked
 # ---------------------------------------------------------------------------
 

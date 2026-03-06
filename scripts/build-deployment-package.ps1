@@ -31,7 +31,9 @@ $items = @(
   "README.md",
   "INSTALL.md",
   "requirements.txt",
+  "requirements-nova3.txt",
   ".env.example",
+  "web_translator_settings.example.json",
   "setup.ps1",
   "run.ps1"
 )

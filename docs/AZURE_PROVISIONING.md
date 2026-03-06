@@ -153,8 +153,9 @@ This agent provides real-time communication coaching to the local speaker during
 
 > **This is the most customizable of the two agents.** Unlike the Meeting Summarizer,
 > which has strict structural requirements, this agent's behavior is shaped primarily by your persona,
-> background, and preferred coaching style. The instructions below are a functional generic baseline —
-> you are expected to extend them with your own profile, role, and any knowledge base you attach in Foundry.
+> background, and the grounding rules you define in Foundry. The instructions below are a functional
+> baseline. Per-meeting details such as agenda, attendees, and your role should be entered in the app's
+> meeting brief field before each session.
 
 **Create in Foundry:**
 
@@ -214,6 +215,8 @@ This agent provides real-time communication coaching to the local speaker during
 >   coaching style.
 > - **Coaching trigger**: in application Settings, configure which speaker channel
 >   (`local`, `remote`, or `any`) triggers coaching requests.
+> - **Meeting brief**: before each meeting, fill the app's `Pre-meeting Context / Meeting Brief`
+>   field with meeting date, attendees, objective, agenda, background, and your role.
 
 **Set in `.env`:**
 

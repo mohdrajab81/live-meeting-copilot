@@ -248,6 +248,62 @@ class TestPrepareCallUnlocked:
         assert group_id.startswith("coach-")
         assert end_idx == 1
 
+    def test_first_prompt_uses_meeting_brief_and_full_transcript(self):
+        finals = [
+            _final_item("remote", "What is your strength?"),
+            _final_item("local", "I lead backend delivery."),
+        ]
+        orch = _make_orchestrator(finals=finals)
+        orch.coach_last_sent_final_idx = 0
+        orch.coach_last_run_ts = 0
+        config = RuntimeConfig(
+            coach_enabled=True,
+            coach_cooldown_sec=0,
+            coach_trigger_speaker="remote",
+            coach_instruction=(
+                "Meeting date: 2026-03-06\n"
+                "Attendees: Omar, Sara\n"
+                "Meeting objective: Status review"
+            ),
+        )
+
+        result = orch.prepare_call_unlocked(_final_item("remote", "What is your strength?"), config)
+
+        assert result is not None
+        prompt = result[0]
+        assert "Pre-meeting context:" in prompt
+        assert "Meeting date: 2026-03-06" in prompt
+        assert "Latest triggering utterance:" in prompt
+        assert "Meeting transcript (full, from session start):" in prompt
+        assert "You are my live meeting copilot." not in prompt
+        assert "Return format:" not in prompt
+
+    def test_follow_up_prompt_uses_delta_only(self):
+        finals = [
+            _final_item("remote", "Earlier turn"),
+            _final_item("remote", "Newest turn"),
+        ]
+        orch = _make_orchestrator(finals=finals)
+        orch.coach_last_sent_final_idx = 1
+        orch.coach_last_run_ts = 0
+        config = RuntimeConfig(
+            coach_enabled=True,
+            coach_cooldown_sec=0,
+            coach_trigger_speaker="remote",
+            coach_instruction="Meeting date: 2026-03-06",
+        )
+
+        result = orch.prepare_call_unlocked(_final_item("remote", "Newest turn"), config)
+
+        assert result is not None
+        prompt = result[0]
+        assert "Latest triggering utterance:" in prompt
+        assert "Transcript delta since last update:" in prompt
+        assert "Meeting transcript (full, from session start):" not in prompt
+        assert "Pre-meeting context:" not in prompt
+        assert "Earlier turn" not in prompt
+        assert "Newest turn" in prompt
+
     def test_sets_coach_pending_after_call(self):
         finals = [_final_item()]
         orch = _make_orchestrator(finals=finals)
@@ -321,3 +377,36 @@ class TestClear:
         coach = _make_coach()
         orch.clear(coach_service=coach)
         coach.clear_conversation.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_coach_logs_exact_prompt_when_debug_enabled():
+    orch = _make_orchestrator()
+    orch._get_config = lambda: RuntimeConfig(debug=True)
+    prompt = "Exact prompt body"
+    trigger = _final_item()
+
+    await orch.run_coach(
+        prompt,
+        trigger,
+        group_id="coach-1",
+        trigger_ts=time.time(),
+        inflight_end_idx=1,
+    )
+
+    messages = [call.args[1] for call in orch._broadcast_log.await_args_list]
+    assert any("Coach deep prompt exact: group=coach-1" in msg for msg in messages)
+    assert any("Exact prompt body" in msg for msg in messages)
+
+
+@pytest.mark.asyncio
+async def test_request_manual_logs_exact_prompt_when_debug_enabled():
+    orch = _make_orchestrator()
+    orch._get_config = lambda: RuntimeConfig(debug=True)
+
+    await orch.request_manual(prompt="What happened in the meeting?", speaker_label="Manual")
+
+    messages = [call.args[1] for call in orch._broadcast_log.await_args_list]
+    assert any("Coach manual prompt exact:" in msg for msg in messages)
+    assert any("Manual user message (same conversation):" in msg for msg in messages)
+    assert any("What happened in the meeting?" in msg for msg in messages)

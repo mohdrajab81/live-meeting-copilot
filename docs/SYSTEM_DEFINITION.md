@@ -22,7 +22,7 @@
 | --- | --- |
 | Frontend | `static/` — single-page app, no framework |
 | API and WebSocket backend | FastAPI (`app/`) |
-| Speech transcription | Azure AI Services — Speech SDK |
+| Speech transcription | Provider router: Azure AI Services — Speech SDK, Nova-3 preview |
 | Arabic translation | Azure AI Services — Translator API |
 | AI coaching, summary | Azure AI Foundry agents |
 
@@ -46,7 +46,7 @@ Agent behavior is shaped by four layers, listed in order of practical influence 
 | Priority | Layer | Source | Scope |
 | --- | --- | --- | --- |
 | 1 (highest) | Request context data | Code — transcript turns, speaker labels, agenda, runtime state | Per-request; highest signal |
-| 2 | Runtime web instruction | UI Settings → `PUT /api/config` → `coach_instruction` | Per-session coaching style; coach agent only |
+| 2 | Runtime web meeting brief | UI Settings → `PUT /api/config` → `coach_instruction` | Per-meeting context and background; coach agent only |
 | 3 | Code-authored request framing | `coach_orchestrator.py`, `topic_orchestrator.py`, `summary.py` | Per-request schema constraints and task framing |
 | 4 (lowest) | Azure baseline system instruction | Azure AI Foundry agent system instructions | Persistent persona and global behaviour |
 
@@ -57,7 +57,7 @@ Agent behavior is shaped by four layers, listed in order of practical influence 
 | What You Are Configuring | Where to Configure It |
 | --- | --- |
 | Credentials, endpoints, agent bindings | `.env` |
-| Runtime settings (capture mode, language, toggles, coach instruction) | Web UI → `PUT /api/config` |
+| Runtime settings (capture mode, language, toggles, meeting brief) | Web UI → `PUT /api/config` |
 | Agenda topics and session definitions | Web UI → Topics panel |
 | Agent baseline instructions and model selection | Azure AI Foundry portal |
 | Request schema, payload structure, deterministic post-processing | Source code |
@@ -77,7 +77,9 @@ Agent behavior is shaped by four layers, listed in order of practical influence 
 | Transcript store | `app/controller/transcript_store.py` |
 | Runtime config store | `app/controller/config_store.py` |
 | Broadcast service | `app/controller/broadcast_service.py` |
-| Speech SDK integration | `app/services/speech.py` |
+| Speech provider router | `app/services/speech_provider.py` |
+| Azure Speech backend | `app/services/speech.py` |
+| Nova-3 preview backend | `app/services/speech_nova3.py` |
 | Translation pipeline | `app/services/translation_pipeline.py` |
 | Coach agent client | `app/services/coach.py` |
 | Summary agent client | `app/services/summary.py` |

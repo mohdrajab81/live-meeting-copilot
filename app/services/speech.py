@@ -129,6 +129,10 @@ class SpeechService:
         timing_state: dict[str, Any] = {
             "anchor_ts": time.time(),
             "session_id": "",
+            "last_partial_text": "",
+            "last_partial_ts": 0.0,
+            "last_partial_offset_sec": None,
+            "last_partial_duration_sec": None,
         }
 
         def _safe_float(value: Any) -> float | None:
@@ -140,6 +144,35 @@ class SpeechService:
                 return None
             return parsed
 
+        def _preview(text: str, max_len: int = 80) -> str:
+            cleaned = " ".join(str(text or "").split())
+            if len(cleaned) <= max_len:
+                return cleaned
+            return f"{cleaned[: max_len - 3]}..."
+
+        def _timing_fields(result: Any) -> tuple[float | None, float | None]:
+            raw_offset_ticks = _safe_float(getattr(result, "offset", None))
+            raw_duration_ticks = _safe_float(getattr(result, "duration", None))
+            offset_sec = (
+                raw_offset_ticks / 10_000_000.0 if raw_offset_ticks is not None else None
+            )
+            duration_sec = (
+                max(0.0, raw_duration_ticks / 10_000_000.0)
+                if raw_duration_ticks is not None
+                else None
+            )
+            return offset_sec, duration_sec
+
+        def _emit_partial_clear(reason: str) -> None:
+            self._emit(
+                {
+                    "type": "partial_clear",
+                    "speaker": speaker_key,
+                    "speaker_label": speaker_label,
+                    "reason": reason,
+                }
+            )
+
         def on_recognizing(evt: Any) -> None:
             result = evt.result
             if not result or result.reason != speech_sdk.ResultReason.RecognizingSpeech:
@@ -147,18 +180,26 @@ class SpeechService:
             en_text = (result.text or "").strip()
             if not en_text:
                 return
+            offset_sec, duration_sec = _timing_fields(result)
+            timing_state["last_partial_text"] = en_text
+            timing_state["last_partial_ts"] = time.time()
+            timing_state["last_partial_offset_sec"] = offset_sec
+            timing_state["last_partial_duration_sec"] = duration_sec
             if cfg.debug:
                 now = time.time()
                 last = self._last_partial_debug_ts.get(speaker_key, 0.0)
                 if now - last >= 1.0:
                     self._last_partial_debug_ts[speaker_key] = now
-                    preview = en_text if len(en_text) <= 80 else f"{en_text[:77]}..."
+                    preview = _preview(en_text)
                     self._emit(
                         {
                             "type": "log",
                             "level": "debug",
                             "message": (
                                 f"[{speaker_label}] STT partial emitted: "
+                                f"session_id={timing_state.get('session_id') or '-'}, "
+                                f"offset_sec={offset_sec if offset_sec is not None else '-'}, "
+                                f"duration_sec={duration_sec if duration_sec is not None else '-'}, "
                                 f"len={len(en_text)}, preview='{preview}'"
                             ),
                         }
@@ -175,10 +216,54 @@ class SpeechService:
 
         def on_recognized(evt: Any) -> None:
             result = evt.result
-            if not result or result.reason != speech_sdk.ResultReason.RecognizedSpeech:
+            if not result:
+                if cfg.debug:
+                    self._emit(
+                        {
+                            "type": "log",
+                            "level": "debug",
+                            "message": (
+                                f"[{speaker_label}] on_recognized: result is None, "
+                                f"session_id={timing_state.get('session_id') or '-'}, "
+                                f"last_partial='{_preview(str(timing_state.get('last_partial_text') or '')) or '-'}'"
+                            ),
+                        }
+                    )
+                _emit_partial_clear("azure_none_result")
+                return
+            if result.reason != speech_sdk.ResultReason.RecognizedSpeech:
+                if cfg.debug:
+                    reason_name = str(result.reason)
+                    self._emit(
+                        {
+                            "type": "log",
+                            "level": "debug",
+                            "message": (
+                                f"[{speaker_label}] Recognized callback without final text: "
+                                f"reason={reason_name}, session_id={timing_state.get('session_id') or '-'}, "
+                                f"last_partial='{_preview(str(timing_state.get('last_partial_text') or '')) or '-'}'"
+                            ),
+                        }
+                    )
+                _emit_partial_clear("azure_nonfinal_recognized")
                 return
             en_text = (result.text or "").strip()
             if not en_text:
+                if cfg.debug:
+                    self._emit(
+                        {
+                            "type": "log",
+                            "level": "debug",
+                            "message": (
+                                f"[{speaker_label}] Final callback contained empty text: "
+                                f"session_id={timing_state.get('session_id') or '-'}, "
+                                f"offset={getattr(result, 'offset', None)}, "
+                                f"duration={getattr(result, 'duration', None)}, "
+                                f"last_partial='{_preview(str(timing_state.get('last_partial_text') or '')) or '-'}'"
+                            ),
+                        }
+                    )
+                _emit_partial_clear("azure_empty_final")
                 return
             now_ts = time.time()
             offset_sec: float | None = None
@@ -239,9 +324,18 @@ class SpeechService:
                     {
                         "type": "log",
                         "level": "debug",
-                        "message": f"[{speaker_label}] Final recognized: EN='{en_text}'",
+                        "message": (
+                            f"[{speaker_label}] Final recognized: "
+                            f"session_id={timing_state.get('session_id') or '-'}, "
+                            f"offset_sec={offset_sec if offset_sec is not None else '-'}, "
+                            f"duration_sec={duration_sec}, preview='{_preview(en_text)}'"
+                        ),
                     }
                 )
+            timing_state["last_partial_text"] = ""
+            timing_state["last_partial_ts"] = 0.0
+            timing_state["last_partial_offset_sec"] = None
+            timing_state["last_partial_duration_sec"] = None
 
         def on_session_started(evt: Any) -> None:
             timing_state["anchor_ts"] = time.time()
@@ -258,6 +352,24 @@ class SpeechService:
                     }
                 )
 
+        def on_session_stopped(evt: Any) -> None:
+            session_id = str(
+                getattr(evt, "session_id", "") or timing_state.get("session_id") or ""
+            )
+            if cfg.debug:
+                self._emit(
+                    {
+                        "type": "log",
+                        "level": "debug",
+                        "message": (
+                            f"[{speaker_label}] Session stopped: "
+                            f"session_id={session_id or '-'}, "
+                            f"last_partial='{_preview(str(timing_state.get('last_partial_text') or '')) or '-'}'"
+                        ),
+                    }
+                )
+            _emit_partial_clear("azure_session_stopped")
+
         def on_canceled(evt: Any) -> None:
             details = evt.cancellation_details
             reason = str(details.reason)
@@ -266,9 +378,16 @@ class SpeechService:
                 {
                     "type": "log",
                     "level": "error",
-                    "message": f"[{speaker_label}] Canceled: {reason}. {err}".strip(),
+                    "message": (
+                        f"[{speaker_label}] Canceled: {reason}. {err}".strip()
+                        + (
+                            f" session_id={timing_state.get('session_id') or '-'}, "
+                            f"last_partial='{_preview(str(timing_state.get('last_partial_text') or '')) or '-'}'"
+                        )
+                    ),
                 }
             )
+            _emit_partial_clear("azure_canceled")
             # "client buffer exceeded" is a recoverable inactivity timeout.
             # Signal only this channel's restart_event so the other channel
             # (in dual mode) is never interrupted.
@@ -290,6 +409,7 @@ class SpeechService:
         recognizer.recognizing.connect(on_recognizing)
         recognizer.recognized.connect(on_recognized)
         recognizer.session_started.connect(on_session_started)
+        recognizer.session_stopped.connect(on_session_stopped)
         recognizer.canceled.connect(on_canceled)
 
     def _start_single_mode(self, cfg: RuntimeConfig) -> list[dict]:

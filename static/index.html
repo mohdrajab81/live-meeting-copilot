@@ -436,11 +436,24 @@
                             <option value="en-ZA">English (South Africa)</option>
                           </select>
 
+                          <div class="label-row">
+                            <label>Speech Engine</label>
+                            <details class="hint-tip">
+                              <summary aria-label="Speech Engine help">?</summary>
+                              <div class="hint-tip-content">Nova-3 is a gradual rollout path and auto-falls back to Azure if unavailable.</div>
+                            </details>
+                          </div>
+                          <select id="cfgSpeechProvider">
+                            <option value="azure">Azure Speech (Stable)</option>
+                            <option value="nova3">Nova-3 (Preview)</option>
+                          </select>
+
                           <label>Microphone Layout</label>
                           <select id="cfgCaptureMode">
                             <option value="single">Single Input</option>
                             <option value="dual">Dual Input (You + Remote)</option>
                           </select>
+                          <div id="speechProviderGovernanceHint" class="muted hidden"></div>
 
                           <div id="singleInputGroup">
                             <label>Audio Input Source</label>
@@ -478,7 +491,7 @@
                             </details>
                           </div>
                           <div class="field-inline">
-                            <input id="cfgEndRange" type="range" min="50" max="10000" step="10" />
+                            <input id="cfgEndRange" type="range" min="50" max="2000" step="10" />
                             <input id="cfgEnd" type="number" min="50" max="10000" step="10" />
                           </div>
 
@@ -576,8 +589,8 @@
                             <input id="cfgCoachMaxTurns" type="number" min="2" max="30" />
                           </div>
 
-                          <label>Coach Prompt / Instruction</label>
-                          <textarea id="cfgCoachInstruction" rows="4" placeholder="How the coach should respond..."></textarea>
+                          <label>Pre-meeting Context / Meeting Brief</label>
+                          <textarea id="cfgCoachInstruction" rows="4" placeholder="Meeting date, attendees, objective, agenda, background, my role..."></textarea>
                         </details>
                       </div>
                     </details>

@@ -1,0 +1,3 @@
+-r requirements.txt
+deepgram-sdk
+pyaudiowpatch; platform_system == "Windows"

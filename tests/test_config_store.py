@@ -31,6 +31,7 @@ def tmp_path_store():
 class TestDefaults:
     def test_get_returns_default_config(self, tmp_path_store):
         cfg = tmp_path_store.get()
+        assert cfg.speech_provider == "azure"
         assert cfg.capture_mode == "single"
         assert cfg.max_finals == 5000
         assert cfg.debug is False

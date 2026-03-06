@@ -81,9 +81,8 @@ def _make_controller(running=False):
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def client(monkeypatch):
-    """TestClient with loopback auth (no token required)."""
-    monkeypatch.delenv("API_AUTH_TOKEN", raising=False)
+def client():
+    """TestClient with loopback-only auth."""
     app = FastAPI()
     app.include_router(api_router, prefix="/api")
     ctrl = _make_controller()
@@ -92,23 +91,11 @@ def client(monkeypatch):
 
 
 @pytest.fixture
-def client_running(monkeypatch):
+def client_running():
     """TestClient with a running controller."""
-    monkeypatch.delenv("API_AUTH_TOKEN", raising=False)
     app = FastAPI()
     app.include_router(api_router, prefix="/api")
     ctrl = _make_controller(running=True)
-    app.state.controller = ctrl
-    return TestClient(app), ctrl
-
-
-@pytest.fixture
-def client_token(monkeypatch):
-    """TestClient that requires token auth."""
-    monkeypatch.setenv("API_AUTH_TOKEN", "test-token")
-    app = FastAPI()
-    app.include_router(api_router, prefix="/api")
-    ctrl = _make_controller()
     app.state.controller = ctrl
     return TestClient(app), ctrl
 
@@ -118,34 +105,9 @@ def client_token(monkeypatch):
 # ---------------------------------------------------------------------------
 
 class TestAuth:
-    def test_loopback_testclient_passes_without_token(self, client):
+    def test_loopback_testclient_passes(self, client):
         tc, _ = client
         r = tc.get("/api/state")
-        assert r.status_code == 200
-
-    def test_token_mode_no_token_returns_401(self, client_token):
-        tc, _ = client_token
-        r = tc.get("/api/state")
-        assert r.status_code == 401
-
-    def test_token_mode_valid_bearer_passes(self, client_token):
-        tc, _ = client_token
-        r = tc.get("/api/state", headers={"Authorization": "Bearer test-token"})
-        assert r.status_code == 200
-
-    def test_token_mode_invalid_bearer_returns_401(self, client_token):
-        tc, _ = client_token
-        r = tc.get("/api/state", headers={"Authorization": "Bearer wrong"})
-        assert r.status_code == 401
-
-    def test_token_mode_x_api_key_passes(self, client_token):
-        tc, _ = client_token
-        r = tc.get("/api/state", headers={"X-API-Key": "test-token"})
-        assert r.status_code == 200
-
-    def test_token_mode_query_param_passes(self, client_token):
-        tc, _ = client_token
-        r = tc.get("/api/state", params={"token": "test-token"})
         assert r.status_code == 200
 
 
@@ -280,6 +242,37 @@ class TestStartStop:
         tc, _ = client
         r = tc.post("/api/stop")
         assert "stopped" in r.json()
+
+    def test_stop_response_has_auto_summary_scheduled_field(self, client):
+        tc, _ = client
+        r = tc.post("/api/stop")
+        assert "auto_summary_scheduled" in r.json()
+
+    def test_stop_false_but_not_running_schedules_auto_summary(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod.asyncio, "sleep", AsyncMock(return_value=None))
+        tc, ctrl = client
+        ctrl.stop.return_value = False
+        ctrl.running = False
+
+        r = tc.post("/api/stop")
+        data = r.json()
+        assert r.status_code == 200
+        assert data["stopped"] is False
+        assert data["auto_summary_scheduled"] is True
+
+    def test_stop_false_and_still_running_defers_auto_summary(self, client, monkeypatch):
+        import app.api.routes as routes_mod
+        monkeypatch.setattr(routes_mod.asyncio, "sleep", AsyncMock(return_value=None))
+        tc, ctrl = client
+        ctrl.stop.return_value = False
+        ctrl.running = True
+
+        r = tc.post("/api/stop")
+        data = r.json()
+        assert r.status_code == 200
+        assert data["stopped"] is False
+        assert data["auto_summary_scheduled"] is False
 
 
 # ---------------------------------------------------------------------------

@@ -33,7 +33,7 @@ Add a 60-90 second demo clip here for recruiters and reviewers:
 | Real-time speech transcription (English, multiple accents) | Azure AI Services key |
 | Live English-to-Arabic translation | Azure AI Services key |
 | AI coaching suggestions | Azure AI Foundry (optional) |
-| Automatic topic tracking and agenda adherence | Azure AI Foundry (optional) |
+| Agenda definitions and adherence in summary output | Azure AI Foundry (optional) |
 | Structured meeting summary generation | Azure AI Foundry (optional) |
 
 The application runs entirely on your local machine. No cloud hosting is required.
@@ -76,7 +76,7 @@ The application uses two independent Azure services:
 - Covered in `docs/AZURE_PROVISIONING.md` — Section 2
 
 **Azure AI Foundry** — optional (AI features only)
-- Provides coaching suggestions, topic tracking, and meeting summaries
+- Provides coaching suggestions and meeting summaries
 - Authenticated via Azure CLI login
 - Covered in `docs/AZURE_PROVISIONING.md` — Sections 3 through 5
 

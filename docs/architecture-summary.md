@@ -31,7 +31,9 @@ Live meeting copilot that:
 - `app/controller/broadcast_service.py`: websocket fanout, log buffer, debug trace broadcasting.
 
 ### Service layer
+- `app/services/speech_provider.py`: provider router for Azure Speech and Nova-3 preview.
 - `app/services/speech.py`: Azure Speech recognizers and event emission.
+- `app/services/speech_nova3.py`: Nova-3 preview live STT backend.
 - `app/services/translation_pipeline.py`: async translation queue with priority and stale guards.
 - `app/services/coach.py`: Azure AI Foundry coach agent client.
 - `app/services/summary.py`: Azure AI Foundry summary agent client.
@@ -42,11 +44,12 @@ Live meeting copilot that:
 
 ### Transcript + translation flow
 1. `POST /api/start` starts recognition.
-2. `SpeechService` emits `partial` and `final` events.
+2. `SpeechProviderService` starts the selected backend and emits normalized `partial`, `final`, and `partial_clear` events.
 3. `SessionManager` updates transcript state and schedules translation work only when `translation_enabled=true`.
 4. `TranslationPipeline` processes queue (`final` priority over `partial`) when translation is enabled.
 5. `TranscriptStore` applies translation results and broadcasts:
    - `partial` updates,
+   - `partial_clear` updates,
    - `final_patch` updates,
    - `telemetry` updates.
 
@@ -76,6 +79,7 @@ Live meeting copilot that:
 - `snapshot` (initial full state)
 - `status`
 - `partial`
+- `partial_clear`
 - `final`
 - `final_patch`
 - `telemetry`
@@ -101,7 +105,7 @@ Live meeting copilot that:
   - deterministic post-processing for durations, topic breakdown, and adherence.
 
 ## Concurrency model
-- Speech SDK callbacks run on background threads.
+- Azure Speech callbacks and Nova listener threads run on background threads.
 - Controller modules sharing mutable runtime state use one shared `threading.RLock`.
 - `BroadcastService` connection set is event-loop-owned.
 - Translation worker is an asyncio task on the app loop.

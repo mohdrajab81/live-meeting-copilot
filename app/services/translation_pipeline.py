@@ -50,6 +50,19 @@ class TranslationPipeline:
             self.partial_inflight = {}
             self.partial_backlog = {}
 
+    def discard_speaker_live_unlocked(self, speaker: str) -> None:
+        """Drop live translation state for a single speaker.
+
+        Used when a speaker's partial stream is explicitly suppressed/cleared so
+        stale in-flight/backlog translation callbacks cannot patch UI state.
+        """
+        key = str(speaker or "default")
+        with self._state_lock:
+            self.partial_translate_last_emit_ts.pop(key, None)
+            self.active_segments.pop(key, None)
+            self.partial_backlog.pop(key, None)
+            self.partial_inflight.pop(key, None)
+
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
         self._queue = asyncio.PriorityQueue(maxsize=200)

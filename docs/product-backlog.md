@@ -92,8 +92,8 @@ Needed to attract first external users.
 
 ### 6. STT provider / model flexibility
 
-- Abstract speech provider behind a common event contract.
-- Add support path for Nova-3 class models (higher accuracy, lower latency).
+- Extend the existing speech provider abstraction beyond the current Azure default and Nova-3 preview path.
+- Evaluate additional STT backends for accuracy, latency, and packaging cost.
 - Keep Azure Speech SDK as default; new providers are additive.
 
 ### 7. Multilingual support

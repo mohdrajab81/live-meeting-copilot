@@ -86,6 +86,8 @@ az login
 
 Restart `run.ps1`. The Coaching and Summary panels in the UI become active.
 
+For speech recognition, Azure Speech is the default. A Nova-3 preview option is available in **Settings > Capture > Speech Engine**. In the Python-based packages, `setup.ps1` also installs the optional Nova dependencies from `requirements-nova3.txt` when that file is included in the package. When the Nova runtime is unavailable, the app falls back to Azure automatically.
+
 ---
 
 ## If Something Goes Wrong

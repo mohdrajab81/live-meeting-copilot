@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     ai_services_key: str = Field(default="", alias="AZURE_AI_SERVICES_KEY")
     ai_services_region: str = Field(default="", alias="AZURE_AI_SERVICES_REGION")
+    nova3_api_key: str = Field(default="", alias="NOVA3_API_KEY")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -48,6 +49,7 @@ def validate_environment(settings: "Settings") -> None:
 
 
 class RuntimeConfig(BaseModel):
+    speech_provider: Literal["azure", "nova3"] = "azure"
     capture_mode: Literal["single", "dual"] = "single"
     recognition_language: EnglishRecognitionLanguage = "en-US"
     audio_source: Literal["default", "device_id"] = "default"
@@ -64,10 +66,14 @@ class RuntimeConfig(BaseModel):
     auto_stop_silence_sec: int = Field(default=75, ge=0, le=3600)
     max_session_sec: int = Field(default=3600, ge=300, le=10800)
     coach_instruction: str = (
-        "Give a short suggested reply for me, tailored to my profile. "
-        "Use concise bullets and keep claims truthful to known background."
+        "Meeting date: \n"
+        "Attendees: \n"
+        "Meeting objective: \n"
+        "Key topics on agenda: \n"
+        "Background: \n"
+        "My role in this meeting: "
     )
-    end_silence_ms: int = Field(default=250, ge=50, le=10000)
+    end_silence_ms: int = Field(default=250, ge=50, le=2000)
     initial_silence_ms: int = Field(default=3000, ge=1000, le=120000)
     max_finals: int = Field(default=5000, ge=100, le=10000)
     translation_enabled: bool = True

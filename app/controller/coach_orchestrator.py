@@ -135,44 +135,31 @@ class CoachOrchestrator:
             delta_lines.append(f"[{ts}] {label}: {text}")
 
         trigger_label = str(trigger_item.get("speaker_label", "Speaker") or "Speaker")
-        trigger_en = (
+        trigger_text = (
             str(trigger_item.get("en", "") or "").strip()
             or str(trigger_item.get("ar", "") or "").strip()
         )
-        instruction = str(config.coach_instruction or "").strip()
-        if not instruction:
-            instruction = (
-                "Give a short suggested reply for me, tailored to my profile. "
-                "Use concise bullets and keep claims truthful to known background."
-            )
-        if session_start:
-            return "\n".join(
-                [
-                    "You are my live meeting copilot.",
-                    "Use my stored profile knowledge from the connected agent tools.",
-                    instruction,
-                    "",
-                    "Latest remote-speaker utterance:",
-                    f"{trigger_label}: {trigger_en}",
-                    "",
-                    "Session transcript update:",
-                    "This is the full transcript from session start.",
-                    "\n".join(delta_lines) if delta_lines else "(no new turns)",
-                    "",
-                    "Return format:",
-                    "1) Suggested reply (short)",
-                    "2) Exactly 2 bullet proof points from my background",
-                    "3) One follow-up question I can ask (optional)",
-                ]
-            )
-        return "\n".join(
+        transcript_lines = "\n".join(delta_lines) if delta_lines else "(no transcript yet)"
+        trigger_block = "\n".join(
             [
-                "Latest remote-speaker utterance:",
-                f"{trigger_label}: {trigger_en}",
-                "",
-                "Session transcript update:",
-                "This is only the new transcript delta since last update.",
-                "\n".join(delta_lines) if delta_lines else "(no new turns)",
+                "Latest triggering utterance:",
+                f"{trigger_label}: {trigger_text}",
+            ]
+        )
+        meeting_brief = str(config.coach_instruction or "").strip()
+        if session_start:
+            prompt_blocks: list[str] = []
+            if meeting_brief:
+                prompt_blocks.append("Pre-meeting context:\n" + meeting_brief)
+            prompt_blocks.append(trigger_block)
+            prompt_blocks.append(
+                "Meeting transcript (full, from session start):\n" + transcript_lines
+            )
+            return "\n\n".join(prompt_blocks)
+        return "\n\n".join(
+            [
+                trigger_block,
+                "Transcript delta since last update:\n" + transcript_lines,
             ]
         )
 
@@ -238,6 +225,11 @@ class CoachOrchestrator:
                     f"req_previous_response_id={chain.get('previous_response_id') or '-'}"
                 ),
             )
+            if config.debug:
+                await self._broadcast_log(
+                    "debug",
+                    f"Coach deep prompt exact: group={group_id}\n{prompt}",
+                )
             result = await asyncio.to_thread(self._coach.ask, prompt)
             hint = {
                 "type": "coach",
@@ -372,6 +364,12 @@ class CoachOrchestrator:
                 f"prompt={self._preview_text(prompt)}"
             ),
         )
+        config = self._get_config()
+        if config.debug:
+            await self._broadcast_log(
+                "debug",
+                f"Coach manual prompt exact:\n{manual_prompt}",
+            )
         result = await asyncio.to_thread(self._coach.ask, manual_prompt)
         hint = {
             "type": "coach",

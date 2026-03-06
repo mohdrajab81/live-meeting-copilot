@@ -97,6 +97,19 @@ class TranscriptStore:
         self.translation_chars += len(text)
         self.translation_events += 1
 
+    def _refresh_live_buffers_unlocked(self) -> None:
+        if not self.live_partials:
+            self.en_live = ""
+            self.ar_live = ""
+            return
+        entries = sorted(
+            self.live_partials.values(),
+            key=lambda item: float(item.get("ts", 0.0) or 0.0),
+        )
+        latest = entries[-1]
+        self.en_live = str(latest.get("en", "") or "")
+        self.ar_live = str(latest.get("ar", "") or "")
+
     # ── Public reads ──────────────────────────────────────────────────────────
 
     def get_finals(self) -> list[dict[str, Any]]:
@@ -158,9 +171,8 @@ class TranscriptStore:
         )
         if len(self.finals) > max_finals:
             self.finals = self.finals[-max_finals:]
-        self.en_live = ""
-        self.ar_live = ""
         self.live_partials.pop(item["speaker"], None)
+        self._refresh_live_buffers_unlocked()
         if item["en"] or item["ar"]:
             self.last_speech_activity_ts = time.time()
 
@@ -193,6 +205,18 @@ class TranscriptStore:
         self.en_live = ""
         self.ar_live = ""
         self.live_partials = {}
+
+    def clear_live_partial_unlocked(self, speaker: str) -> dict[str, Any] | None:
+        removed = self.live_partials.pop(speaker, None)
+        self._refresh_live_buffers_unlocked()
+        if removed is None:
+            return None
+        return {
+            "speaker": str(removed.get("speaker", speaker) or speaker),
+            "speaker_label": str(removed.get("speaker_label", "Speaker") or "Speaker"),
+            "segment_id": str(removed.get("segment_id", "") or ""),
+            "revision": int(removed.get("revision", 0) or 0),
+        }
 
     # ── Translation result callback (async, called from TranslationPipeline) ──
 

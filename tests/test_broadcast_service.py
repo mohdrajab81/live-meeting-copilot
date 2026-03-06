@@ -139,6 +139,23 @@ class TestEmitTrace:
         log = svc.get_logs()[-1]
         assert "channel=test" in log["message"]
 
+    def test_emit_trace_includes_preview_and_reason(self, svc):
+        svc.emit_trace_from_thread(
+            {
+                "type": "partial_clear",
+                "speaker": "X",
+                "en": "to jokes",
+                "reason": "azure_canceled",
+                "recognizer_session_id": "sess-1",
+            },
+            channel="test",
+            debug=True,
+        )
+        log = svc.get_logs()[-1]
+        assert "reason=azure_canceled" in log["message"]
+        assert "en_preview='to jokes'" in log["message"]
+        assert "session_id=sess-1" in log["message"]
+
     async def test_emit_trace_async_skips_when_debug_false(self, svc):
         before = len(svc.get_logs())
         await svc.emit_trace_async({"type": "partial"}, channel="test", debug=False)

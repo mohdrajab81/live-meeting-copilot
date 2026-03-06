@@ -107,7 +107,7 @@ def test_do_finalize_resets_runtime_without_topics_side_effects():
     assert topic_orch.topics_items[0]["status"] == "active"
     coach_orch.reset_runtime_unlocked.assert_called_once_with(keep_history=True)
     translation.reset_unlocked.assert_called_once()
-    coach.clear_conversation.assert_called_once()
+    coach.clear_conversation.assert_not_called()
     broadcast_from_thread.assert_not_called()
 
 
@@ -119,7 +119,7 @@ def test_do_finalize_is_idempotent():
 
     assert topic_orch.finalize_on_stop_unlocked.call_count == 0
     assert coach_orch.reset_runtime_unlocked.call_count == 2
-    assert coach.clear_conversation.call_count == 2
+    coach.clear_conversation.assert_not_called()
     assert broadcast_from_thread.call_count == 0
 
 
@@ -211,6 +211,30 @@ def test_partial_enqueues_when_translation_enabled():
     mgr._handle_partial_event(_partial_payload(), RuntimeConfig(translation_enabled=True))
 
     translation.enqueue_from_thread.assert_called_once_with(req)
+
+
+def test_partial_clear_discards_live_partial_and_translation_state():
+    mgr, _, translation, _, _, broadcast_from_thread, _ = _make_session_manager()
+    mgr._transcript.clear_live_partial_unlocked = MagicMock(
+        return_value={
+            "speaker": "default",
+            "speaker_label": "Speaker",
+            "segment_id": "seg-9",
+            "revision": 4,
+        }
+    )
+
+    mgr._handle_partial_clear_event(
+        {"type": "partial_clear", "speaker": "default", "reason": "azure_canceled"},
+        RuntimeConfig(debug=True),
+    )
+
+    translation.discard_speaker_live_unlocked.assert_called_once_with("default")
+    mgr._transcript.clear_live_partial_unlocked.assert_called_once_with("default")
+    broadcast_from_thread.assert_called_once()
+    payload = broadcast_from_thread.call_args.args[0]
+    assert payload["type"] == "partial_clear"
+    assert payload["reason"] == "azure_canceled"
 
 
 def test_final_does_not_enqueue_when_translation_disabled():

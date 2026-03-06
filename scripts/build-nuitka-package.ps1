@@ -32,6 +32,15 @@ if ($LASTEXITCODE -ne 0) {
   throw "Build Python is missing required packages (azure-ai-projects/openai). Use a fully provisioned env (for example: .venv)."
 }
 
+$hasNovaBuildDeps = $false
+& $PythonCmd -c "import deepgram, pyaudiowpatch" | Out-Null
+if ($LASTEXITCODE -eq 0) {
+  $hasNovaBuildDeps = $true
+  Write-Host "Nova-3 build dependencies detected; EXE will include Nova preview support." -ForegroundColor Cyan
+} else {
+  Write-Host "Nova-3 build dependencies not found; EXE will fall back to Azure when Nova is selected." -ForegroundColor Yellow
+}
+
 if (-not (Test-Path $buildDir)) {
   New-Item -ItemType Directory -Path $buildDir | Out-Null
 }
@@ -45,6 +54,7 @@ $nuitkaArgs = @(
   "--windows-console-mode=force",
   "--include-data-dir=$repoRoot\static=static",
   "--include-data-file=$repoRoot\.env.example=.env.example",
+  "--include-data-file=$repoRoot\web_translator_settings.example.json=web_translator_settings.example.json",
   "--include-data-file=$repoRoot\README.md=README.md",
   "--include-data-file=$repoRoot\INSTALL.md=INSTALL.md",
   "--include-data-file=$repoRoot\docs\QUICK_START_GUIDE.md=docs\QUICK_START_GUIDE.md",
@@ -55,6 +65,13 @@ $nuitkaArgs = @(
   "--include-package=app",
   $launcher
 )
+
+if ($hasNovaBuildDeps) {
+  $nuitkaArgs += @(
+    "--include-package=deepgram",
+    "--include-package=pyaudiowpatch"
+  )
+}
 
 Write-Host "Building standalone EXE with Nuitka (this can take several minutes)..." -ForegroundColor Cyan
 & $PythonCmd @nuitkaArgs

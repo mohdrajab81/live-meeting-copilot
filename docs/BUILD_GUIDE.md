@@ -39,7 +39,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-deployment-package.ps1
 | `README.md` | Product overview and documentation index |
 | `INSTALL.md` | Installation guide |
 | `requirements.txt` | Python dependency list |
+| `requirements-nova3.txt` | Optional Nova-3 preview dependency list |
 | `.env.example` | Environment variable template |
+| `web_translator_settings.example.json` | Safe runtime settings template |
 | `setup.ps1` | First-time setup script |
 | `run.ps1` | Application start script |
 | `docs/QUICK_START_GUIDE.md` | 10-minute quick start |
@@ -64,7 +66,7 @@ Same as the online package, plus:
 | --- | --- |
 | `wheelhouse/` | Pre-downloaded Python dependency wheels |
 
-The build machine needs internet access once to download the wheels into `wheelhouse/`.
+The build machine needs internet access once to download the wheels into `wheelhouse/`, including the optional Nova-3 preview wheels referenced by `requirements-nova3.txt`.
 The target machine does not need internet access at any point.
 
 ---
@@ -84,6 +86,7 @@ No Python installation is required on the target machine.
   ```
 
 - Microsoft Visual C++ Build Tools (required by Nuitka for compilation; part of Visual Studio or the standalone Build Tools installer)
+- Optional for Nova-3 preview in the EXE: install `requirements-nova3.txt` into the build environment before running the build script
 
 ### Build Command
 
@@ -112,6 +115,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-nuitka-package.ps1 -Kee
 | `README.md` | Product overview and documentation index |
 | `INSTALL.md` | Installation guide |
 | `.env.example` | Environment variable template |
+| `web_translator_settings.example.json` | Safe runtime settings template |
 | `docs/QUICK_START_GUIDE.md` | 10-minute quick start |
 | `docs/AZURE_PROVISIONING.md` | Azure account and resource setup |
 | `docs/DUAL_MODE_SETUP.md` | Dual-speaker audio routing |
@@ -120,6 +124,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-nuitka-package.ps1 -Kee
 
 - Each build is fully clean (`--remove-output` flag removes previous output before compiling).
 - The following large scientific packages are excluded from the EXE to reduce output size: `pandas`, `matplotlib`, `scipy`, `sklearn`, `IPython`, `jupyter`.
+- If `deepgram` and `pyaudiowpatch` are available in the build environment, the EXE bundles Nova-3 preview support. Otherwise selecting Nova in the app falls back to Azure at runtime.
 - The EXE is Windows-only. The build machine must also be Windows.
 - The entry point compiled into the EXE is `app_launcher.py`.
 
@@ -131,7 +136,6 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-nuitka-package.ps1 -Kee
 | --- | --- |
 | `.env` | Contains secrets — must remain local to each user's machine |
 | `web_translator_settings.json` | Contains local device IDs and personal runtime settings |
-| `web_translator_settings.example.json` | Safe template file kept in repo for users to copy locally |
 | `docs/BUILD_GUIDE.md` | Maintainer document — not relevant to end users |
 | `docs/SYSTEM_DEFINITION.md` | Developer document — not relevant to end users |
 | `.venv/` | Not portable — each user runs `setup.ps1` to create their own |

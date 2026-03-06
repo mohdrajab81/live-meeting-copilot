@@ -3,7 +3,6 @@
   const STICKY_THRESHOLD = 80;
   const UI_PREFS_KEY = "translator_ui_prefs_v2";
   const BOOKMARKS_KEY = "translator_bookmarks_v1";
-  const API_TOKEN_KEY = "translator_api_token_v1";
   const THEMES = ["dark", "light", "graphite", "sand"];
 
   const FONT_STACKS = {
@@ -50,7 +49,9 @@
   const silenceGuardChip = document.getElementById("silenceGuardChip");
 
   const cfgLang = document.getElementById("cfgLang");
+  const cfgSpeechProvider = document.getElementById("cfgSpeechProvider");
   const cfgCaptureMode = document.getElementById("cfgCaptureMode");
+  const speechProviderGovernanceHint = document.getElementById("speechProviderGovernanceHint");
   const singleInputGroup = document.getElementById("singleInputGroup");
   const cfgAudioSource = document.getElementById("cfgAudioSource");
   const cfgInputDeviceId = document.getElementById("cfgInputDeviceId");
@@ -225,26 +226,7 @@
   const settingsAccordions = Array.from(document.querySelectorAll(".settings-accordion"));
   const toastHost = document.getElementById("toastHost");
 
-  // ==========================================================================
-  // AUTH + LOCAL STATE BOOTSTRAP
-  // ==========================================================================
-
-  function loadApiToken() {
-    try {
-      const params = new URLSearchParams(window.location.search || "");
-      const fromQuery = String(params.get("token") || params.get("api_token") || "").trim();
-      if (fromQuery) {
-        localStorage.setItem(API_TOKEN_KEY, fromQuery);
-        return fromQuery;
-      }
-      return String(localStorage.getItem(API_TOKEN_KEY) || "").trim();
-    } catch (_err) {
-      return "";
-    }
-  }
-
   const state = {
-    apiToken: loadApiToken(),
     socket: null,
     reconnectAttempts: 0,
     reconnectTimer: null,
@@ -362,10 +344,7 @@
 
   function wsUrl() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const base = `${proto}://${location.host}/ws`;
-    const token = String(state.apiToken || "").trim();
-    if (!token) return base;
-    return `${base}?token=${encodeURIComponent(token)}`;
+    return `${proto}://${location.host}/ws`;
   }
 
   function tsToMs(ts) {
@@ -623,8 +602,10 @@
   }
 
   function validateStartInputs() {
+    const isNovaProvider = cfgSpeechProvider?.value === "nova3";
     const isDual = (cfgCaptureMode && cfgCaptureMode.value === "dual");
     if (!isDual) return { ok: true, message: "" };
+    if (isNovaProvider) return { ok: true, message: "" };
 
     const localId = String(cfgLocalInputDeviceId?.value || "").trim();
     const remoteId = String(cfgRemoteInputDeviceId?.value || "").trim();
@@ -668,11 +649,12 @@
 
   function validateSettingsInputs(render) {
     const errors = {};
+    const isNovaProvider = cfgSpeechProvider?.value === "nova3";
     const isDual = cfgCaptureMode?.value === "dual";
     const localId = String(cfgLocalInputDeviceId?.value || "").trim();
     const remoteId = String(cfgRemoteInputDeviceId?.value || "").trim();
-    if (isDual && !localId) errors[cfgLocalInputDeviceId.id] = "Required in dual mode.";
-    if (isDual && !remoteId) errors[cfgRemoteInputDeviceId.id] = "Required in dual mode.";
+    if (isDual && !isNovaProvider && !localId) errors[cfgLocalInputDeviceId.id] = "Required in dual mode.";
+    if (isDual && !isNovaProvider && !remoteId) errors[cfgRemoteInputDeviceId.id] = "Required in dual mode.";
 
     const rangeChecks = [
       { el: cfgEnd, min: 50, max: 10000, label: "Finalization silence" },
@@ -1361,17 +1343,49 @@
   }
 
   function syncCaptureModeUI() {
-    const isDual = cfgCaptureMode.value === "dual";
+    const isNovaProvider = cfgSpeechProvider?.value === "nova3";
+    if (isNovaProvider && cfgCaptureMode.value !== "dual") {
+      cfgCaptureMode.value = "dual";
+    }
+    const isDual = isNovaProvider || cfgCaptureMode.value === "dual";
+    if (cfgCaptureMode) {
+      cfgCaptureMode.disabled = isNovaProvider;
+      cfgCaptureMode.title = isNovaProvider
+        ? "Nova-3 preview currently enforces Dual Input (local mic + loopback)."
+        : "";
+    }
+    if (speechProviderGovernanceHint) {
+      if (isNovaProvider) {
+        speechProviderGovernanceHint.classList.remove("hidden");
+        speechProviderGovernanceHint.textContent = (
+          "Nova-3 preview currently forces Dual Input and uses system-default devices. "
+          + "Device selectors are shown for reference but are not applied yet."
+        );
+      } else {
+        speechProviderGovernanceHint.classList.add("hidden");
+        speechProviderGovernanceHint.textContent = "";
+      }
+    }
     if (singleInputGroup) singleInputGroup.style.display = isDual ? "none" : "block";
     dualInputGroup.style.display = isDual ? "block" : "none";
-    cfgAudioSource.disabled = isDual;
-    cfgInputDeviceId.disabled = isDual || cfgAudioSource.value !== "device_id";
-    cfgAudioSource.title = isDual ? "Disabled in dual mode (local/remote device selectors are used)." : "";
-    cfgInputDeviceId.title = isDual
-      ? "Ignored in dual mode."
-      : (cfgAudioSource.value !== "device_id" ? "Enable 'Specific Device' to use this field." : "");
+    cfgAudioSource.disabled = isNovaProvider || isDual;
+    cfgInputDeviceId.disabled = isNovaProvider || isDual || cfgAudioSource.value !== "device_id";
+    cfgAudioSource.title = isNovaProvider
+      ? "Ignored by Nova-3 preview."
+      : (isDual ? "Disabled in dual mode (local/remote device selectors are used)." : "");
+    cfgInputDeviceId.title = isNovaProvider
+      ? "Ignored by Nova-3 preview (default local mic is used)."
+      : (
+        isDual
+          ? "Ignored in dual mode."
+          : (cfgAudioSource.value !== "device_id" ? "Enable 'Specific Device' to use this field." : "")
+      );
     if (audioDevicesHint) {
-      if (isDual) {
+      if (isNovaProvider) {
+        audioDevicesHint.textContent = (
+          "Nova-3 preview uses default local microphone and default WASAPI speaker loopback."
+        );
+      } else if (isDual) {
         audioDevicesHint.textContent = (
           "Dual mode: top 'Audio Input Source' and 'Input Device' are ignored. "
           + "Choose Local and Remote devices below."
@@ -2609,6 +2623,10 @@
     state.currentConfig = { ...config };
     renderAudioDeviceOptions(config);
     cfgLang.value = config.recognition_language || "en-US";
+    if (cfgSpeechProvider) {
+      const provider = String(config.speech_provider || "azure").trim().toLowerCase();
+      cfgSpeechProvider.value = ["azure", "nova3"].includes(provider) ? provider : "azure";
+    }
     cfgCaptureMode.value = config.capture_mode || "single";
     cfgAudioSource.value = config.audio_source || "default";
     cfgInputDeviceId.value = config.input_device_id || "";
@@ -2616,7 +2634,7 @@
     cfgLocalInputDeviceId.value = config.local_input_device_id || "";
     cfgRemoteSpeakerLabel.value = config.remote_speaker_label || "Remote";
     cfgRemoteInputDeviceId.value = config.remote_input_device_id || "";
-    const endSilenceMs = clampNumber(config.end_silence_ms, 50, 10000, 250);
+    const endSilenceMs = clampNumber(config.end_silence_ms, 50, 2000, 250);
     cfgEnd.value = endSilenceMs;
     if (cfgEndRange) cfgEndRange.value = endSilenceMs;
     cfgInitial.value = Number(config.initial_silence_ms || 3000);
@@ -2671,18 +2689,27 @@
   }
 
   function syncAudioSourceUI() {
+    const isNovaProvider = cfgSpeechProvider?.value === "nova3";
     const isDevice = cfgAudioSource.value === "device_id";
-    const isDual = cfgCaptureMode.value === "dual";
-    cfgInputDeviceId.disabled = isDual || !isDevice;
-    cfgLocalInputDeviceId.disabled = !isDual;
-    cfgRemoteInputDeviceId.disabled = !isDual;
-    cfgInputDeviceId.title = isDual
-      ? "Ignored in dual mode."
-      : (!isDevice ? "Enable 'Specific Device' to use this field." : "");
-    if (audioDevicesHint && !isDual) {
-      audioDevicesHint.textContent = isDevice
-        ? "Select a specific device from the dropdown."
-        : "Using Windows default microphone input.";
+    const isDual = isNovaProvider || cfgCaptureMode.value === "dual";
+    cfgInputDeviceId.disabled = isNovaProvider || isDual || !isDevice;
+    cfgLocalInputDeviceId.disabled = isNovaProvider || !isDual;
+    cfgRemoteInputDeviceId.disabled = isNovaProvider || !isDual;
+    cfgInputDeviceId.title = isNovaProvider
+      ? "Ignored by Nova-3 preview."
+      : (isDual ? "Ignored in dual mode." : (!isDevice ? "Enable 'Specific Device' to use this field." : ""));
+    cfgLocalInputDeviceId.title = isNovaProvider ? "Ignored by Nova-3 preview." : "";
+    cfgRemoteInputDeviceId.title = isNovaProvider ? "Ignored by Nova-3 preview." : "";
+    if (audioDevicesHint) {
+      if (isNovaProvider) {
+        audioDevicesHint.textContent = (
+          "Nova-3 preview uses default local microphone and default WASAPI speaker loopback."
+        );
+      } else if (!isDual) {
+        audioDevicesHint.textContent = isDevice
+          ? "Select a specific device from the dropdown."
+          : "Using Windows default microphone input.";
+      }
     }
   }
 
@@ -3145,8 +3172,18 @@
     if (!settingsSummary) return;
     const rows = [];
     rows.push(state.configDirty ? "Pending changes are not yet applied." : "All settings are synced.");
-    const captureMode = cfgCaptureMode?.value === "dual" ? "Dual Input" : "Single Input";
+    if (cfgSpeechProvider) {
+      const providerLabel = cfgSpeechProvider.value === "nova3" ? "Nova-3 (preview)" : "Azure Speech";
+      rows.push(`Speech engine: ${providerLabel}`);
+    }
+    const isNovaProvider = cfgSpeechProvider?.value === "nova3";
+    const captureMode = isNovaProvider
+      ? "Dual Input (forced by Nova-3 preview)"
+      : (cfgCaptureMode?.value === "dual" ? "Dual Input" : "Single Input");
     rows.push(`Microphone layout: ${captureMode}`);
+    if (isNovaProvider) {
+      rows.push("Nova-3 governance: device selectors are currently ignored (OS defaults are used).");
+    }
     rows.push(`Live coach: ${cfgCoachEnabled?.checked ? "enabled" : "disabled"}`);
     rows.push(`Arabic translation: ${cfgTranslationEnabled?.checked !== false ? "enabled" : "off"}`);
     rows.push(`Auto summary: ${cfgSummaryEnabled?.checked !== false ? "enabled" : "off"}`);
@@ -3482,8 +3519,6 @@
   async function request(path, method, body) {
     const headers = {};
     if (body) headers["Content-Type"] = "application/json";
-    const token = String(state.apiToken || "").trim();
-    if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(path, {
       method: method || "GET",
       headers: Object.keys(headers).length ? headers : undefined,
@@ -3515,9 +3550,16 @@
       throw new Error("Fix validation errors before applying settings.");
     }
     const existing = state.currentConfig || {};
+    const selectedProvider = cfgSpeechProvider
+      ? (["azure", "nova3"].includes(String(cfgSpeechProvider.value || ""))
+        ? cfgSpeechProvider.value
+        : "azure")
+      : String(existing.speech_provider || "azure");
+    const isNovaProvider = selectedProvider === "nova3";
     const payload = {
+      speech_provider: selectedProvider,
       recognition_language: cfgLang.value.trim(),
-      capture_mode: cfgCaptureMode.value || "single",
+      capture_mode: isNovaProvider ? "dual" : (cfgCaptureMode.value || "single"),
       audio_source: cfgAudioSource.value || "default",
       input_device_id: cfgInputDeviceId.value.trim(),
       local_speaker_label: cfgLocalSpeakerLabel.value.trim() || "You",
@@ -3538,7 +3580,7 @@
         ? clampNumber(clampNumber(cfgMaxSessionSec.value, 5, 180, 60) * 60, 300, 10800, 3600)
         : Number(existing.max_session_sec || 3600),
       coach_instruction: cfgCoachInstruction.value.trim(),
-      end_silence_ms: clampNumber(cfgEnd.value, 50, 10000, 250),
+      end_silence_ms: clampNumber(cfgEnd.value, 50, 2000, 250),
       initial_silence_ms: Number(cfgInitial.value),
       max_finals: Number(cfgMaxFinals.value),
       translation_enabled: cfgTranslationEnabled ? cfgTranslationEnabled.checked : !!(existing.translation_enabled ?? true),
@@ -3890,16 +3932,6 @@
     }
   }
 
-  async function clearTopics() {
-    const out = await request("/api/topics/clear", "POST");
-    if (out?.topics) {
-      state.topics = { ...state.topics, ...out.topics };
-      saveUiPrefs();
-      setTopicsUIFromState();
-      renderTopics();
-    }
-  }
-
   // ==========================================================================
   // WEBSOCKET INGESTION + LIVE UPDATES
   // ==========================================================================
@@ -3945,6 +3977,13 @@
       };
       renderLivePartials();
       renderSilenceGuardChip();
+      return;
+    }
+
+    if (msg.type === "partial_clear") {
+      const key = msg.speaker || "default";
+      delete state.livePartials[key];
+      renderLivePartials();
       return;
     }
 
@@ -4226,12 +4265,8 @@
         form.append("file", fileModalSelectedFile);
         const defs = Array.isArray(state.topics?.definitions) ? state.topics.definitions : [];
         form.append("topics_definitions_json", JSON.stringify(defs));
-        const token = String(state.apiToken || "").trim();
-        const headers = {};
-        if (token) headers.Authorization = `Bearer ${token}`;
         const resp = await fetch("/api/summary/from-transcript", {
           method: "POST",
-          headers: Object.keys(headers).length ? headers : undefined,
           body: form,
         });
         const data = await resp.json().catch(() => ({}));
@@ -4442,10 +4477,19 @@
     });
   }
 
+  if (cfgSpeechProvider) {
+    cfgSpeechProvider.addEventListener("change", () => {
+      syncCaptureModeUI();
+      syncAudioSourceUI();
+      renderSettingsSummary();
+      validateSettingsInputs(true);
+    });
+  }
   cfgCaptureMode.addEventListener("change", () => {
     syncCaptureModeUI();
     syncAudioSourceUI();
     renderSettingsSummary();
+    validateSettingsInputs(true);
   });
   if (cfgCoachEnabled) {
     cfgCoachEnabled.addEventListener("change", () => {
