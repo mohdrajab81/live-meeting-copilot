@@ -36,7 +36,8 @@ $items = @(
 $docFiles = @(
   "docs\QUICK_START_GUIDE.md",
   "docs\AZURE_PROVISIONING.md",
-  "docs\DUAL_MODE_SETUP.md"
+  "docs\DUAL_MODE_SETUP.md",
+  "docs\assets\social-preview.jpg"
 )
 
 $missing = @()

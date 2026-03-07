@@ -6,6 +6,8 @@
 
 Windows meeting copilot for real-time transcription, English-to-Arabic translation, live coaching, and structured meeting summaries.
 
+![Live Meeting Copilot social preview](docs/assets/social-preview.jpg)
+
 ---
 
 ## Highlights

@@ -61,6 +61,7 @@ $nuitkaArgs = @(
   "--include-data-file=$repoRoot\docs\QUICK_START_GUIDE.md=docs\QUICK_START_GUIDE.md",
   "--include-data-file=$repoRoot\docs\DUAL_MODE_SETUP.md=docs\DUAL_MODE_SETUP.md",
   "--include-data-file=$repoRoot\docs\AZURE_PROVISIONING.md=docs\AZURE_PROVISIONING.md",
+  "--include-data-file=$repoRoot\docs\assets\social-preview.jpg=docs\assets\social-preview.jpg",
   "--nofollow-import-to=pandas,matplotlib,scipy,sklearn,IPython,jupyter",
   "--include-package=openai",
   "--include-package=app",

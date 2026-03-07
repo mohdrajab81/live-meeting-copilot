@@ -103,3 +103,4 @@ static.zip
 *.pdf
 *.docx
 *.xlsx
+!docs/assets/social-preview.jpg

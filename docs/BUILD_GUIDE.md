@@ -48,6 +48,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-deployment-package.ps1
 | `docs/QUICK_START_GUIDE.md` | 10-minute quick start |
 | `docs/AZURE_PROVISIONING.md` | Azure account and resource setup |
 | `docs/DUAL_MODE_SETUP.md` | Dual-speaker audio routing |
+| `docs/assets/social-preview.jpg` | Social preview / README hero image |
 
 ---
 
@@ -121,6 +122,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-nuitka-package.ps1 -Kee
 | `docs/QUICK_START_GUIDE.md` | 10-minute quick start |
 | `docs/AZURE_PROVISIONING.md` | Azure account and resource setup |
 | `docs/DUAL_MODE_SETUP.md` | Dual-speaker audio routing |
+| `docs/assets/social-preview.jpg` | Social preview / README hero image |
 
 ### Build Notes
 
