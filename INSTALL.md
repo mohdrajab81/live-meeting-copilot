@@ -177,7 +177,35 @@ See `docs/AZURE_PROVISIONING.md` for how to create and name these agents.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `TRANSLATION_COST_PER_MILLION_USD` | `10.0` | Used for on-screen cost estimates only; does not affect translation |
-| `NOVA3_API_KEY` | *(empty)* | Optional key for Nova-3 STT preview. Python-based installs pull the optional Nova deps from `requirements-nova3.txt` during setup when that file is packaged. The EXE package uses Nova only when those optional deps were bundled by the maintainer; otherwise it auto-falls back to Azure. |
+| `NOVA3_API_KEY` | *(empty)* | Optional key for Nova-3 STT preview. Create it in the Deepgram Console under your project **Settings → API Keys**. Python-based installs pull the optional Nova deps from `requirements-nova3.txt` during setup when that file is packaged. The EXE package uses Nova only when those optional deps were bundled by the maintainer; otherwise it auto-falls back to Azure. |
+
+### Optional — Nova-3 Preview
+
+Use this only if you want to switch **Settings → Capture → Speech Engine** from Azure to Nova-3.
+
+1. Sign in to the Deepgram Console.
+2. Select your Deepgram project.
+3. Open **Settings**.
+4. Open **API Keys**.
+5. Create a new API key and copy the secret immediately.
+6. Paste it into `.env`:
+
+```env
+NOVA3_API_KEY=<your deepgram api key>
+```
+
+> The Deepgram key is separate from Azure. It does not come from the Azure portal or Azure AI Foundry.
+
+### Dual-Mode Routing by Speech Engine
+
+- **Azure dual mode**: usually needs VB-CABLE or a similar virtual audio cable so remote meeting audio can be captured as a separate input device.
+- **Nova-3 preview dual mode**: uses Windows WASAPI loopback for the remote side and does **not** require VB-CABLE or similar routing software.
+
+Current Nova preview behavior:
+
+- local channel = default Windows microphone
+- remote channel = default Windows speaker/output loopback
+- explicit Azure-style local/remote device IDs are not the primary routing model for Nova
 
 ---
 
@@ -271,5 +299,5 @@ python -m pip install -U azure-ai-projects openai
 | --- | --- |
 | `docs/AZURE_PROVISIONING.md` | Create Azure resources and obtain credentials |
 | `docs/QUICK_START_GUIDE.md` | Fastest path to first working session |
-| `docs/DUAL_MODE_SETUP.md` | Capture local and remote speakers separately |
+| `docs/DUAL_MODE_SETUP.md` | Capture local and remote speakers separately for Azure or Nova |
 | `docs/BUILD_GUIDE.md` | Build distributable packages (maintainers only) |

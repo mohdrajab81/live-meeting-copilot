@@ -10,70 +10,124 @@ If you only need single-microphone capture, this guide is not required.
 
 ---
 
-## How It Works
+## Choose Your Speech Engine First
 
-In dual mode, the application runs two independent speech recognition streams in parallel. To keep the two audio sources separate, remote meeting audio must be routed through a **virtual audio cable** — a software component that acts as a virtual recording device the application can read from independently, without affecting your normal speakers or headset.
+Dual-mode setup depends on which speech engine you choose in **Settings → Capture → Speech Engine**.
+
+### Azure Speech (Stable)
+
+- Uses two recording devices.
+- **Usually requires VB-CABLE or another virtual audio cable** so the remote meeting audio appears as a separate input device.
+
+### Nova-3 (Preview)
+
+- Uses your default Windows microphone for the local side.
+- Uses built-in Windows **WASAPI loopback** for the remote side.
+- **Does not require VB-CABLE or similar routing software.**
+- Requires `NOVA3_API_KEY` in `.env`.
 
 ---
 
-## Requirements
+## Path A — Azure Dual Mode
+
+### Requirements
 
 - **VB-CABLE Virtual Audio Device** — free, download from <https://vb-audio.com/Cable/>
 - A physical microphone (USB or built-in) for the local channel
 
----
-
-## Step 1 — Install VB-CABLE
+### Step 1 — Install VB-CABLE
 
 1. Download the installer from <https://vb-audio.com/Cable/>.
-2. Extract the zip and run `VBCABLE_Setup_x64.exe` as administrator (right-click → **Run as administrator**).
-3. When prompted, restart Windows. The restart is required — VB-CABLE is a kernel audio driver.
-4. After restart, confirm two new audio devices appear in Windows sound settings:
-   - `CABLE Input (VB-Audio Virtual Cable)` — a playback (output) device
-   - `CABLE Output (VB-Audio Virtual Cable)` — a recording (input) device
+2. Extract the zip and run `VBCABLE_Setup_x64.exe` as administrator.
+3. Restart Windows when prompted.
+4. Confirm the two new audio devices appear:
+   - `CABLE Input (VB-Audio Virtual Cable)` — playback device
+   - `CABLE Output (VB-Audio Virtual Cable)` — recording device
 
----
+### Step 2 — Route Meeting Audio Through VB-CABLE
 
-## Step 2 — Route Meeting Audio Through VB-CABLE
-
-In your meeting application (Teams, Zoom, Google Meet, or similar), change the **speaker output** to:
+In Teams, Zoom, Google Meet, or a similar app, set the speaker output to:
 
 ```text
 CABLE Input (VB-Audio Virtual Cable)
 ```
 
-> **Why CABLE Input?**
-> The meeting app plays audio *to* CABLE Input. The application then reads it *from* CABLE Output.
-> Think of it as a pipe: meeting app → CABLE Input → CABLE Output → Live Meeting Copilot.
+The app plays audio to `CABLE Input`, and Live Meeting Copilot reads it from `CABLE Output`.
 
----
+### Step 3 — Configure Live Meeting Copilot
 
-## Step 3 — Configure the Application
-
-Open the application **Settings** panel and set:
+Open **Settings** and set:
 
 | Setting | Value |
 | --- | --- |
+| Speech Engine | `Azure Speech (Stable)` |
 | Capture mode | `dual` |
 | Local input device | Your physical microphone |
 | Remote input device | `CABLE Output (VB-Audio Virtual Cable)` |
 
 Save the settings.
 
----
-
-## Step 4 — Validate the Setup
+### Step 4 — Validate Azure Dual Mode
 
 1. Start a session.
-2. Speak into your microphone — confirm only the **local channel** transcript updates.
-3. Play audio through the meeting app — confirm only the **remote channel** transcript updates.
-4. If both channels update from the same source, the routing is incorrect — review Step 2.
+2. Speak into your microphone — only the local transcript should update.
+3. Play or receive meeting audio — only the remote transcript should update.
+4. If both channels update from the same source, the routing is incorrect.
+
+---
+
+## Path B — Nova-3 Preview Dual Mode
+
+### Requirements
+
+- Windows 10 or Windows 11
+- A normal local microphone
+- `NOVA3_API_KEY` in `.env`
+
+### Step 1 — Create Your Nova Key
+
+1. Sign in to the Deepgram Console.
+2. Select your project.
+3. Open **Settings → API Keys**.
+4. Create a key and copy the secret immediately.
+5. Add it to `.env`:
+
+```env
+NOVA3_API_KEY=<your deepgram api key>
+```
+
+### Step 2 — Set Windows Default Devices
+
+Because the current Nova preview path uses default devices directly, confirm:
+
+- your **default input device** is the microphone you want for the local channel
+- your **default playback/output device** is the speaker or headset playing remote meeting audio
+
+### Step 3 — Configure Live Meeting Copilot
+
+Open **Settings** and set:
+
+| Setting | Value |
+| --- | --- |
+| Speech Engine | `Nova-3 (Preview)` |
+| Capture mode | `dual` |
+
+Then save the settings.
+
+> In the current Nova preview path, the app uses default mic + default WASAPI loopback. It does not depend on Azure-style manual remote/local device routing.
+
+### Step 4 — Validate Nova Dual Mode
+
+1. Start a session.
+2. Speak into your microphone — the local transcript should update.
+3. Play or receive meeting audio through your default speakers/headset — the remote transcript should update.
+4. No VB-CABLE, Voicemeeter, or similar virtual-routing tool is required for this path.
 
 ---
 
 ## Common Issues
 
-### You cannot hear remote speakers
+### Azure dual mode: you cannot hear remote speakers
 
 Because meeting audio is routed to the virtual cable instead of your headset, you will not hear remote participants without an additional step.
 
@@ -103,9 +157,10 @@ Acoustic feedback or Windows audio enhancement features can cause one channel to
 
 1. Open **Sound settings** → **More sound settings**.
 2. For your microphone: select it → **Properties** → **Enhancements** tab → disable all enhancements.
-3. For `CABLE Output`: select it → **Properties** → **Enhancements** tab → disable all enhancements.
+3. For `CABLE Output` in Azure dual mode: select it → **Properties** → **Enhancements** tab → disable all enhancements.
 4. Use a headset rather than open speakers to reduce acoustic feedback from the room.
-5. In the application Settings, always select explicit device IDs — avoid the default-device entries, which can change silently after Windows updates or hardware changes.
+5. In Azure dual mode, always select explicit device IDs — avoid the default-device entries, which can change silently after Windows updates or hardware changes.
+6. In Nova preview dual mode, confirm Windows default playback/output still points to the device carrying remote meeting audio.
 
 ---
 
@@ -117,7 +172,8 @@ The application includes a built-in local-channel suppression window that activa
 
 ## Production Recommendations
 
-- Always use explicit device IDs in dual mode. Do not use the default device entries.
+- In Azure dual mode, always use explicit device IDs. Do not use the default device entries.
+- In Nova preview dual mode, verify the Windows default mic and default playback devices before starting a session.
 - Save your settings in the application after selecting devices.
 - After Windows updates, driver updates, or docking station changes, re-open Settings and verify your device assignments are still correct.
 - If the application log shows repeated "recognition restart" or "buffer overflow" messages on an idle channel, this is normal recovery behaviour — the other channel continues uninterrupted.

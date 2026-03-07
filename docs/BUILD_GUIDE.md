@@ -122,7 +122,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-nuitka-package.ps1 -Kee
 
 ### Build Notes
 
-- Each build is fully clean (`--remove-output` flag removes previous output before compiling).
+- The script preserves Nuitka's `.build` cache in `dist/_nuitka_build/`, which speeds up repeated builds significantly.
+- Rebuilds can still take time because Nuitka must re-scan modules, refresh generated code for changed dependencies, and recreate the final zip.
+- If source files or bundled dependencies changed, only part of the compile can be reused; the first build after large changes will still be noticeably slower.
 - The following large scientific packages are excluded from the EXE to reduce output size: `pandas`, `matplotlib`, `scipy`, `sklearn`, `IPython`, `jupyter`.
 - If `deepgram` and `pyaudiowpatch` are available in the build environment, the EXE bundles Nova-3 preview support. Otherwise selecting Nova in the app falls back to Azure at runtime.
 - The EXE is Windows-only. The build machine must also be Windows.

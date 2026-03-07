@@ -37,6 +37,8 @@ SUMMARY_AGENT_NAME=...
 
 > You can skip Sections 3–5 entirely if you only need transcription and translation.
 
+> **Nova-3 preview note:** Nova-3 uses a Deepgram API key, not an Azure resource. You configure it separately in `.env` with `NOVA3_API_KEY`. See `INSTALL.md` or `docs/QUICK_START_GUIDE.md` for the Nova setup note.
+
 ---
 
 ## Section 1: Create an Azure Account and Subscription

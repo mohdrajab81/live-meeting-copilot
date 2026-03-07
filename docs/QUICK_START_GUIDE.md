@@ -88,6 +88,27 @@ Restart `run.ps1`. The Coaching and Summary panels in the UI become active.
 
 For speech recognition, Azure Speech is the default. A Nova-3 preview option is available in **Settings > Capture > Speech Engine**. In the Python-based packages, `setup.ps1` also installs the optional Nova dependencies from `requirements-nova3.txt` when that file is included in the package. When the Nova runtime is unavailable, the app falls back to Azure automatically.
 
+## Optional: Enable Nova-3 Preview
+
+Nova-3 is a separate speech provider. It uses a Deepgram API key, not an Azure key.
+
+1. Sign in to the Deepgram Console.
+2. Select your project.
+3. Open **Settings → API Keys**.
+4. Create a key and copy the secret immediately.
+5. Add it to `.env`:
+
+```env
+NOVA3_API_KEY=<your deepgram api key>
+```
+
+Then restart the app and switch **Settings → Capture → Speech Engine** to **Nova-3 (Preview)**.
+
+Dual-mode note:
+
+- **Azure dual mode** usually needs VB-CABLE or a similar virtual audio cable.
+- **Nova-3 preview dual mode** uses built-in Windows WASAPI loopback and does **not** require VB-CABLE.
+
 ---
 
 ## If Something Goes Wrong

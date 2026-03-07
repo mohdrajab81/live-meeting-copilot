@@ -99,6 +99,20 @@ Optional runtime settings template:
 Copy-Item .\web_translator_settings.example.json .\web_translator_settings.json
 ```
 
+## Speech Engine Options
+
+The application supports two speech engines:
+
+- **Azure Speech (default)** — uses your `AZURE_AI_SERVICES_KEY` and `AZURE_AI_SERVICES_REGION`.
+- **Nova-3 preview** — uses `NOVA3_API_KEY`, which you create in the Deepgram Console for your Deepgram project.
+
+For the current dual-speaker setup:
+
+- **Azure dual mode** usually requires a virtual audio cable such as VB-CABLE so remote meeting audio appears as a separate recording device.
+- **Nova-3 preview dual mode** uses Windows WASAPI loopback for the remote side and does **not** require VB-CABLE or similar routing software.
+
+See `INSTALL.md` for the Nova API key variable and `docs/DUAL_MODE_SETUP.md` for the engine-specific dual-mode setup paths.
+
 ---
 
 ## Package Types
