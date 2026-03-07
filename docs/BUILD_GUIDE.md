@@ -36,6 +36,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-deployment-package.ps1
 | --- | --- |
 | `app/` | Application source code |
 | `static/` | Web frontend files |
+| `LICENSE` | License terms |
 | `README.md` | Product overview and documentation index |
 | `INSTALL.md` | Installation guide |
 | `requirements.txt` | Python dependency list |
@@ -112,6 +113,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-nuitka-package.ps1 -Kee
 | `live-meeting-copilot.exe` | Standalone compiled executable |
 | *(compiled runtime)* | Nuitka-bundled Python runtime and dependencies |
 | `static/` | Web frontend files |
+| `LICENSE` | License terms |
 | `README.md` | Product overview and documentation index |
 | `INSTALL.md` | Installation guide |
 | `.env.example` | Environment variable template |

@@ -22,6 +22,7 @@ New-Item -ItemType Directory -Path $stageDir | Out-Null
 $items = @(
   "app",
   "static",
+  "LICENSE",
   "README.md",
   "INSTALL.md",
   "requirements.txt",

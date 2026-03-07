@@ -55,6 +55,7 @@ $nuitkaArgs = @(
   "--include-data-dir=$repoRoot\static=static",
   "--include-data-file=$repoRoot\.env.example=.env.example",
   "--include-data-file=$repoRoot\web_translator_settings.example.json=web_translator_settings.example.json",
+  "--include-data-file=$repoRoot\LICENSE=LICENSE",
   "--include-data-file=$repoRoot\README.md=README.md",
   "--include-data-file=$repoRoot\INSTALL.md=INSTALL.md",
   "--include-data-file=$repoRoot\docs\QUICK_START_GUIDE.md=docs\QUICK_START_GUIDE.md",

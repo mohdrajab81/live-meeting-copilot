@@ -24,6 +24,7 @@ New-Item -ItemType Directory -Path $wheelhouseDir | Out-Null
 $items = @(
   "app",
   "static",
+  "LICENSE",
   "README.md",
   "INSTALL.md",
   "requirements.txt",

@@ -1,6 +1,20 @@
 # Live Meeting Copilot
 
-A Windows application for real-time meeting transcription, live English-to-Arabic translation, and AI-powered meeting intelligence.
+[![Release](https://img.shields.io/github/v/release/mohdrajab81/live-meeting-copilot)](https://github.com/mohdrajab81/live-meeting-copilot/releases/latest)
+[![License](https://img.shields.io/github/license/mohdrajab81/live-meeting-copilot)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows-0078D6)](INSTALL.md)
+
+Windows meeting copilot for real-time transcription, English-to-Arabic translation, live coaching, and structured meeting summaries.
+
+---
+
+## Highlights
+
+- Real-time meeting transcription with Azure Speech by default
+- Optional Nova-3 preview path with built-in Windows WASAPI loopback capture
+- Live English-to-Arabic translation
+- AI coaching and structured summary generation through Azure AI Foundry
+- Ready-to-download `deploy`, `offline`, and `exe` release packages
 
 ---
 
@@ -15,14 +29,6 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 ```
 
 For full setup, see [`INSTALL.md`](INSTALL.md) and [`docs/QUICK_START_GUIDE.md`](docs/QUICK_START_GUIDE.md).
-
----
-
-## Demo
-
-Add a 60-90 second demo clip here for recruiters and reviewers:
-
-- `docs/demo/live-meeting-copilot-demo.mp4` (or `.gif`)
 
 ---
 
@@ -63,6 +69,7 @@ The application runs entirely on your local machine. No cloud hosting is require
 | [`docs/DUAL_MODE_SETUP.md`](docs/DUAL_MODE_SETUP.md) | Capture local and remote speakers separately |
 | `docs/BUILD_GUIDE.md` | Build distributable packages — repository only, not included in packages |
 | `docs/SYSTEM_DEFINITION.md` | Architecture and agent model — repository only, not included in packages |
+| [`LICENSE`](LICENSE) | Open-source license terms |
 
 ---
 
@@ -130,3 +137,15 @@ Three pre-built package formats are available:
 > step only, not runtime.
 
 See [`INSTALL.md`](INSTALL.md) for installation steps for each package type.
+
+---
+
+## Release Assets
+
+The latest packaged artifacts are published in GitHub Releases:
+
+- `live-meeting-copilot-deploy.zip`
+- `live-meeting-copilot-offline.zip`
+- `live-meeting-copilot-exe.zip`
+
+Download them from the [latest release](https://github.com/mohdrajab81/live-meeting-copilot/releases/latest).
