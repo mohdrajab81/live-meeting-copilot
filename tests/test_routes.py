@@ -689,9 +689,11 @@ class TestSummaryFromTranscript:
         assert r.status_code == 200
         ctrl.summary_service.generate.assert_called_once()
         arg = ctrl.summary_service.generate.call_args.args[0]
+        kwargs = ctrl.summary_service.generate.call_args.kwargs
         assert "EXPECTED AGENDA TOPICS (user-defined):" in arg
         assert "- Introduction" in arg
         assert "5 min planned" not in arg
+        assert kwargs["session_date_iso"] == "2024-01-01"
 
     def test_enriched_csv_uses_start_time_for_elapsed_timeline(self, client, monkeypatch):
         import app.api.routes as routes_mod
@@ -701,11 +703,13 @@ class TestSummaryFromTranscript:
         r = self._post(tc, csv_text=_VALID_ENRICHED_CSV)
         assert r.status_code == 200
         arg = ctrl.summary_service.generate.call_args.args[0]
+        kwargs = ctrl.summary_service.generate.call_args.kwargs
         assert "[00:00] [id:U0001] Interviewer: Hello world" in arg
         # start_unix_sec delta: 1704067205 - 1704067195 = 10 seconds
         assert "[00:10] [id:U0002] Candidate: Thank you for having me" in arg
         assert "[id:U0001]" in arg
         assert "[id:U0002]" in arg
+        assert kwargs["session_date_iso"] == "2024-01-01"
 
     def test_from_transcript_computes_topic_minutes_from_utterance_ids(self, client, monkeypatch):
         import app.api.routes as routes_mod

@@ -10,6 +10,7 @@ Shares the AppController RLock for all state mutations.
 import asyncio
 import threading
 import time
+from datetime import datetime
 from typing import Any, Awaitable, Callable
 
 from app.config import RuntimeConfig
@@ -18,6 +19,7 @@ from app.services.topic_summary import (
     apply_topic_durations_from_utterance_ids,
     build_expected_agenda_context,
     build_topic_breakdown_from_definitions,
+    enforce_topic_coverage,
     prepare_transcript_utterances,
     render_transcript_for_prompt,
 )
@@ -145,6 +147,16 @@ class SummaryOrchestrator:
 
     def _build_transcript_text_unlocked(self) -> str:
         return self._render_transcript_text(self._build_summary_entries_unlocked())
+
+    @staticmethod
+    def _derive_session_date_iso(entries: list[dict[str, Any]]) -> str | None:
+        if not entries:
+            return None
+        first = entries[0]
+        ts = float(first.get("start_ts") or first.get("ts") or 0.0)
+        if ts <= 0:
+            return None
+        return datetime.fromtimestamp(ts).date().isoformat()
 
     def _get_topic_definitions_unlocked(self) -> list[dict[str, Any]]:
         if self._get_topics is None:
@@ -280,6 +292,7 @@ class SummaryOrchestrator:
             self.summary_pending = True
             self.summary_error = ""
             entries = self._build_summary_entries_unlocked()
+            session_date_iso = self._derive_session_date_iso(entries)
             transcript_text = self._render_transcript_text(entries)
             topic_defs = self._get_topic_definitions_unlocked()
 
@@ -297,9 +310,18 @@ class SummaryOrchestrator:
         await self._broadcast_log("info", "Summary generation started.")
         try:
             from app.services.summary import SummaryResult  # noqa: F401
-            result: Any = await asyncio.to_thread(self._summary.generate, transcript_text)
-            resolved_topic_groups = apply_topic_durations_from_utterance_ids(
+            result: Any = await asyncio.to_thread(
+                self._summary.generate,
+                transcript_text,
+                session_date_iso=session_date_iso,
+            )
+            repaired_topic_groups = enforce_topic_coverage(
                 result.topic_key_points,
+                topic_defs,
+                entries,
+            )
+            resolved_topic_groups = apply_topic_durations_from_utterance_ids(
+                repaired_topic_groups,
                 entries,
                 duration_mode=config.summary_topic_duration_mode,
                 gap_threshold_sec=config.summary_topic_gap_threshold_sec,
@@ -384,4 +406,3 @@ class SummaryOrchestrator:
         await self.run_summary()
         with self._lock:
             return self.snapshot_unlocked()
-

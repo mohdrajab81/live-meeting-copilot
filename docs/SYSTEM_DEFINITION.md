@@ -58,9 +58,9 @@ Agent behavior is shaped by four layers, listed in order of practical influence 
 | --- | --- |
 | Credentials, endpoints, agent bindings | `.env` |
 | Runtime settings (capture mode, language, toggles, meeting brief) | Web UI → `PUT /api/config` |
-| Agenda topics and session definitions | Web UI → Topics panel |
+| Agenda topics and session definitions | Web UI → Settings → Topics |
 | Agent baseline instructions and model selection | Azure AI Foundry portal |
-| Request schema, payload structure, deterministic post-processing | Source code |
+| Request schema, payload structure, deterministic post-processing | Source code (`coach_orchestrator.py`, `summary.py`, `topic_summary.py`) |
 
 ---
 

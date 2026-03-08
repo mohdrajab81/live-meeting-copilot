@@ -120,8 +120,8 @@ The Azure Speech SDK sends your audio to Microsoft's cloud service and streams b
 You configure the recognizer before starting it:
 
 - `speech_recognition_language`: which language to recognize (e.g., `en-US`)
-- `EndSilenceTimeoutMs`: how many milliseconds of silence after a word before the SDK finalizes the utterance (default: 250ms)
-- `InitialSilenceTimeoutMs`: how long to wait for the first word before giving up on the current recognition attempt (default: 3000ms)
+- `Speech_SegmentationSilenceTimeoutMs` (exposed in config as `end_silence_ms`): how many milliseconds of silence after a word before the SDK commits the utterance (default: 500ms)
+- `SpeechServiceConnection_InitialSilenceTimeoutMs` (exposed in config as `initial_silence_ms`): how long to wait for the first word before giving up on the current recognition attempt (default: 3000ms)
 
 **Important**: These are utterance-level timeouts, not session-level. They control when each sentence is "committed", not when the overall session ends.
 
@@ -190,6 +190,15 @@ Partials update many times per second. If a new partial arrives before the old o
 When the Azure SDK commits a final result, the app assigns it a `segment_id`. When the translation pipeline finishes translating that segment, it uses the `segment_id` to find the correct entry in the transcript and patch the Arabic (`ar`) field. This is called a `final_patch` event.
 
 Without segment IDs, you couldn't match the async translation result to the right transcript entry — especially if multiple finals are in flight at the same time.
+
+### Optional shadow final translation
+
+The app can also run a second translation worker for committed finals only. When enabled, the initial Arabic text still appears through the normal translation pipeline, then a later `final_shadow_patch` can replace the Arabic on that same transcript row with a higher-quality final translation.
+
+Important behavior:
+- live partial translation stays on the normal fast path
+- only committed finals are shadow-translated
+- if the shadow pass fails, the original Arabic stays in place
 
 ### Translation metrics
 
@@ -266,15 +275,9 @@ The coach service keeps a `conversation_id` (with `previous_response_id` as fall
 The Topic Orchestrator is now a lightweight definitions store.
 
 What it does:
-- Normalizes topic definitions from the Topics panel (name, expected duration, priority, comments, order).
+- Normalizes topic definitions from **Settings → Topics** (name, expected duration, priority, comments, order).
 - Builds a clean agenda-name list from those definitions.
-- Broadcasts `topics_update` snapshots when definitions are saved or cleared.
-
-What it no longer does:
-- No topic-agent calls.
-- No manual `analyze-now` flow.
-- No periodic topic analysis in watchdog.
-- No runtime topic status/time accumulation.
+- Broadcasts `topics_update` snapshots when staged definitions are applied or cleared.
 
 How topic timing still works:
 - Topic timing is computed in summary generation, not in live tracking.
@@ -301,6 +304,7 @@ The server sends structured JSON messages over WebSocket. Each message has a `ty
 | `partial_clear` | When a live hypothesis is abandoned | Removes stale live text for one speaker |
 | `final` | After each utterance | Committed sentence (EN + empty AR initially) |
 | `final_patch` | After translation completes | Updated AR text for an existing final |
+| `final_shadow_patch` | After optional shadow translation completes | Higher-quality AR patch for an existing final |
 | `telemetry` | After each translation | Latency, cost, character count |
 | `coach` | After AI coach responds | Hint text and metadata |
 | `topics_update` | After topic definitions change | Full topic state snapshot |
@@ -467,6 +471,8 @@ This removes dependence on model-side time math and makes durations reproducible
 - `meeting_insights`: deterministic analytics from transcript turns (speaking balance, turn-taking, pace, and health score).
 - `keyword_index`: merged/deduplicated keyword list from model keywords, key terms, entities, and transcript usage counts.
 
+If the session is effectively single-speaker, the app does not apply the usual balance and interaction penalties. Instead it marks balance-style metrics as not applicable and leans more heavily on transcript, pace, and topic coverage.
+
 ---
 
-*Last updated: 2026-03-06*
+*Last updated: 2026-03-08*

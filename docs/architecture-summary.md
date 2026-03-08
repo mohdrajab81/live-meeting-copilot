@@ -18,7 +18,7 @@ Live meeting copilot that:
 - `app/main.py`: FastAPI bootstrap, lifespan startup/shutdown, routing.
 - `app/api/routes.py`: authenticated REST control plane.
 - `app/api/websocket.py`: authenticated websocket endpoint.
-- `app/api/auth.py`: token/loopback authorization policy.
+- `app/api/auth.py`: loopback-only authorization policy for HTTP and WebSocket access.
 
 ### Controller layer (state and orchestration)
 - `app/controller/__init__.py` (`AppController`): dependency wiring only.
@@ -35,6 +35,7 @@ Live meeting copilot that:
 - `app/services/speech.py`: Azure Speech recognizers and event emission.
 - `app/services/speech_nova3.py`: Nova-3 preview live STT backend.
 - `app/services/translation_pipeline.py`: async translation queue with priority and stale guards.
+- `app/services/shadow_translation_pipeline.py`: optional shadow translation worker for final utterances; disabled by default (`SHADOW_FINAL_TRANSLATION_ENABLED`).
 - `app/services/coach.py`: Azure AI Foundry coach agent client.
 - `app/services/summary.py`: Azure AI Foundry summary agent client.
 - `app/services/meeting_insights.py`: deterministic meeting insights and keyword index builders.
@@ -47,10 +48,12 @@ Live meeting copilot that:
 2. `SpeechProviderService` starts the selected backend and emits normalized `partial`, `final`, and `partial_clear` events.
 3. `SessionManager` updates transcript state and schedules translation work only when `translation_enabled=true`.
 4. `TranslationPipeline` processes queue (`final` priority over `partial`) when translation is enabled.
-5. `TranscriptStore` applies translation results and broadcasts:
+5. If shadow final translation is enabled, committed finals are also sent to `ShadowFinalTranslationPipeline` for a second-pass Arabic patch.
+6. `TranscriptStore` applies translation results and broadcasts:
    - `partial` updates,
    - `partial_clear` updates,
    - `final_patch` updates,
+   - `final_shadow_patch` updates,
    - `telemetry` updates.
 
 ### Coach flow
@@ -61,9 +64,10 @@ Live meeting copilot that:
 5. If busy, latest trigger is queued and resumed after current run.
 
 ### Topics flow
-1. Topics configured via `POST /api/topics/configure`.
-2. `TopicOrchestrator` persists normalized definitions and agenda names only.
-3. Updates broadcast as `topics_update`.
+1. Topics are edited in **Settings → Topics** and staged as part of the runtime settings form.
+2. `PUT /api/config` carries `topic_definitions` into runtime config and persistence.
+3. `TopicOrchestrator` stores normalized definitions and derived agenda names only.
+4. Updates broadcast as `topics_update`.
 
 ### Summary flow
 1. Session stop (`stop_async`) triggers summary generation when `summary_enabled=true`.
@@ -82,6 +86,7 @@ Live meeting copilot that:
 - `partial_clear`
 - `final`
 - `final_patch`
+- `final_shadow_patch` (shadow translation result for a committed utterance; sent only when shadow translation is enabled)
 - `telemetry`
 - `coach`
 - `topics_update`

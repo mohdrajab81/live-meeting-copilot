@@ -104,16 +104,25 @@
   const copyLogsBtn = document.getElementById("copyLogsBtn");
   const clearLogsBtn = document.getElementById("clearLogsBtn");
   const exportLogsBtn = document.getElementById("exportLogsBtn");
-  const exportTranscriptJsonBtn = document.getElementById("exportTranscriptJsonBtn");
-  const exportTranscriptCsvBtn = document.getElementById("exportTranscriptCsvBtn");
-  const exportBookmarksJsonBtn = document.getElementById("exportBookmarksJsonBtn");
-  const exportBookmarksCsvBtn = document.getElementById("exportBookmarksCsvBtn");
   const transcriptExportMenuBtn = document.getElementById("transcriptExportMenuBtn");
   const transcriptExportMenu = document.getElementById("transcriptExportMenu");
+  const transcriptExportScopeTranscriptBtn = document.getElementById("transcriptExportScopeTranscriptBtn");
+  const transcriptExportScopeBookmarksBtn = document.getElementById("transcriptExportScopeBookmarksBtn");
+  const transcriptExportFormatJsonBtn = document.getElementById("transcriptExportFormatJsonBtn");
+  const transcriptExportFormatCsvBtn = document.getElementById("transcriptExportFormatCsvBtn");
+  const transcriptExportDetailGroup = document.getElementById("transcriptExportDetailGroup");
+  const transcriptExportDetailStandardBtn = document.getElementById("transcriptExportDetailStandardBtn");
+  const transcriptExportDetailDiagnosticBtn = document.getElementById("transcriptExportDetailDiagnosticBtn");
+  const transcriptExportHint = document.getElementById("transcriptExportHint");
+  const transcriptExportRunBtn = document.getElementById("transcriptExportRunBtn");
   const bookmarksOnlyBtn = document.getElementById("bookmarksOnlyBtn");
   const bookmarkMenu = document.getElementById("bookmarkMenu");
   const bookmarkMenuEditBtn = document.getElementById("bookmarkMenuEditBtn");
   const bookmarkMenuRemoveBtn = document.getElementById("bookmarkMenuRemoveBtn");
+  const coachHintPopover = document.getElementById("coachHintPopover");
+  const coachHintPopoverMeta = document.getElementById("coachHintPopoverMeta");
+  const coachHintPopoverBody = document.getElementById("coachHintPopoverBody");
+  const coachHintPopoverCloseBtn = document.getElementById("coachHintPopoverCloseBtn");
   const bookmarkModal = document.getElementById("bookmarkModal");
   const bookmarkModalTitle = document.getElementById("bookmarkModalTitle");
   const bookmarkNoteInput = document.getElementById("bookmarkNoteInput");
@@ -272,6 +281,11 @@
         speaker: "any",
         recentMinutes: 10,
       },
+      transcriptExport: {
+        scope: "transcript",
+        format: "json",
+        detail: "standard",
+      },
       coachView: {
         activeIndex: 0,
       },
@@ -317,6 +331,13 @@
       menuKey: "",
       modalKey: "",
       modalMode: "add",
+    },
+    transcriptCoach: {
+      readTargets: {},
+      popoverTarget: "",
+    },
+    liveStripUi: {
+      hasStartedSession: false,
     },
     summary: {
       pending: false,
@@ -529,6 +550,123 @@
     return `${speaker}:${tsMs}:${en}:${ar}`;
   }
 
+  function coachTargetKey(segmentId, revision) {
+    const cleanSegmentId = String(segmentId || "").trim();
+    if (!cleanSegmentId) return "";
+    return `${cleanSegmentId}:${Number(revision || 0)}`;
+  }
+
+  function coachTargetKeyForItem(item) {
+    return coachTargetKey(item?.segment_id, item?.revision);
+  }
+
+  function coachTargetKeyForHint(hint) {
+    return coachTargetKey(hint?.trigger_segment_id, hint?.trigger_revision);
+  }
+
+  function buildCoachHintsByTarget() {
+    const grouped = new Map();
+    state.coachHints.forEach((hint) => {
+      const key = coachTargetKeyForHint(hint);
+      if (!key) return;
+      const existing = grouped.get(key) || {
+        latest: null,
+        count: 0,
+      };
+      existing.count += 1;
+      if (!existing.latest || Number(existing.latest.ts || 0) <= Number(hint.ts || 0)) {
+        existing.latest = hint;
+      }
+      grouped.set(key, existing);
+    });
+    return grouped;
+  }
+
+  function buildRenderableCoachHints() {
+    const mergedByGroup = new Map();
+    const ordered = [...state.coachHints];
+    ordered.forEach((hint, idx) => {
+      const gid = hint.group_id || `manual-${idx}`;
+      const prev = mergedByGroup.get(gid);
+      if (!prev || Number(prev.ts || 0) <= Number(hint.ts || 0)) mergedByGroup.set(gid, hint);
+    });
+    return Array.from(mergedByGroup.values()).sort(
+      (a, b) => Number(a?.ts || 0) - Number(b?.ts || 0)
+    );
+  }
+
+  function markCoachTargetSeen(targetKey, ts) {
+    if (!targetKey) return;
+    const nextTs = Number(ts || 0);
+    const current = Number(state.transcriptCoach.readTargets[targetKey] || 0);
+    if (nextTs > current) state.transcriptCoach.readTargets[targetKey] = nextTs;
+  }
+
+  function initializeCoachReadTargets() {
+    const grouped = buildCoachHintsByTarget();
+    state.transcriptCoach.readTargets = {};
+    grouped.forEach((value, key) => {
+      state.transcriptCoach.readTargets[key] = Number(value.latest?.ts || 0);
+    });
+  }
+
+  function closeCoachHintPopover() {
+    state.transcriptCoach.popoverTarget = "";
+    if (coachHintPopover) coachHintPopover.classList.add("hidden");
+  }
+
+  function updateLiveStripVisibility() {
+    const activeSection = String(state.ui.activeSection || "transcriptTab");
+    const onTranscriptTab = activeSection === "transcriptTab";
+    const hasStartedSession = !!state.liveStripUi.hasStartedSession;
+    const shouldShow = !!state.running || (!hasStartedSession && onTranscriptTab);
+    if (liveStrip) liveStrip.classList.toggle("hidden", !shouldShow);
+    if (timelineDivider) timelineDivider.classList.toggle("hidden", !shouldShow);
+  }
+
+  function positionCoachHintPopover(anchorEl) {
+    if (!coachHintPopover || !anchorEl) return;
+    const rect = anchorEl.getBoundingClientRect();
+    const popoverRect = coachHintPopover.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    let left = rect.left;
+    let top = rect.bottom + 10;
+    if (left + popoverRect.width > viewportWidth - 12) {
+      left = viewportWidth - popoverRect.width - 12;
+    }
+    if (left < 12) left = 12;
+    if (top + popoverRect.height > viewportHeight - 12) {
+      top = Math.max(12, rect.top - popoverRect.height - 10);
+    }
+    coachHintPopover.style.left = `${Math.round(left)}px`;
+    coachHintPopover.style.top = `${Math.round(top)}px`;
+  }
+
+  function openCoachHintPopover(targetKey, anchorEl) {
+    if (!coachHintPopover || !anchorEl) return;
+    const grouped = buildCoachHintsByTarget();
+    const entry = grouped.get(targetKey);
+    if (!entry?.latest) return;
+    const latest = entry.latest;
+    const bodyText = cleanCoachSuggestionText(latest.suggestion || "");
+    state.transcriptCoach.popoverTarget = targetKey;
+    markCoachTargetSeen(targetKey, latest.ts);
+    if (coachHintPopoverMeta) {
+      const label = String(latest.speaker_label || "Speaker").trim() || "Speaker";
+      const countText = entry.count > 1 ? ` • ${entry.count} hints` : "";
+      coachHintPopoverMeta.textContent = `${formatTime(latest.ts)} • ${label}${countText}`;
+    }
+    if (coachHintPopoverBody) {
+      coachHintPopoverBody.textContent = bodyText || "No recommendation available.";
+    }
+    coachHintPopover.classList.remove("hidden");
+    positionCoachHintPopover(anchorEl);
+    if (anchorEl.classList.contains("is-unread")) {
+      anchorEl.classList.remove("is-unread");
+    }
+  }
+
   function isNearBottom(el) {
     return (el.scrollHeight - el.scrollTop - el.clientHeight) < STICKY_THRESHOLD;
   }
@@ -543,6 +681,12 @@
     if (mode === "connected") statusDot.classList.add("connected");
     statusText.textContent = text || "idle";
     state.recognitionStatus = text || "idle";
+  }
+
+  function statusVisualMode(statusText, running) {
+    const normalized = String(statusText || "").trim().toLowerCase();
+    if (running && normalized === "listening") return "listening";
+    return "connected";
   }
 
   function showToast(message, type, options) {
@@ -813,12 +957,18 @@
     });
   }
 
-  function makeTimelineRow(item) {
+  function makeTimelineRow(item, coachHintsByTarget) {
     const row = document.createElement("div");
     row.className = "row";
     const key = finalKey(item);
+    const coachTarget = coachTargetKeyForItem(item);
+    if (coachTarget) row.dataset.coachTarget = coachTarget;
     row.dataset.key = key;
     const bookmark = state.bookmarks[key] || null;
+    const coachEntry = coachTarget ? coachHintsByTarget?.get(coachTarget) : null;
+    const latestCoachTs = Number(coachEntry?.latest?.ts || 0);
+    const readTs = Number(state.transcriptCoach.readTargets[coachTarget] || 0);
+    const hasUnreadCoach = !!coachEntry && latestCoachTs > readTs;
 
     const enCell = document.createElement("div");
     enCell.className = "entry-card";
@@ -838,6 +988,24 @@
     bmBtn.title = bookmark
       ? `Bookmarked${bookmark.note ? `: ${bookmark.note}` : ""}. Click to remove.`
       : "Bookmark this row (optional note)";
+    if (coachEntry?.latest) {
+      const coachBtn = document.createElement("button");
+      coachBtn.type = "button";
+      coachBtn.className = "coach-inline-btn";
+      if (hasUnreadCoach) coachBtn.classList.add("is-unread");
+      coachBtn.dataset.coachTarget = coachTarget;
+      coachBtn.textContent = "✦";
+      coachBtn.title = coachEntry.count > 1
+        ? `Open ${coachEntry.count} coach hints for this row`
+        : "Open coach hint for this row";
+      if (coachEntry.count > 1) {
+        const count = document.createElement("span");
+        count.className = "coach-inline-count";
+        count.textContent = String(coachEntry.count);
+        coachBtn.appendChild(count);
+      }
+      enMeta.appendChild(coachBtn);
+    }
     const ts1 = document.createElement("div");
     ts1.className = "ts";
     ts1.textContent = formatTime(item.ts);
@@ -886,6 +1054,19 @@
     });
   }
 
+  function normalizeShadowTranslation(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const latencyRaw = Number(raw.latency_ms);
+    return {
+      provider: String(raw.provider || ""),
+      model: String(raw.model || ""),
+      status: String(raw.status || ""),
+      text: String(raw.text || ""),
+      latency_ms: Number.isFinite(latencyRaw) ? latencyRaw : null,
+      error: raw.error ? String(raw.error) : null,
+    };
+  }
+
   function appendFinal(item) {
     const ts = Number(item.ts || Date.now() / 1000);
     const startTsRaw = Number(item.start_ts ?? ts);
@@ -911,6 +1092,7 @@
       offset_sec: item.offset_sec == null ? null : Number(item.offset_sec),
       timing_source: item.timing_source || "event_only",
       recognizer_session_id: item.recognizer_session_id || "",
+      shadow_translation: normalizeShadowTranslation(item.shadow_translation),
     };
     state.finals.push(normalized);
 
@@ -920,9 +1102,18 @@
 
   function renderFinals(keepBottomIfNear) {
     const sticky = keepBottomIfNear ? isNearBottom(timeline) : false;
+    const coachHintsByTarget = buildCoachHintsByTarget();
     timeline.innerHTML = "";
-    filteredFinals().forEach((item) => timeline.appendChild(makeTimelineRow(item)));
+    filteredFinals().forEach((item) => timeline.appendChild(makeTimelineRow(item, coachHintsByTarget)));
     if (sticky) scrollToBottom(timeline);
+    if (state.transcriptCoach.popoverTarget) {
+      const activeBtn = timeline.querySelector(`.coach-inline-btn[data-coach-target="${CSS.escape(state.transcriptCoach.popoverTarget)}"]`);
+      if (activeBtn instanceof HTMLElement) {
+        openCoachHintPopover(state.transcriptCoach.popoverTarget, activeBtn);
+      } else {
+        closeCoachHintPopover();
+      }
+    }
     renderTranscriptInsights();
   }
 
@@ -1102,25 +1293,16 @@
   }
 
   function renderCoachHints() {
-    const mergedByGroup = new Map();
-    const ordered = [...state.coachHints];
-    ordered.forEach((hint, idx) => {
-      const gid = hint.group_id || `manual-${idx}`;
-      const prev = mergedByGroup.get(gid);
-      if (!prev || Number(prev.ts || 0) <= Number(hint.ts || 0)) mergedByGroup.set(gid, hint);
-    });
-    const hints = Array.from(mergedByGroup.values()).sort(
-      (a, b) => Number(b?.ts || 0) - Number(a?.ts || 0)
-    );
-    const topKey = hints.length
-      ? `${Number(hints[0]?.ts || 0)}:${String(hints[0]?.group_id || "")}`
+    const hints = buildRenderableCoachHints();
+    const latestKey = hints.length
+      ? `${Number(hints[hints.length - 1]?.ts || 0)}:${String(hints[hints.length - 1]?.group_id || "")}`
       : "";
     if (
-      topKey !== state.coachCursor.lastTopKey
+      latestKey !== state.coachCursor.lastTopKey
       || hints.length !== state.coachCursor.lastCount
     ) {
-      state.ui.coachView.activeIndex = 0;
-      state.coachCursor.lastTopKey = topKey;
+      state.ui.coachView.activeIndex = Math.max(0, hints.length - 1);
+      state.coachCursor.lastTopKey = latestKey;
       state.coachCursor.lastCount = hints.length;
       saveUiPrefs();
     }
@@ -1279,7 +1461,7 @@
         const [moved] = copy.splice(idx, 1);
         copy.splice(idx - 1, 0, moved);
         copy.forEach((it, order) => { it.order = order; });
-        commitTopicDefinitions(copy, "Topic order saved.").catch(notifyError);
+        commitTopicDefinitions(copy, "Topic order updated in pending changes.").catch(notifyError);
       });
 
       const downBtn = document.createElement("button");
@@ -1293,7 +1475,7 @@
         const [moved] = copy.splice(idx, 1);
         copy.splice(idx + 1, 0, moved);
         copy.forEach((it, order) => { it.order = order; });
-        commitTopicDefinitions(copy, "Topic order saved.").catch(notifyError);
+        commitTopicDefinitions(copy, "Topic order updated in pending changes.").catch(notifyError);
       });
 
       const deleteBtn = document.createElement("button");
@@ -1303,7 +1485,7 @@
       deleteBtn.addEventListener("click", () => {
         const next = defs.filter((it) => it.id !== row.id).map((it, order) => ({ ...it, order }));
         showTopicsDefinitionsError("");
-        commitTopicDefinitions(next, "Topic deleted and saved.").catch(notifyError);
+        commitTopicDefinitions(next, "Topic deleted from pending changes.").catch(notifyError);
       });
 
       actions.appendChild(editBtn);
@@ -1456,20 +1638,32 @@
         summaryActionItemsList.appendChild(empty);
       } else {
         (s.action_items || []).forEach((ai) => {
-          const row = document.createElement("div");
-          row.className = "action-item-row";
-          const item = document.createElement("span");
-          item.className = "ai-item";
+          const row = document.createElement("article");
+          row.className = "action-item-card";
+          const item = document.createElement("div");
+          item.className = "action-item-text";
           item.textContent = String(ai.item || "");
-          const owner = document.createElement("span");
-          owner.className = "ai-owner";
-          owner.textContent = ai.owner ? `Owner: ${ai.owner}` : "";
-          const due = document.createElement("span");
-          due.className = "ai-due";
-          due.textContent = ai.due_date ? `Due: ${ai.due_date}` : "";
+
+          const meta = document.createElement("div");
+          meta.className = "action-item-meta";
+
+          if (ai.owner) {
+            const owner = document.createElement("span");
+            owner.className = "action-item-chip action-item-chip-owner";
+            owner.textContent = `Owner: ${ai.owner}`;
+            meta.appendChild(owner);
+          }
+
+          const dueValue = ai.due_date || ai.due_date_text || "";
+          if (dueValue) {
+            const due = document.createElement("span");
+            due.className = "action-item-chip action-item-chip-due";
+            due.textContent = `Due: ${dueValue}`;
+            meta.appendChild(due);
+          }
+
           row.appendChild(item);
-          row.appendChild(owner);
-          row.appendChild(due);
+          if (meta.childElementCount > 0) row.appendChild(meta);
           summaryActionItemsList.appendChild(row);
         });
       }
@@ -1959,6 +2153,7 @@
     );
     const timelineStartTs = useRealTiming ? toFiniteNumber(timingMap.baselineTs, 0) : 0;
     const coveredTopics = topics.filter((t) => t.actual_min > 0);
+    const seenTopics = coveredTopics;
     const plannedTopics = topics.filter((t) => t.planned_min !== null);
     const plannedCovered = plannedTopics.filter((t) => t.actual_min > 0);
     const dominantTopic = coveredTopics
@@ -1983,6 +2178,7 @@
       plannedCount: plannedTopics.length,
       plannedCoveredCount: plannedCovered.length,
       inferredCount: topics.filter((t) => t.planned_min === null).length,
+      seenCount: seenTopics.length,
       totalCount: topics.length,
       dominantTopic,
       timelineTotalSec,
@@ -2000,7 +2196,7 @@
       ? { label: "Planned Topics Covered", value: `${vm.plannedCoveredCount}/${vm.plannedCount}` }
       : { label: "Inferred Topics", value: `${vm.coveredTopics.length} active` };
     const planningCard = hasPlanned
-      ? { label: "Total Topics Seen", value: String(vm.totalCount) }
+      ? { label: "Total Topics Seen", value: String(vm.seenCount) }
       : { label: "Agenda Topics", value: "None" };
 
     const cards = [
@@ -2283,8 +2479,10 @@
 
       const label = document.createElement("div");
       label.className = "topic-row-label";
-      label.textContent = String(t.name || "");
-      label.title = String(t.name || "");
+      const topicName = String(t.name || "");
+      const topicKindLabel = plannedMin !== null ? "Planned" : "Inferred";
+      label.textContent = `${topicName} (${topicKindLabel})`;
+      label.title = `${topicName} (${topicKindLabel})`;
 
       const barWrap = document.createElement("div");
       barWrap.className = "topic-row-bar-wrap";
@@ -2305,20 +2503,23 @@
       const stats = document.createElement("div");
       stats.className = "topic-row-stats";
       if (plannedMin !== null) {
-        const overEl = document.createElement("span");
-        overEl.textContent = `${formatMinutesShort(actualMin)} / ${formatMinutesShort(plannedMin)}`;
+        const main = document.createElement("div");
+        main.className = "topic-row-stats-main";
+        main.textContent = `${formatMinutesShort(actualMin)} / ${formatMinutesShort(plannedMin)}`;
+        stats.appendChild(main);
         if (overUnder !== null && overUnder !== 0) {
-          overEl.className = overUnder > 0 ? "stat-over" : "";
-          stats.appendChild(overEl);
-          const extra = document.createElement("span");
-          extra.className = overUnder > 0 ? "stat-over" : "";
-          extra.textContent = ` (${formatMinutesDelta(overUnder)})`;
-          stats.appendChild(extra);
-        } else {
-          stats.appendChild(overEl);
+          const delta = document.createElement("div");
+          delta.className = `topic-row-stats-delta ${overUnder > 0 ? "stat-over" : "stat-under"}`;
+          delta.textContent = overUnder > 0
+            ? `${formatMinutesDelta(overUnder).replace("+", "")} over`
+            : `${formatMinutesDelta(Math.abs(overUnder)).replace("+", "")} under`;
+          stats.appendChild(delta);
         }
       } else {
-        stats.textContent = formatMinutesShort(actualMin);
+        const main = document.createElement("div");
+        main.className = "topic-row-stats-main";
+        main.textContent = formatMinutesShort(actualMin);
+        stats.appendChild(main);
       }
 
       row.appendChild(label);
@@ -2438,7 +2639,7 @@
       total_topic_time_min: toFiniteNumber(vm.totalActualMin, 0),
       total_topic_time_text: formatMinutesShort(vm.totalActualMin),
       dominant_topic: vm.dominantTopic ? vm.dominantTopic.name : null,
-      total_topics_seen: vm.totalCount,
+      total_topics_seen: vm.seenCount,
       active_topics: vm.coveredTopics.length,
       planned_topics_count: vm.plannedCount,
       planned_topics_covered: vm.plannedCoveredCount,
@@ -2497,7 +2698,11 @@
       s.action_items.forEach((ai, i) => {
         let line = `${i + 1}. ${ai.item || ""}`;
         if (ai.owner) line += ` [Owner: ${ai.owner}]`;
-        if (ai.due_date) line += ` [Due: ${ai.due_date}]`;
+        if (ai.due_date) {
+          line += ` [Due: ${ai.due_date}]`;
+        } else if (ai.due_date_text) {
+          line += ` [Due: ${ai.due_date_text}]`;
+        }
         lines.push(line);
       });
       lines.push("");
@@ -2621,6 +2826,8 @@
 
   function setConfigUI(config) {
     state.currentConfig = { ...config };
+    state.topics.definitions = cloneDefinitions(config.topic_definitions || []);
+    resetTopicDefinitionEditor();
     renderAudioDeviceOptions(config);
     cfgLang.value = config.recognition_language || "en-US";
     if (cfgSpeechProvider) {
@@ -2634,7 +2841,7 @@
     cfgLocalInputDeviceId.value = config.local_input_device_id || "";
     cfgRemoteSpeakerLabel.value = config.remote_speaker_label || "Remote";
     cfgRemoteInputDeviceId.value = config.remote_input_device_id || "";
-    const endSilenceMs = clampNumber(config.end_silence_ms, 50, 2000, 250);
+    const endSilenceMs = clampNumber(config.end_silence_ms, 200, 1000, 500);
     cfgEnd.value = endSilenceMs;
     if (cfgEndRange) cfgEndRange.value = endSilenceMs;
     cfgInitial.value = Number(config.initial_silence_ms || 3000);
@@ -2684,6 +2891,7 @@
     syncCoachControlsUI();
     setConfigDirty(false);
     applyTranslationVisibility();
+    renderTopics();
     renderSettingsSummary();
     validateSettingsInputs(true);
   }
@@ -3195,6 +3403,7 @@
     if (cfgSummaryTopicGapThresholdSec) {
       rows.push(`Gap merge threshold: ${clampNumber(cfgSummaryTopicGapThresholdSec.value, 0, 300, 30)} sec`);
     }
+    rows.push(`Topic definitions: ${ensureTopicDefinitions().length}`);
     if (cfgAutoStopSilenceSec) {
       const mins = clampDecimal(cfgAutoStopSilenceSec.value, 0, 5, 1.25, 2);
       rows.push(mins > 0 ? `Auto-stop after silence: ${mins} min` : "Auto-stop after silence: off");
@@ -3350,7 +3559,8 @@
   }
 
   function setActiveTab(tabId) {
-    const next = tabPanes.some((pane) => pane.id === tabId) ? tabId : "transcriptTab";
+    const requested = tabId === "topicsTab" ? "settingsTab" : tabId;
+    const next = tabPanes.some((pane) => pane.id === requested) ? requested : "transcriptTab";
     state.ui.activeSection = next;
     closeExportMenus();
     tabButtons.forEach((btn) => {
@@ -3366,15 +3576,23 @@
     }
     if (next === "transcriptTab") renderTranscriptInsights();
     if (next === "logsTab") renderLogs();
-    if (next === "topicsTab") renderTopics();
     if (next === "coachTab") {
       state.ui.coachView.activeIndex = 0;
       renderCoachHints();
     }
     if (next === "settingsTab") {
+      if (tabId === "topicsTab") {
+        const topicsAccordion = settingsAccordions.find((el) => String(el.dataset.accordion || "") === "topics");
+        if (topicsAccordion) topicsAccordion.open = true;
+      }
       renderSettingsSummary();
       setActiveSettingsIndex(getActiveSettingsSection());
+      renderTopics();
+      if (tabId === "topicsTab") {
+        scrollToSettingsSection("topics");
+      }
     }
+    updateLiveStripVisibility();
     saveUiPrefs();
   }
 
@@ -3438,6 +3656,7 @@
       offset_sec: f.offset_sec == null ? null : Number(f.offset_sec),
       timing_source: String(f.timing_source || "event_only"),
       recognizer_session_id: String(f.recognizer_session_id || ""),
+      shadow_translation: normalizeShadowTranslation(f.shadow_translation),
     }));
     pruneBookmarksToFinals();
 
@@ -3481,6 +3700,8 @@
     state.coachConfigured = !!coach.configured;
     state.coachPending = !!coach.pending;
     state.coachHints = Array.isArray(coach.hints) ? coach.hints : [];
+    initializeCoachReadTargets();
+    closeCoachHintPopover();
     const topics = msg.topics || {};
     state.topics = {
       ...state.topics,
@@ -3489,6 +3710,12 @@
 
     state.sessionStartedTs = msg.session_started_ts || null;
     state.running = !!msg.running;
+    state.liveStripUi.hasStartedSession = (
+      state.running
+      || !!state.sessionStartedTs
+      || state.finals.length > 0
+      || Object.keys(state.livePartials).length > 0
+    );
     state.lastSpeechActivityTs = Date.now() / 1000;
     const telemetry = msg.telemetry || {};
     state.telemetry.latestMs = telemetry.translation_latest_ms ?? null;
@@ -3505,11 +3732,12 @@
     setTopicsUIFromState();
     renderTopics();
     renderSummary();
-    setStatus(msg.status || "idle", msg.running ? "listening" : "connected");
+    setStatus(msg.status || "idle", statusVisualMode(msg.status, msg.running));
     applyTimestampVisibility();
     applyTranslationVisibility();
     renderSilenceGuardChip();
     renderTimeStrip();
+    updateLiveStripVisibility();
   }
 
   // ==========================================================================
@@ -3580,7 +3808,7 @@
         ? clampNumber(clampNumber(cfgMaxSessionSec.value, 5, 180, 60) * 60, 300, 10800, 3600)
         : Number(existing.max_session_sec || 3600),
       coach_instruction: cfgCoachInstruction.value.trim(),
-      end_silence_ms: clampNumber(cfgEnd.value, 50, 2000, 250),
+      end_silence_ms: clampNumber(cfgEnd.value, 200, 1000, 500),
       initial_silence_ms: Number(cfgInitial.value),
       max_finals: Number(cfgMaxFinals.value),
       translation_enabled: cfgTranslationEnabled ? cfgTranslationEnabled.checked : !!(existing.translation_enabled ?? true),
@@ -3593,6 +3821,10 @@
       summary_topic_gap_threshold_sec: cfgSummaryTopicGapThresholdSec
         ? clampNumber(cfgSummaryTopicGapThresholdSec.value, 0, 300, 30)
         : Number(existing.summary_topic_gap_threshold_sec || 30),
+      topic_definitions: ensureTopicDefinitions().map((row, idx) => ({
+        ...row,
+        order: idx,
+      })),
       debug: cfgDebug.checked,
     };
     const out = await request("/api/config", "PUT", payload);
@@ -3653,21 +3885,11 @@
     URL.revokeObjectURL(url);
   }
 
-  // ==========================================================================
-  // EXPORT HELPERS
-  // ==========================================================================
-
-  function exportLogsText() {
-    const content = `\ufeff${state.logs.map((log) => logLineText(log)).join("\r\n")}`;
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    downloadFile(`logs-${stamp}.txt`, content, "text/plain;charset=utf-8");
-  }
-
-  function exportTranscriptJson() {
-    const rows = state.finals.map((item, idx) => {
+  function buildTranscriptExportRows({ diagnostic = false } = {}) {
+    return state.finals.map((item, idx) => {
       const key = finalKey(item);
       const bm = state.bookmarks[key] || null;
-      return {
+      const row = {
         index: idx + 1,
         speaker: item.speaker || "default",
         speaker_label: item.speaker_label || "Speaker",
@@ -3680,24 +3902,50 @@
         ),
         offset_sec: item.offset_sec == null ? null : Number(item.offset_sec),
         timing_source: item.timing_source || "event_only",
-        recognizer_session_id: item.recognizer_session_id || "",
         english: item.en,
         arabic: item.ar,
         bookmarked: !!bm,
         bookmark_note: bm?.note || "",
       };
+      if (diagnostic) {
+        row.recognizer_session_id = item.recognizer_session_id || "";
+        row.shadow_translation = item.shadow_translation || null;
+      }
+      return row;
     });
+  }
+
+  function exportTranscriptFilename(ext, diagnostic = false) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const flavor = diagnostic ? "-diagnostic" : "";
+    return `transcript-translation${flavor}-${stamp}.${ext}`;
+  }
+
+  // ==========================================================================
+  // EXPORT HELPERS
+  // ==========================================================================
+
+  function exportLogsText() {
+    const content = `\ufeff${state.logs.map((log) => logLineText(log)).join("\r\n")}`;
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    downloadFile(`logs-${stamp}.txt`, content, "text/plain;charset=utf-8");
+  }
+
+  function exportTranscriptJson({ diagnostic = false } = {}) {
+    const rows = buildTranscriptExportRows({ diagnostic });
     const bookmarks = rows.filter((x) => x.bookmarked);
     const data = {
       exported_at: new Date().toISOString(),
+      detail: diagnostic ? "diagnostic" : "standard",
       total_entries: rows.length,
       transcript: rows,
       bookmarks,
-      coach_hints: state.coachHints,
     };
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    if (diagnostic) {
+      data.coach_hints = state.coachHints;
+    }
     downloadFile(
-      `transcript-translation-${stamp}.json`,
+      exportTranscriptFilename("json", diagnostic),
       `${JSON.stringify(data, null, 2)}\n`,
       "application/json;charset=utf-8"
     );
@@ -3705,39 +3953,30 @@
 
   function exportTranscriptCsv() {
     const lines = [
-      "index,speaker,speaker_label,time_local,time_unix_sec,start_unix_sec,end_unix_sec,duration_sec,offset_sec,timing_source,recognizer_session_id,bookmarked,bookmark_note,english,arabic",
+      "index,speaker,speaker_label,time_local,time_unix_sec,start_unix_sec,end_unix_sec,duration_sec,offset_sec,timing_source,bookmarked,bookmark_note,english,arabic",
     ];
-    state.finals.forEach((item, idx) => {
-      const key = finalKey(item);
-      const bm = state.bookmarks[key] || null;
-      const startTs = Number(item.start_ts ?? item.ts ?? 0);
-      const endTs = Number(item.end_ts ?? item.ts ?? 0);
-      const durationSec = Number(
-        item.duration_sec ?? Math.max(0, Number(endTs) - Number(startTs))
-      );
+    buildTranscriptExportRows().forEach((row) => {
       lines.push(
         [
-          idx + 1,
-          escapeCsv(item.speaker || "default"),
-          escapeCsv(item.speaker_label || "Speaker"),
-          formatTime(item.ts),
-          item.ts,
-          startTs,
-          endTs,
-          durationSec,
-          item.offset_sec == null ? "" : Number(item.offset_sec),
-          escapeCsv(item.timing_source || "event_only"),
-          escapeCsv(item.recognizer_session_id || ""),
-          bm ? "1" : "0",
-          escapeCsv(bm?.note || ""),
-          escapeCsv(item.en),
-          escapeCsv(item.ar),
+          row.index,
+          escapeCsv(row.speaker),
+          escapeCsv(row.speaker_label),
+          row.time_local,
+          row.time_unix_sec,
+          row.start_unix_sec,
+          row.end_unix_sec,
+          row.duration_sec,
+          row.offset_sec == null ? "" : row.offset_sec,
+          escapeCsv(row.timing_source),
+          row.bookmarked ? "1" : "0",
+          escapeCsv(row.bookmark_note),
+          escapeCsv(row.english),
+          escapeCsv(row.arabic),
         ].join(",")
       );
     });
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     downloadFile(
-      `transcript-translation-${stamp}.csv`,
+      exportTranscriptFilename("csv"),
       `\ufeff${lines.join("\r\n")}\r\n`,
       "text/csv;charset=utf-8"
     );
@@ -3798,6 +4037,92 @@
     );
   }
 
+  function normalizeTranscriptExportState() {
+    const exportState = state.ui.transcriptExport;
+    if (exportState.scope !== "transcript" && exportState.scope !== "bookmarks") {
+      exportState.scope = "transcript";
+    }
+    if (exportState.format !== "json" && exportState.format !== "csv") {
+      exportState.format = "json";
+    }
+    if (exportState.detail !== "standard" && exportState.detail !== "diagnostic") {
+      exportState.detail = "standard";
+    }
+    if (exportState.scope !== "transcript" || exportState.format !== "json") {
+      exportState.detail = "standard";
+    }
+  }
+
+  function renderTranscriptExportMenu() {
+    normalizeTranscriptExportState();
+    const exportState = state.ui.transcriptExport;
+    const isTranscript = exportState.scope === "transcript";
+    const isJson = exportState.format === "json";
+    const detailVisible = isTranscript && isJson;
+    const runLabel = isTranscript
+      ? `Download Transcript ${isJson ? "JSON" : "CSV"}`
+      : `Download Bookmarks ${isJson ? "JSON" : "CSV"}`;
+
+    const applyChoiceState = (btn, active) => {
+      if (!btn) return;
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+    };
+
+    applyChoiceState(transcriptExportScopeTranscriptBtn, isTranscript);
+    applyChoiceState(transcriptExportScopeBookmarksBtn, !isTranscript);
+    applyChoiceState(transcriptExportFormatJsonBtn, isJson);
+    applyChoiceState(transcriptExportFormatCsvBtn, !isJson);
+    applyChoiceState(transcriptExportDetailStandardBtn, exportState.detail === "standard");
+    applyChoiceState(transcriptExportDetailDiagnosticBtn, exportState.detail === "diagnostic");
+
+    if (transcriptExportDetailGroup) {
+      transcriptExportDetailGroup.classList.toggle("hidden", !detailVisible);
+    }
+    if (transcriptExportDetailDiagnosticBtn) {
+      transcriptExportDetailDiagnosticBtn.disabled = !detailVisible;
+    }
+    if (transcriptExportRunBtn) {
+      transcriptExportRunBtn.textContent = runLabel;
+    }
+    if (transcriptExportHint) {
+      if (!isTranscript) {
+        transcriptExportHint.textContent = "Bookmarks exports include only saved bookmarks and their final text.";
+      } else if (!isJson) {
+        transcriptExportHint.textContent = "CSV exports stay compact and use the final visible Arabic only.";
+      } else if (exportState.detail === "diagnostic") {
+        transcriptExportHint.textContent = "Diagnostic JSON includes coach hints and shadow translation metadata.";
+      } else {
+        transcriptExportHint.textContent = "Standard transcript exports keep only the final canonical text.";
+      }
+    }
+  }
+
+  function runTranscriptExport() {
+    normalizeTranscriptExportState();
+    const exportState = state.ui.transcriptExport;
+    if (exportState.scope === "bookmarks") {
+      if (exportState.format === "json") {
+        exportBookmarksJson();
+      } else {
+        exportBookmarksCsv();
+      }
+      return {
+        label: `Bookmarks ${exportState.format.toUpperCase()}`,
+      };
+    }
+    if (exportState.format === "csv") {
+      exportTranscriptCsv();
+      return {
+        label: "Transcript CSV",
+      };
+    }
+    exportTranscriptJson({ diagnostic: exportState.detail === "diagnostic" });
+    return {
+      label: `Transcript ${exportState.detail === "diagnostic" ? "Diagnostic " : ""}JSON`.trim(),
+    };
+  }
+
   async function copyLogs() {
     const text = state.logs.map((log) => logLineText(log)).join("\n");
     if (!text.trim()) return;
@@ -3831,8 +4156,11 @@
     state.coachCursor.lastTopKey = "";
     state.coachCursor.lastCount = 0;
     state.ui.coachView.activeIndex = 0;
+    state.transcriptCoach.readTargets = {};
+    closeCoachHintPopover();
     saveUiPrefs();
     renderCoachHints();
+    renderFinals(true);
     showToast("Coach history cleared.", "info");
   }
 
@@ -3871,20 +4199,12 @@
   }
 
   async function commitTopicDefinitions(nextDefs, successMessage) {
-    const previousDefs = cloneDefinitions(ensureTopicDefinitions());
     const normalizedNext = cloneDefinitions(nextDefs);
     state.topics.definitions = normalizedNext;
     renderTopicDefinitionsList();
     renderTopics();
-    try {
-      await saveTopicsSetup();
-      if (successMessage) showToast(successMessage, "success");
-    } catch (err) {
-      state.topics.definitions = previousDefs;
-      renderTopicDefinitionsList();
-      renderTopics();
-      throw err;
-    }
+    setConfigDirty(true);
+    if (successMessage) showToast(successMessage, "info");
   }
 
   function upsertDefinitionFromEditor() {
@@ -3915,23 +4235,6 @@
     };
   }
 
-  async function saveTopicsSetup() {
-    const definitions = ensureTopicDefinitions().map((row, idx) => ({
-      ...row,
-      order: idx,
-    }));
-    const payload = {
-      definitions,
-    };
-    const out = await request("/api/topics/configure", "POST", payload);
-    if (out?.topics) {
-      state.topics = { ...state.topics, ...out.topics };
-      saveUiPrefs();
-      setTopicsUIFromState();
-      renderTopics();
-    }
-  }
-
   // ==========================================================================
   // WEBSOCKET INGESTION + LIVE UPDATES
   // ==========================================================================
@@ -3944,12 +4247,14 @@
     }
 
     if (msg.type === "status") {
-      setStatus(msg.status || "idle", msg.running ? "listening" : "connected");
+      setStatus(msg.status || "idle", statusVisualMode(msg.status, msg.running));
       state.running = !!msg.running;
+      if (state.running) state.liveStripUi.hasStartedSession = true;
       if (state.running) state.lastSpeechActivityTs = Date.now() / 1000;
       setRecording(msg.recording || null);
       renderSilenceGuardChip();
       renderTimeStrip();
+      updateLiveStripVisibility();
       return;
     }
 
@@ -3958,7 +4263,9 @@
       state.telemetry.p50Ms = msg.translation_p50_ms ?? null;
       state.telemetry.estimatedCostUsd = msg.estimated_cost_usd ?? null;
       state.running = !!msg.recognition_running;
+      if (state.running) state.liveStripUi.hasStartedSession = true;
       state.recognitionStatus = msg.recognition_status || state.recognitionStatus;
+      updateLiveStripVisibility();
       return;
     }
 
@@ -4031,12 +4338,38 @@
       return;
     }
 
+    if (msg.type === "final_shadow_patch") {
+      const segmentId = msg.segment_id || "";
+      const revision = Number(msg.revision || 0);
+      if (!segmentId) return;
+      const idx = state.finals.findIndex((x) => x.segment_id === segmentId && Number(x.revision || 0) === revision);
+      if (idx < 0) return;
+      state.finals[idx] = {
+        ...state.finals[idx],
+        ar: msg.ar || state.finals[idx].ar || "",
+        shadow_translation: normalizeShadowTranslation(msg.shadow_translation),
+      };
+      if (
+        state.liveHeldFinal
+        && state.liveHeldFinal.segment_id === segmentId
+        && Number(state.liveHeldFinal.revision || 0) === revision
+      ) {
+        state.liveHeldFinal = {
+          ...state.liveHeldFinal,
+          ar: msg.ar || state.liveHeldFinal.ar || "",
+        };
+        renderLivePartials();
+      }
+      renderFinals(true);
+      return;
+    }
+
     if (msg.type === "coach") {
       state.coachHints.push(msg);
       while (state.coachHints.length > 120) state.coachHints.shift();
-      state.ui.coachView.activeIndex = 0;
       state.coachPending = false;
       renderCoachHints();
+      renderFinals(true);
       return;
     }
 
@@ -4176,7 +4509,9 @@
     btn.addEventListener("click", () => setActiveTab(btn.dataset.tab));
   });
   if (transcriptExportMenuBtn && transcriptExportMenu) {
+    renderTranscriptExportMenu();
     transcriptExportMenuBtn.addEventListener("click", () => {
+      renderTranscriptExportMenu();
       toggleExportMenu(transcriptExportMenuBtn, transcriptExportMenu);
     });
   }
@@ -4656,16 +4991,16 @@
     });
   }
   if (topicDefSaveBtn) {
-    topicDefSaveBtn.addEventListener("click", () => withBusy(topicDefSaveBtn, "Saving", async () => {
+    topicDefSaveBtn.addEventListener("click", () => withBusy(topicDefSaveBtn, "Updating", async () => {
       const result = upsertDefinitionFromEditor();
       if (!result) return;
       await commitTopicDefinitions(
         result.definitions,
-        result.mode === "added" ? "Topic added and saved." : "Topic updated and saved."
+        result.mode === "added" ? "Topic added to pending changes." : "Topic updated in pending changes."
       );
       resetTopicDefinitionEditor();
     }).catch((err) => {
-      showTopicsDefinitionsError("Could not save topic definition. Check the input and try again.");
+      showTopicsDefinitionsError("Could not update topic definition. Check the input and try again.");
       notifyError(err);
     }));
   }
@@ -4690,32 +5025,47 @@
     exportLogsText();
     showToast("Logs exported.", "success");
   });
-  if (exportTranscriptJsonBtn) {
-    exportTranscriptJsonBtn.addEventListener("click", () => {
-      exportTranscriptJson();
-      closeExportMenus();
-      showToast("Transcript JSON exported.", "success");
+  if (transcriptExportScopeTranscriptBtn) {
+    transcriptExportScopeTranscriptBtn.addEventListener("click", () => {
+      state.ui.transcriptExport.scope = "transcript";
+      renderTranscriptExportMenu();
     });
   }
-  if (exportTranscriptCsvBtn) {
-    exportTranscriptCsvBtn.addEventListener("click", () => {
-      exportTranscriptCsv();
-      closeExportMenus();
-      showToast("Transcript CSV exported.", "success");
+  if (transcriptExportScopeBookmarksBtn) {
+    transcriptExportScopeBookmarksBtn.addEventListener("click", () => {
+      state.ui.transcriptExport.scope = "bookmarks";
+      renderTranscriptExportMenu();
     });
   }
-  if (exportBookmarksJsonBtn) {
-    exportBookmarksJsonBtn.addEventListener("click", () => {
-      exportBookmarksJson();
-      closeExportMenus();
-      showToast("Bookmarks JSON exported.", "success");
+  if (transcriptExportFormatJsonBtn) {
+    transcriptExportFormatJsonBtn.addEventListener("click", () => {
+      state.ui.transcriptExport.format = "json";
+      renderTranscriptExportMenu();
     });
   }
-  if (exportBookmarksCsvBtn) {
-    exportBookmarksCsvBtn.addEventListener("click", () => {
-      exportBookmarksCsv();
+  if (transcriptExportFormatCsvBtn) {
+    transcriptExportFormatCsvBtn.addEventListener("click", () => {
+      state.ui.transcriptExport.format = "csv";
+      renderTranscriptExportMenu();
+    });
+  }
+  if (transcriptExportDetailStandardBtn) {
+    transcriptExportDetailStandardBtn.addEventListener("click", () => {
+      state.ui.transcriptExport.detail = "standard";
+      renderTranscriptExportMenu();
+    });
+  }
+  if (transcriptExportDetailDiagnosticBtn) {
+    transcriptExportDetailDiagnosticBtn.addEventListener("click", () => {
+      state.ui.transcriptExport.detail = "diagnostic";
+      renderTranscriptExportMenu();
+    });
+  }
+  if (transcriptExportRunBtn) {
+    transcriptExportRunBtn.addEventListener("click", () => {
+      const result = runTranscriptExport();
       closeExportMenus();
-      showToast("Bookmarks CSV exported.", "success");
+      showToast(`${result.label} exported.`, "success");
     });
   }
   if (exportSummaryJsonBtn) {
@@ -4746,6 +5096,12 @@
   timeline.addEventListener("click", (ev) => {
     const target = ev.target;
     if (!(target instanceof Element)) return;
+    const coachBtn = target.closest(".coach-inline-btn");
+    if (coachBtn instanceof HTMLElement) {
+      const coachTarget = String(coachBtn.getAttribute("data-coach-target") || "").trim();
+      if (coachTarget) openCoachHintPopover(coachTarget, coachBtn);
+      return;
+    }
     const btn = target.closest(".bookmark-btn");
     if (!btn) return;
     closeBookmarkMenu();
@@ -4791,6 +5147,9 @@
       closeBookmarkModal();
     });
   }
+  if (coachHintPopoverCloseBtn) {
+    coachHintPopoverCloseBtn.addEventListener("click", () => closeCoachHintPopover());
+  }
   document.addEventListener("click", (ev) => {
     const target = ev.target;
     if (!(target instanceof Element)) return;
@@ -4804,6 +5163,11 @@
     }
     if (bookmarkModal && !bookmarkModal.classList.contains("hidden")) {
       if (target === bookmarkModal) closeBookmarkModal();
+    }
+    if (coachHintPopover && !coachHintPopover.classList.contains("hidden")) {
+      if (!target.closest("#coachHintPopover") && !target.closest(".coach-inline-btn")) {
+        closeCoachHintPopover();
+      }
     }
   });
   document.addEventListener("keydown", (ev) => {
@@ -4831,6 +5195,11 @@
         closeBookmarkMenu();
         return;
       }
+      if (coachHintPopover && !coachHintPopover.classList.contains("hidden")) {
+        ev.preventDefault();
+        closeCoachHintPopover();
+        return;
+      }
       if (state.ui.mobileNavOpen) {
         ev.preventDefault();
         closeMobileNav();
@@ -4838,6 +5207,11 @@
       }
       ev.preventDefault();
       stopBtn.click();
+    }
+  });
+  window.addEventListener("resize", () => {
+    if (coachHintPopover && !coachHintPopover.classList.contains("hidden")) {
+      closeCoachHintPopover();
     }
   });
 
@@ -4870,6 +5244,7 @@
   syncSeverityChips();
   enforceSingleVisiblePane("transcriptTab");
   setActiveTab(state.ui.activeSection);
+  updateLiveStripVisibility();
   renderTopics();
   setupTimelineDivider();
 

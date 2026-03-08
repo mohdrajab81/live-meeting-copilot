@@ -49,6 +49,7 @@ Primary goals:
 - `app/services/speech.py`: Azure Speech recognizer(s), emits normalized speech/status events.
 - `app/services/speech_nova3.py`: Nova-3 preview backend; lazy-loads optional runtime dependencies.
 - `app/services/translation_pipeline.py`: async queue worker with priority and stale guards.
+- `app/services/shadow_translation_pipeline.py`: optional shadow translation worker for committed utterances; disabled by default (`SHADOW_FINAL_TRANSLATION_ENABLED`); uses its own independent lock.
 - `app/services/coach.py`: Azure AI Foundry coach client with conversation continuity.
 - `app/services/summary.py`: Azure AI Foundry summary client with structured JSON extraction.
 - `app/services/meeting_insights.py`: deterministic analytics + keyword index computation.
@@ -63,6 +64,7 @@ Primary goals:
 - `BroadcastService` is loop-owned (connection mutations on event loop).
 - `ConfigStore` has its own lock to avoid blocking runtime lock on config reads.
 - `TranslationPipeline` has its own lock for translation sequencing state.
+- `ShadowFinalTranslationPipeline` has its own lock for shadow translation sequencing state.
 
 ### 3.3 Cross-thread execution
 - Speech callbacks come from SDK thread(s).
@@ -84,6 +86,7 @@ Primary goals:
 - `partial_clear`
 - `final`
 - `final_patch`
+- `final_shadow_patch` (shadow translation result; sent only when shadow translation is enabled)
 - `telemetry`
 - `coach`
 - `topics_update`
@@ -92,7 +95,8 @@ Primary goals:
 - `log`
 
 ### 4.3 Topic API contracts
-- `POST /api/topics/configure`: definitions-only setup used by summary.
+- Primary UI path: `PUT /api/config` carries `topic_definitions` as part of runtime settings.
+- `POST /api/topics/configure`: still available as a definitions-only helper path.
 - `POST /api/topics/clear`: clears topic definitions.
 
 ### 4.4 Summary API contracts
@@ -132,6 +136,7 @@ Per speaker:
 ### 5.4 Optional translation mode
 - `RuntimeConfig.translation_enabled` controls whether translation requests are enqueued.
 - When disabled, EN transcript flow continues unchanged while AR translation work is skipped.
+- `SHADOW_FINAL_TRANSLATION_ENABLED=true` enables a second worker for committed finals only; live partial translation remains on the normal path.
 - Coach and summary continue to operate from EN transcript data.
 
 ## 6. Coach design details
@@ -143,7 +148,7 @@ Per speaker:
 
 ## 7. Topics design details
 - Topics are definitions-only in current design.
-- Definitions are persisted from the Topics panel and supplied as agenda context to summary generation.
+- Definitions are edited in **Settings → Topics**, persisted through the shared settings flow, and supplied as agenda context to summary generation.
 - No automatic/manual topic agent analysis is performed.
 
 ## 8. Watchdog behavior
@@ -182,4 +187,4 @@ Runs once per second:
 - Topics definitions add/edit/delete and summary context propagation.
 - Summary auto-on-stop, manual `/api/summary/generate`, and `/api/summary/from-transcript`.
 - Deterministic topic duration resolution from `utterance_ids` and adherence computation.
-- Auth modes: loopback-only and token-required.
+- Auth mode: loopback-only.

@@ -25,6 +25,25 @@ def test_build_meeting_insights_speaker_balance_and_switches():
     assert speakers == {"You", "Remote"}
 
 
+def test_build_meeting_insights_single_speaker_suppresses_balance_and_interaction_penalties():
+    rows = [
+        {"ts": 100.0, "speaker_label": "Remote", "text": "We are reviewing the launch plan today."},
+        {"ts": 106.0, "speaker_label": "Remote", "text": "The remaining work is payment testing and bug fixing."},
+        {"ts": 114.0, "speaker_label": "Remote", "text": "Marketing assets are due next week."},
+        {"ts": 122.0, "speaker_label": "Remote", "text": "Operations will confirm support coverage."},
+    ]
+    result = build_meeting_insights(rows)
+    flags = result["health"]["flags"]
+    recs = result["health"]["recommendations"]
+
+    assert any("Single-speaker session" in flag for flag in flags)
+    assert not any("dominated" in flag for flag in flags)
+    assert not any("Low interaction" in flag for flag in flags)
+    assert not any("quieter participants" in rec for rec in recs)
+    assert result["turn_taking"]["speaker_switches"] == 0
+    assert len(result["speaking_balance"]) == 1
+
+
 def test_build_keyword_index_uses_defined_terms_and_frequency():
     rows = [
         {"ts": 100.0, "speaker_label": "You", "text": "Communication quality drives performance."},

@@ -100,11 +100,17 @@ def test_extract_structured_raises_on_invalid_json():
 
 def test_normalize_action_items_full():
     svc = _make_service()
-    items = [{"item": "Fix bug", "owner": "Alice", "due_date": "2026-03-01"}]
+    items = [{
+        "item": "Fix bug",
+        "owner": "Alice",
+        "due_date_text": "March 1",
+        "due_date": "2026-03-01",
+    }]
     result = svc._normalize_action_items(items)
     assert len(result) == 1
     assert result[0]["item"] == "Fix bug"
     assert result[0]["owner"] == "Alice"
+    assert result[0]["due_date_text"] == "March 1"
     assert result[0]["due_date"] == "2026-03-01"
 
 
@@ -124,6 +130,13 @@ def test_normalize_action_items_due_date_none_when_blank():
     svc = _make_service()
     result = svc._normalize_action_items([{"item": "Task", "owner": "", "due_date": ""}])
     assert result[0]["due_date"] is None
+
+
+def test_normalize_action_items_rejects_iso_due_date_without_due_text():
+    svc = _make_service()
+    result = svc._normalize_action_items([{"item": "Task", "owner": "", "due_date": "2026-03-01"}])
+    assert result[0]["due_date"] is None
+    assert result[0]["due_date_text"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -331,7 +344,10 @@ def test_prompt_template_formats_with_transcript_placeholder():
     out = _PROMPT_TEMPLATE.format(
         transcript="[00:00] You: hello",
         valid_utterance_id_ranges="U0001-U0002",
+        session_date_iso="2026-03-07",
     )
+    assert "SESSION_DATE:" in out
+    assert "2026-03-07" in out
     assert "TRANSCRIPT:" in out
     assert "[00:00] You: hello" in out
     assert "VALID_UTTERANCE_ID_RANGES" in out

@@ -23,8 +23,17 @@ async def lifespan(_app: FastAPI):
     loop = asyncio.get_running_loop()
     controller.set_event_loop(loop)
     controller.translation.start(loop)
+    controller.shadow_translation.start(loop)
     watchdog_task = asyncio.create_task(controller.watchdog_loop())
     controller.broadcast_svc.append_log("info", "App started")
+    if controller.shadow_translation.is_configured:
+        controller.broadcast_svc.append_log(
+            "info",
+            (
+                "Shadow final translation enabled: "
+                f"model={controller.shadow_translation.model_name}"
+            ),
+        )
     try:
         controller.reload_config_from_disk()
         controller.broadcast_svc.append_log(
@@ -40,6 +49,7 @@ async def lifespan(_app: FastAPI):
         controller.broadcast_svc.append_log("error", f"Failed to load settings file: {ex}")
     yield
     await controller.translation.stop()
+    await controller.shadow_translation.stop()
     watchdog_task.cancel()
     try:
         await watchdog_task

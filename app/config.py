@@ -8,6 +8,16 @@ class Settings(BaseSettings):
     ai_services_key: str = Field(default="", alias="AZURE_AI_SERVICES_KEY")
     ai_services_region: str = Field(default="", alias="AZURE_AI_SERVICES_REGION")
     nova3_api_key: str = Field(default="", alias="NOVA3_API_KEY")
+    project_endpoint: str = Field(default="", alias="PROJECT_ENDPOINT")
+    openai_api_version: str = Field(default="2024-10-21", alias="OPENAI_API_VERSION")
+    shadow_final_translation_enabled: bool = Field(
+        default=False,
+        alias="SHADOW_FINAL_TRANSLATION_ENABLED",
+    )
+    shadow_final_translation_model: str = Field(
+        default="",
+        alias="SHADOW_FINAL_TRANSLATION_MODEL",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -49,6 +59,14 @@ def validate_environment(settings: "Settings") -> None:
 
 
 class RuntimeConfig(BaseModel):
+    class TopicDefinitionConfig(BaseModel):
+        id: str = Field(default="", max_length=80)
+        name: str = Field(min_length=1, max_length=120)
+        expected_duration_min: int = Field(default=0, ge=0, le=600)
+        priority: Literal["low", "normal", "high", "mandatory", "optional"] = "normal"
+        comments: str = Field(default="", max_length=400)
+        order: int = Field(default=0, ge=0, le=10_000)
+
     speech_provider: Literal["azure", "nova3"] = "azure"
     capture_mode: Literal["single", "dual"] = "single"
     recognition_language: EnglishRecognitionLanguage = "en-US"
@@ -73,11 +91,12 @@ class RuntimeConfig(BaseModel):
         "Background: \n"
         "My role in this meeting: "
     )
-    end_silence_ms: int = Field(default=250, ge=50, le=2000)
+    end_silence_ms: int = Field(default=500, ge=200, le=1000)
     initial_silence_ms: int = Field(default=3000, ge=1000, le=120000)
     max_finals: int = Field(default=5000, ge=100, le=10000)
     translation_enabled: bool = True
     summary_enabled: bool = True
     summary_topic_duration_mode: Literal["speech_only", "coverage_with_gaps"] = "coverage_with_gaps"
     summary_topic_gap_threshold_sec: int = Field(default=30, ge=0, le=300)
+    topic_definitions: list[TopicDefinitionConfig] = Field(default_factory=list, max_length=80)
     debug: bool = False

@@ -4,6 +4,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 
@@ -27,6 +28,9 @@ _PROMPT_TEMPLATE = """\
 You are a meeting intelligence analyst. Analyze the meeting transcript below. \
 Timestamps show elapsed time from session start in [MM:SS] format. \
 Respond with ONLY a valid JSON object — no markdown, no commentary.
+
+SESSION_DATE:
+{session_date_iso}
 
 Schema:
 {{
@@ -53,7 +57,12 @@ Schema:
     }}
   ],
   "action_items": [
-    {{"item": "<action>", "owner": "<name or role, or null>", "due_date": "<YYYY-MM-DD or null>"}}
+    {{
+      "item": "<action>",
+      "owner": "<name or role, or null>",
+      "due_date_text": "<exact due-date phrase from transcript, or null>",
+      "due_date": "<YYYY-MM-DD or null>"
+    }}
   ],
   "decisions_made": ["<explicit decision 1>"],
   "risks_and_blockers": ["<explicit risk or blocker 1>"],
@@ -79,6 +88,11 @@ Rules:
   - max 30 items; allowed types only: PERSON, ORG, LOCATION, DATE_TIME, PRODUCT, EVENT, MONEY, PERCENT.
   - extract only explicit mentions from transcript text (no inferred entities).
   - keep canonical deduplicated forms.
+- action_items:
+  - due_date_text must copy the exact date phrase from the transcript when present.
+  - due_date must be YYYY-MM-DD only when confidently grounded by transcript text.
+  - Resolve relative dates like "Friday" or "next Monday" against SESSION_DATE only when unambiguous.
+  - If a date is ambiguous, corrupted, or cannot be grounded confidently, set due_date to null.
 - action_items, decisions_made, risks_and_blockers, key_terms_defined: include only explicit evidence from transcript; use [] when none.
 - metadata.sentiment_arc: one sentence max, or null if too short.
 
@@ -144,19 +158,26 @@ class SummaryService:
             return None
         return str(conversation_id)
 
-    def generate(self, transcript_text: str) -> SummaryResult:
+    def generate(
+        self,
+        transcript_text: str,
+        *,
+        session_date_iso: str | None = None,
+    ) -> SummaryResult:
         if not self.is_configured:
             raise RuntimeError(
                 "Summary service is not configured. "
                 "Set PROJECT_ENDPOINT and SUMMARY_AGENT_NAME."
             )
         client = self._ensure_client()
+        session_date_value = self._normalize_session_date(session_date_iso)
         valid_utterance_id_ranges = self._extract_valid_utterance_id_ranges(
             transcript_text
         )
         prompt = _PROMPT_TEMPLATE.format(
             transcript=transcript_text,
             valid_utterance_id_ranges=valid_utterance_id_ranges,
+            session_date_iso=session_date_value,
         )
         request_conversation_id = self._create_new_conversation_id(client)
         total_start = time.perf_counter()
@@ -201,6 +222,15 @@ class SummaryService:
             total_ms=total_ms,
             response_id=response_id,
         )
+
+    def _normalize_session_date(self, raw: str | None) -> str:
+        value = " ".join(str(raw or "").split()).strip()
+        if not value:
+            return "unknown"
+        try:
+            return date.fromisoformat(value).isoformat()
+        except ValueError:
+            return "unknown"
 
     def _extract_valid_utterance_id_ranges(self, transcript_text: str) -> str:
         found = re.findall(r"\[id:(U\d{1,6})\]", str(transcript_text or ""), flags=re.IGNORECASE)
@@ -272,11 +302,23 @@ class SummaryService:
             action_text = str(item.get("item", "") or "").strip()
             if not action_text:
                 continue
+            due_date_text = (
+                " ".join(str(item.get("due_date_text", "") or "").split()).strip()
+                or None
+            )
+            due_date_raw = str(item.get("due_date", "") or "").strip() or None
+            due_date = None
+            if due_date_raw and due_date_text:
+                try:
+                    due_date = date.fromisoformat(due_date_raw).isoformat()
+                except ValueError:
+                    due_date = None
             result.append(
                 {
                     "item": action_text,
                     "owner": str(item.get("owner", "") or "").strip(),
-                    "due_date": str(item.get("due_date", "") or "").strip() or None,
+                    "due_date_text": due_date_text,
+                    "due_date": due_date,
                 }
             )
         return result

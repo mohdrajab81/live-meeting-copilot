@@ -77,6 +77,14 @@ class CoachOrchestrator:
         if len(self.coach_hints) > 120:
             self.coach_hints = self.coach_hints[-120:]
 
+    @staticmethod
+    def _is_non_informative_reply(text: str) -> bool:
+        for line in str(text or "").splitlines():
+            stripped = line.strip().lower()
+            if stripped:
+                return stripped == "no_answer_needed"
+        return False
+
     def _next_group_id_unlocked(self) -> str:
         self.coach_group_seq += 1
         return f"coach-{int(time.time())}-{self.coach_group_seq}"
@@ -104,6 +112,11 @@ class CoachOrchestrator:
         trigger = config.coach_trigger_speaker
         speaker = str(item.get("speaker", "default") or "default")
         if trigger == "any":
+            return True
+        # Single-input sessions emit the synthetic "default" speaker key.
+        # In that mode the UI says trigger speaker selection is not used, so
+        # do not silently suppress automatic coach requests.
+        if config.capture_mode == "single" and speaker == "default":
             return True
         return trigger == speaker
 
@@ -231,20 +244,6 @@ class CoachOrchestrator:
                     f"Coach deep prompt exact: group={group_id}\n{prompt}",
                 )
             result = await asyncio.to_thread(self._coach.ask, prompt)
-            hint = {
-                "type": "coach",
-                "group_id": group_id,
-                "ts": time.time(),
-                "speaker": str(trigger_item.get("speaker", "default") or "default"),
-                "speaker_label": str(
-                    trigger_item.get("speaker_label", "Speaker") or "Speaker"
-                ),
-                "trigger_en": str(trigger_item.get("en", "") or ""),
-                "suggestion": result.text,
-            }
-            with self._lock:
-                self._append_hint_unlocked(hint)
-            await self._broadcast(hint)
             recv_ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time()))
             await self._broadcast_log(
                 "info",
@@ -256,6 +255,29 @@ class CoachOrchestrator:
                     f"reply_preview={self._preview_text(result.text)}"
                 ),
             )
+            if not self._is_non_informative_reply(result.text):
+                hint = {
+                    "type": "coach",
+                    "group_id": group_id,
+                    "ts": time.time(),
+                    "speaker": str(trigger_item.get("speaker", "default") or "default"),
+                    "speaker_label": str(
+                        trigger_item.get("speaker_label", "Speaker") or "Speaker"
+                    ),
+                    "trigger_en": str(trigger_item.get("en", "") or ""),
+                    "trigger_segment_id": str(trigger_item.get("segment_id", "") or ""),
+                    "trigger_revision": int(trigger_item.get("revision") or 0),
+                    "trigger_ts": float(trigger_item.get("ts") or 0.0),
+                    "suggestion": result.text,
+                }
+                with self._lock:
+                    self._append_hint_unlocked(hint)
+                await self._broadcast(hint)
+            else:
+                await self._broadcast_log(
+                    "debug",
+                    f"Coach deep reply dropped: group={group_id}, reason=no_answer_needed",
+                )
             queue_ms = int((run_start - trigger_ts) * 1000)
             end_to_end_ms = int((time.time() - trigger_ts) * 1000)
             await self._broadcast_log(
@@ -348,7 +370,7 @@ class CoachOrchestrator:
 
     async def request_manual(
         self, prompt: str, speaker_label: str = "Manual"
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         manual_prompt = "\n".join(
             ["Manual user message (same conversation):", str(prompt or "").strip()]
         )
@@ -371,18 +393,6 @@ class CoachOrchestrator:
                 f"Coach manual prompt exact:\n{manual_prompt}",
             )
         result = await asyncio.to_thread(self._coach.ask, manual_prompt)
-        hint = {
-            "type": "coach",
-            "group_id": "",
-            "ts": time.time(),
-            "speaker": "manual",
-            "speaker_label": speaker_label or "Manual",
-            "trigger_en": "",
-            "suggestion": result.text,
-        }
-        with self._lock:
-            self._append_hint_unlocked(hint)
-        await self._broadcast(hint)
         recv_ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time()))
         await self._broadcast_log(
             "info",
@@ -395,6 +405,24 @@ class CoachOrchestrator:
                 f"reply_preview={self._preview_text(result.text)}"
             ),
         )
+        if self._is_non_informative_reply(result.text):
+            await self._broadcast_log(
+                "debug",
+                "Coach manual reply dropped: reason=no_answer_needed",
+            )
+            return None
+        hint = {
+            "type": "coach",
+            "group_id": "",
+            "ts": time.time(),
+            "speaker": "manual",
+            "speaker_label": speaker_label or "Manual",
+            "trigger_en": "",
+            "suggestion": result.text,
+        }
+        with self._lock:
+            self._append_hint_unlocked(hint)
+        await self._broadcast(hint)
         return hint
 
     # ── Snapshot ──────────────────────────────────────────────────────────────

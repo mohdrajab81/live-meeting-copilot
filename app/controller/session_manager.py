@@ -15,6 +15,7 @@ from typing import Any, Awaitable, Callable
 
 from app.config import RuntimeConfig
 from app.services.coach import CoachService
+from app.services.shadow_translation_pipeline import ShadowFinalTranslationPipeline
 from app.services.speech_provider import SpeechProviderService
 from app.services.translation_pipeline import TranslationPipeline
 
@@ -37,6 +38,7 @@ class SessionManager:
         lock: threading.RLock,
         speech: SpeechProviderService,
         translation: TranslationPipeline,
+        shadow_translation: ShadowFinalTranslationPipeline,
         transcript_store: TranscriptStore,
         coach_orch: CoachOrchestrator,
         topic_orch: TopicOrchestrator,
@@ -52,6 +54,7 @@ class SessionManager:
         self._lock = lock
         self._speech = speech
         self._translation = translation
+        self._shadow_translation = shadow_translation
         self._transcript = transcript_store
         self._coach_orch = coach_orch
         self._topic_orch = topic_orch
@@ -319,6 +322,7 @@ class SessionManager:
     ) -> None:
         coach_call: tuple[str, str, float, int] | None = None
         queued_while_busy = False
+        shadow_req: dict[str, Any] | None = None
         item = self._create_final_item(payload)
         original_start_ts = float(item.get("start_ts") or item.get("ts") or time.time())
         original_end_ts = float(item.get("end_ts") or item.get("ts") or original_start_ts)
@@ -346,9 +350,18 @@ class SessionManager:
             item["timing_source"] = original_timing_source
             item["recognizer_session_id"] = original_session_id
             item["recognizer_anchor_ts"] = original_anchor_ts
+            item["shadow_translation"] = None
             self._transcript.append_final_unlocked(item, max_finals=config.max_finals)
             is_candidate = self._coach_orch.should_trigger_unlocked(
                 item, config, ignore_busy=True
+            )
+            shadow_req = self._shadow_translation.build_request(
+                speaker=item["speaker"],
+                segment_id=item["segment_id"],
+                revision=int(item["revision"] or 0),
+                text=item["en"],
+                trigger_ts=float(item["ts"]),
+                debug=bool(config.debug),
             )
             if is_candidate:
                 if self._coach_orch.coach_pending:
@@ -360,6 +373,8 @@ class SessionManager:
         self._emit_trace_from_thread(item, channel="speech_final", debug=config.debug)
         if req and config.translation_enabled:
             self._translation.enqueue_from_thread(req)
+        if shadow_req and config.translation_enabled:
+            self._shadow_translation.enqueue_from_thread(shadow_req)
         self._coach_orch.schedule_from_thread(item, coach_call, queued_while_busy)
 
     # ── Session lifecycle ─────────────────────────────────────────────────────
@@ -392,6 +407,7 @@ class SessionManager:
             self.session_started_ts = time.time()
             self._transcript.last_speech_activity_ts = self.session_started_ts
             self._translation.reset_unlocked()
+            self._shadow_translation.reset_unlocked()
             self._coach_orch.reset_runtime_unlocked(keep_history=True)
 
         if config.coach_enabled:
@@ -426,6 +442,7 @@ class SessionManager:
         with self._lock:
             self._coach_orch.reset_runtime_unlocked(keep_history=True)
             self._translation.reset_unlocked()
+            self._shadow_translation.reset_unlocked()
 
     # ── Watchdog ──────────────────────────────────────────────────────────────
 

@@ -235,22 +235,27 @@ def build_meeting_insights(entries: list[dict[str, Any]]) -> dict[str, Any]:
     health_score = 100
     flags: list[str] = []
     recommendations: list[str] = []
+    distinct_speakers = len(per_speaker)
 
     dominant = speaking_balance[0] if speaking_balance else None
     dominant_share = float(dominant["share_pct"]) if dominant else 0.0
-    if dominant_share >= 75.0:
-        health_score -= 25
-        flags.append(f"{dominant['speaker']} dominated {dominant_share:.1f}% of words.")
-        recommendations.append("Invite shorter turns from the quieter participants.")
-    elif dominant_share >= 65.0:
-        health_score -= 12
-        flags.append(f"Participation was imbalanced ({dominant_share:.1f}% by one speaker).")
-        recommendations.append("Use directed questions to rebalance airtime.")
+    if distinct_speakers < 2:
+        flags.append("Single-speaker session: balance and interaction metrics are not applicable.")
+        recommendations.append("Use transcript, pace, and topic coverage as the primary signals for this session.")
+    else:
+        if dominant_share >= 75.0:
+            health_score -= 25
+            flags.append(f"{dominant['speaker']} dominated {dominant_share:.1f}% of words.")
+            recommendations.append("Invite shorter turns from the quieter participants.")
+        elif dominant_share >= 65.0:
+            health_score -= 12
+            flags.append(f"Participation was imbalanced ({dominant_share:.1f}% by one speaker).")
+            recommendations.append("Use directed questions to rebalance airtime.")
 
-    if total_turns >= 8 and switch_rate < 25.0:
-        health_score -= 15
-        flags.append("Low interaction: limited speaker switching.")
-        recommendations.append("Add checkpoints to confirm alignment every few minutes.")
+        if total_turns >= 8 and switch_rate < 25.0:
+            health_score -= 15
+            flags.append("Low interaction: limited speaker switching.")
+            recommendations.append("Add checkpoints to confirm alignment every few minutes.")
 
     if total_words < 60 or total_turns < 4:
         health_score -= 10

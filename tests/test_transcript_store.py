@@ -57,6 +57,10 @@ class TestAppendFinal:
         for field in ("en", "ar", "speaker", "speaker_label", "segment_id", "revision", "ts", "start_ts"):
             assert field in item
 
+    def test_initializes_shadow_translation_field(self, store):
+        store.append_final_unlocked(_final(), max_finals=100)
+        assert store.finals[0]["shadow_translation"] is None
+
     def test_stores_enriched_timing_fields(self, store):
         ts = time.time()
         payload = _final(ts=ts)
@@ -324,3 +328,70 @@ class TestSpeakerActivity:
         before = store.last_speech_activity_ts
         store.update_speaker_activity_unlocked("default", time.time() + 100, has_speech=False)
         assert store.last_speech_activity_ts == before
+
+
+class TestApplyShadowTranslationResult:
+    @pytest.mark.asyncio
+    async def test_patches_matching_final_and_broadcasts(self, store):
+        store.append_final_unlocked(_final(segment_id="seg-1", revision=2), max_finals=100)
+        req = {
+            "segment_id": "seg-1",
+            "revision": 2,
+            "debug": False,
+        }
+        result = {
+            "provider": "azure_openai_shadow",
+            "model": "gpt-4.1-mini",
+            "status": "completed",
+            "text": "إطلاق المشروع يسير حسب الخطة.",
+            "latency_ms": 1234,
+            "error": None,
+        }
+
+        await store.apply_shadow_translation_result(req, result)
+
+        assert store.finals[0]["shadow_translation"] == result
+        assert store.finals[0]["ar"] == "إطلاق المشروع يسير حسب الخطة."
+        store._broadcast.assert_awaited_once()
+        payload = store._broadcast.await_args.args[0]
+        assert payload["type"] == "final_shadow_patch"
+        assert payload["segment_id"] == "seg-1"
+        assert payload["ar"] == "إطلاق المشروع يسير حسب الخطة."
+
+    @pytest.mark.asyncio
+    async def test_ignores_missing_final(self, store):
+        req = {"segment_id": "missing", "revision": 1, "debug": False}
+        result = {
+            "provider": "azure_openai_shadow",
+            "model": "gpt-4.1-mini",
+            "status": "completed",
+            "text": "نص",
+            "latency_ms": 50,
+            "error": None,
+        }
+
+        await store.apply_shadow_translation_result(req, result)
+
+        store._broadcast.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_failed_shadow_translation_does_not_override_visible_arabic(self, store):
+        store.append_final_unlocked(_final(segment_id="seg-1", revision=2), max_finals=100)
+        store.finals[0]["ar"] = "ترجمة أساسية"
+        req = {"segment_id": "seg-1", "revision": 2, "debug": False}
+        result = {
+            "provider": "azure_openai_shadow",
+            "model": "gpt-4.1-mini",
+            "status": "failed",
+            "text": "",
+            "latency_ms": 200,
+            "error": "NotFoundError: Error code: 404",
+        }
+
+        await store.apply_shadow_translation_result(req, result)
+
+        assert store.finals[0]["ar"] == "ترجمة أساسية"
+        assert store.finals[0]["shadow_translation"] == result
+        payload = store._broadcast.await_args.args[0]
+        assert payload["type"] == "final_shadow_patch"
+        assert payload["ar"] == ""

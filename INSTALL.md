@@ -169,6 +169,9 @@ Both depend on an Azure AI Foundry project and agent configuration.
 | `PROJECT_ENDPOINT` | Your Foundry project endpoint URL |
 | `GUIDANCE_AGENT_NAME` | Name of the agent handling coaching suggestions |
 | `SUMMARY_AGENT_NAME` | Name of the agent handling meeting summaries |
+| `OPENAI_API_VERSION` | API version used by the optional shadow final translation path |
+| `SHADOW_FINAL_TRANSLATION_ENABLED` | Set to `true` to enable a second-pass Arabic patch for committed finals |
+| `SHADOW_FINAL_TRANSLATION_MODEL` | Model deployment name used by the optional shadow final translation path |
 
 See `docs/AZURE_PROVISIONING.md` for how to create and name these agents.
 
@@ -176,8 +179,23 @@ See `docs/AZURE_PROVISIONING.md` for how to create and name these agents.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `TRANSLATION_COST_PER_MILLION_USD` | `10.0` | Used for on-screen cost estimates only; does not affect translation |
+| `TRANSLATION_COST_PER_MILLION_USD` | *(not set)* | Used for on-screen cost estimates only; does not affect translation. When not set, no cost estimate is displayed. |
 | `NOVA3_API_KEY` | *(empty)* | Optional key for Nova-3 STT preview. Create it in the Deepgram Console under your project **Settings → API Keys**. Python-based installs pull the optional Nova deps from `requirements-nova3.txt` during setup when that file is packaged. The EXE package uses Nova only when those optional deps were bundled by the maintainer; otherwise it auto-falls back to Azure. |
+
+### Optional — Shadow Final Translation
+
+Use this only if you want final Arabic transcript rows to be patched by a second higher-quality translation pass after the initial Azure Translator result.
+
+```env
+OPENAI_API_VERSION=2024-10-21
+SHADOW_FINAL_TRANSLATION_ENABLED=true
+SHADOW_FINAL_TRANSLATION_MODEL=<your model deployment name>
+```
+
+Notes:
+- this path uses your existing `PROJECT_ENDPOINT`
+- the live partial translation path stays unchanged
+- if the shadow pass fails, the normal Arabic translation remains in place
 
 ### Optional — Nova-3 Preview
 
@@ -242,7 +260,7 @@ After the application starts and the browser opens:
 3. Open **Settings**, enable **Translation** — confirm Arabic text appears alongside the transcript.
 4. If AI features are configured:
    - **Coaching**: type a question in the guidance box and submit — confirm a response appears.
-   - **Topics**: add at least one definition in the Topics panel and confirm it is saved.
+   - **Topics**: open **Settings → Topics**, add at least one definition, and confirm it is saved.
    - **Summary**: click **Generate now** — confirm a summary is produced.
 
 ---

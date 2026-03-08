@@ -14,6 +14,7 @@ from fastapi import WebSocket
 
 from app.config import RuntimeConfig, Settings
 from app.services.coach import CoachService
+from app.services.shadow_translation_pipeline import ShadowFinalTranslationPipeline
 from app.services.speech_provider import SpeechProviderService
 from app.services.summary import SummaryService
 from app.services.translation_pipeline import TranslationPipeline
@@ -56,6 +57,11 @@ class AppController:
             apply_translation_result=self.transcript_store.apply_translation_result,
             log=self.broadcast_svc.broadcast_log,
         )
+        self.shadow_translation = ShadowFinalTranslationPipeline(
+            settings=settings,
+            apply_shadow_result=self.transcript_store.apply_shadow_translation_result,
+            log=self.broadcast_svc.broadcast_log,
+        )
         # Late-bind translation into transcript_store (needed for is_current_partial check).
         self.transcript_store.translation = self.translation
 
@@ -78,6 +84,7 @@ class AppController:
             get_finals=self.transcript_store.get_finals,
             preview_text=self.broadcast_svc.preview_text,
         )
+        self._sync_topics_from_config(self.config_store.get())
 
         self.summary_orch = SummaryOrchestrator(
             lock=self.lock,
@@ -100,6 +107,7 @@ class AppController:
                 get_runtime_config=self.config_store.get,
             ),
             translation=self.translation,
+            shadow_translation=self.shadow_translation,
             transcript_store=self.transcript_store,
             coach_orch=self.coach_orch,
             topic_orch=self.topic_orch,
@@ -143,15 +151,20 @@ class AppController:
 
     def set_config(self, config: RuntimeConfig) -> None:
         self.config_store.set(config)
+        self._sync_topics_from_config(config)
 
     def reset_config_to_defaults(self) -> dict[str, Any]:
-        return self.config_store.reset()
+        config = RuntimeConfig.model_validate(self.config_store.reset())
+        self._sync_topics_from_config(config)
+        return self.config_store.dump()
 
     def save_config_to_disk(self) -> str:
         return self.config_store.save_to_disk()
 
     def reload_config_from_disk(self) -> dict[str, Any]:
-        return self.config_store.reload_from_disk()
+        config = RuntimeConfig.model_validate(self.config_store.reload_from_disk())
+        self._sync_topics_from_config(config)
+        return self.config_store.dump()
 
     # ── Public API: session ───────────────────────────────────────────────────
 
@@ -178,6 +191,7 @@ class AppController:
         with self.lock:
             self.transcript_store.clear_unlocked()
             self.translation.reset_unlocked()
+            self.shadow_translation.reset_unlocked()
             self.coach_orch.reset_sent_index_unlocked(new_index=0)
             self.coach_orch.clear_queued_trigger_unlocked()
             self.topic_orch.clear_for_transcript_unlocked()
@@ -214,6 +228,19 @@ class AppController:
 
     def clear_topics(self) -> None:
         self.topic_orch.clear()
+
+    def _sync_topics_from_config(self, config: RuntimeConfig) -> None:
+        definitions = [
+            row.model_dump() if hasattr(row, "model_dump") else dict(row)
+            for row in list(config.topic_definitions or [])
+        ]
+        self.topic_orch.configure(
+            agenda=[],
+            enabled=False,
+            allow_new_topics=False,
+            interval_sec=60,
+            definitions=definitions,
+        )
 
     # ── Public API: summary ───────────────────────────────────────────────────
 

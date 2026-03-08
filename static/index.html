@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@300;500;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="stylesheet" href="/style.css?v=20260217s" />
+  <link rel="stylesheet" href="/style.css?v=20260308j" />
 </head>
 <body>
   <div class="app">
@@ -52,10 +52,6 @@
             <span class="rail-tab-icon" aria-hidden="true">C</span>
             <span class="rail-tab-label">Coach</span>
           </button>
-          <button class="tab-btn rail-tab" type="button" data-tab="topicsTab">
-            <span class="rail-tab-icon" aria-hidden="true">P</span>
-            <span class="rail-tab-label">Topics</span>
-          </button>
           <button class="tab-btn rail-tab" type="button" data-tab="summaryTab">
             <span class="rail-tab-icon" aria-hidden="true">M</span>
             <span class="rail-tab-label">Summary</span>
@@ -91,11 +87,30 @@
                   <button id="clearBtn" class="btn btn-soft-danger" type="button">Clear</button>
                   <div class="export-menu-wrap" data-export-menu-wrapper>
                     <button id="transcriptExportMenuBtn" class="btn" type="button" aria-expanded="false" aria-controls="transcriptExportMenu">Export</button>
-                    <div id="transcriptExportMenu" class="export-menu hidden" role="menu" aria-label="Transcript export actions">
-                      <button id="exportTranscriptJsonBtn" class="btn export-item" type="button" role="menuitem">Transcript JSON</button>
-                      <button id="exportTranscriptCsvBtn" class="btn export-item" type="button" role="menuitem">Transcript CSV</button>
-                      <button id="exportBookmarksJsonBtn" class="btn export-item" type="button" role="menuitem">Bookmarks JSON</button>
-                      <button id="exportBookmarksCsvBtn" class="btn export-item" type="button" role="menuitem">Bookmarks CSV</button>
+                    <div id="transcriptExportMenu" class="export-menu export-panel hidden" role="menu" aria-label="Transcript export actions">
+                      <div class="export-group" role="group" aria-label="Export content">
+                        <div class="export-group-label">What</div>
+                        <div class="export-choice-row">
+                          <button id="transcriptExportScopeTranscriptBtn" class="btn export-choice is-active" type="button" aria-pressed="true">Transcript</button>
+                          <button id="transcriptExportScopeBookmarksBtn" class="btn export-choice" type="button" aria-pressed="false">Bookmarks only</button>
+                        </div>
+                      </div>
+                      <div class="export-group" role="group" aria-label="Export format">
+                        <div class="export-group-label">Format</div>
+                        <div class="export-choice-row">
+                          <button id="transcriptExportFormatJsonBtn" class="btn export-choice is-active" type="button" aria-pressed="true">JSON</button>
+                          <button id="transcriptExportFormatCsvBtn" class="btn export-choice" type="button" aria-pressed="false">CSV</button>
+                        </div>
+                      </div>
+                      <div id="transcriptExportDetailGroup" class="export-group" role="group" aria-label="Export detail">
+                        <div class="export-group-label">Detail</div>
+                        <div class="export-choice-row">
+                          <button id="transcriptExportDetailStandardBtn" class="btn export-choice is-active" type="button" aria-pressed="true">Standard</button>
+                          <button id="transcriptExportDetailDiagnosticBtn" class="btn export-choice" type="button" aria-pressed="false">Diagnostic</button>
+                        </div>
+                      </div>
+                      <p id="transcriptExportHint" class="export-hint">Standard transcript exports keep only the final canonical text.</p>
+                      <button id="transcriptExportRunBtn" class="btn btn-primary export-item export-run-btn" type="button" role="menuitem">Download JSON</button>
                     </div>
                   </div>
                 </div>
@@ -155,71 +170,12 @@
                 </div>
                 <div id="coachActionDeck" class="coach-latest-card" aria-live="polite"></div>
                 <div class="coach-reco-footer">
-                  <button id="coachRecoPrevBtn" class="btn" type="button" aria-label="Previous recommendation">Prev</button>
+                  <button id="coachRecoPrevBtn" class="btn" type="button" aria-label="Older recommendation">Older</button>
                   <span id="coachRecoPage" class="coach-reco-page">0 / 0</span>
-                  <button id="coachRecoNextBtn" class="btn" type="button" aria-label="Next recommendation">Next</button>
+                  <button id="coachRecoNextBtn" class="btn" type="button" aria-label="Newer recommendation">Newer</button>
                 </div>
               </section>
             </div>
-          </section>
-
-          <section id="topicsTab" class="tab-pane panel topics-page" aria-labelledby="topicsPageTitle" hidden style="display:none" aria-hidden="true">
-            <header class="workspace-page-head topics-page-head">
-              <div class="topics-head-left">
-                <h2 id="topicsPageTitle" class="workspace-page-title">Topics</h2>
-                <p id="topicsStatus" class="workspace-page-subtitle topics-status-line">Definitions are used as agenda context in Summary.</p>
-                <div class="workspace-head-meta topics-head-kpis">
-                  <span class="ops-kpi-chip">Definitions <strong id="topicsKpiCount">0</strong></span>
-                </div>
-              </div>
-            </header>
-
-            <section id="topicsDefinitionsPane" class="topics-subpane active" data-topics-pane="definitions">
-              <div class="definitions-layout">
-                <div class="card-shell definition-editor-card">
-                  <div class="panel-head panel-head-compact">
-                    <h3 id="topicsDefinitionEditorTitle">Add topic</h3>
-                    <button id="topicDefCancelBtn" class="btn" type="button">Reset</button>
-                  </div>
-
-                  <input id="topicDefIdInput" type="hidden" />
-
-                  <label for="topicDefNameInput">Name</label>
-                  <input id="topicDefNameInput" type="text" maxlength="120" placeholder="Example: Risks" />
-
-                  <div class="field-grid two-col">
-                    <div>
-                      <label for="topicDefDurationInput">Duration</label>
-                      <input id="topicDefDurationInput" type="number" min="0" max="600" step="1" value="0" />
-                    </div>
-                    <div>
-                      <label for="topicDefPriorityInput">Priority</label>
-                      <select id="topicDefPriorityInput">
-                        <option value="low">Low</option>
-                        <option value="normal" selected>Normal</option>
-                        <option value="high">High</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <label for="topicDefCommentsInput">Comments</label>
-                  <textarea id="topicDefCommentsInput" rows="3" placeholder="Notes for this topic..."></textarea>
-
-                  <div id="topicsDefinitionsValidation" class="validation-inline hidden"></div>
-
-                  <div class="actions compact">
-                    <button id="topicDefSaveBtn" class="btn" type="button">Add topic</button>
-                  </div>
-                </div>
-
-                <div class="card-shell topics-definitions-list-shell">
-                  <div class="panel-head panel-head-compact">
-                    <h3>Definitions</h3>
-                  </div>
-                  <div id="topicsDefinitionsList" class="topics-definitions-list"></div>
-                </div>
-              </div>
-            </section>
           </section>
 
           <section id="summaryTab" class="tab-pane panel summary-page" aria-labelledby="summaryPageTitle" hidden style="display:none" aria-hidden="true">
@@ -391,11 +347,10 @@
             <header class="workspace-page-head settings-page-head">
               <div>
                 <h2 id="settingsPageTitle" class="workspace-page-title">Settings Studio</h2>
-                <p class="workspace-page-subtitle">Staged apply/save flow with validation.</p>
+                <p class="workspace-page-subtitle">Apply, save, and validate runtime settings.</p>
               </div>
               <div class="workspace-head-meta">
-                <span class="ops-kpi-chip">Commit mode <strong id="settingsKpiMode">Staged</strong></span>
-                <span class="ops-kpi-chip">Dirty <strong id="settingsKpiDirty">No</strong></span>
+                <span class="ops-kpi-chip">Pending changes <strong id="settingsKpiDirty">No</strong></span>
               </div>
             </header>
 
@@ -404,6 +359,7 @@
                 <button class="btn settings-index-btn" type="button" data-settings-target="system">Capture</button>
                 <button class="btn settings-index-btn" type="button" data-settings-target="coach">Coach</button>
                 <button class="btn settings-index-btn" type="button" data-settings-target="transcript">Transcript</button>
+                <button class="btn settings-index-btn" type="button" data-settings-target="topics">Topics</button>
                 <button class="btn settings-index-btn" type="button" data-settings-target="appearance">Appearance</button>
               </nav>
 
@@ -651,6 +607,69 @@
                     </details>
                   </section>
 
+                  <section class="settings-card" id="settingsSectionTopics">
+                    <details class="settings-accordion" data-accordion="topics">
+                      <summary>Topics</summary>
+                      <div class="settings-card-body">
+                        <div class="settings-subgroup settings-topics-subgroup">
+                          <section id="topicsDefinitionsPane" class="topics-subpane active settings-topics-pane" data-topics-pane="definitions">
+                            <div class="settings-topics-head">
+                              <div>
+                                <h4 class="settings-subgroup-title">Agenda Definitions</h4>
+                                <p id="topicsStatus" class="settings-subgroup-hint topics-status-line">Definitions are used as agenda context in Summary.</p>
+                              </div>
+                              <span class="ops-kpi-chip">Definitions <strong id="topicsKpiCount">0</strong></span>
+                            </div>
+                            <div class="definitions-layout settings-definitions-layout">
+                              <div class="card-shell definition-editor-card">
+                                <div class="panel-head panel-head-compact">
+                                  <h3 id="topicsDefinitionEditorTitle">Add topic</h3>
+                                  <button id="topicDefCancelBtn" class="btn" type="button">Reset</button>
+                                </div>
+
+                                <input id="topicDefIdInput" type="hidden" />
+
+                                <label for="topicDefNameInput">Name</label>
+                                <input id="topicDefNameInput" type="text" maxlength="120" placeholder="Example: Risks" />
+
+                                <div class="field-grid two-col">
+                                  <div>
+                                    <label for="topicDefDurationInput">Duration</label>
+                                    <input id="topicDefDurationInput" type="number" min="0" max="600" step="1" value="0" />
+                                  </div>
+                                  <div>
+                                    <label for="topicDefPriorityInput">Priority</label>
+                                    <select id="topicDefPriorityInput">
+                                      <option value="low">Low</option>
+                                      <option value="normal" selected>Normal</option>
+                                      <option value="high">High</option>
+                                    </select>
+                                  </div>
+                                </div>
+
+                                <label for="topicDefCommentsInput">Comments</label>
+                                <textarea id="topicDefCommentsInput" rows="3" placeholder="Notes for this topic..."></textarea>
+
+                                <div id="topicsDefinitionsValidation" class="validation-inline hidden"></div>
+
+                                <div class="actions compact">
+                                  <button id="topicDefSaveBtn" class="btn" type="button">Add topic</button>
+                                </div>
+                              </div>
+
+                              <div class="card-shell topics-definitions-list-shell">
+                                <div class="panel-head panel-head-compact">
+                                  <h3>Definitions</h3>
+                                </div>
+                                <div id="topicsDefinitionsList" class="topics-definitions-list"></div>
+                              </div>
+                            </div>
+                          </section>
+                        </div>
+                      </div>
+                    </details>
+                  </section>
+
                   <section class="settings-card" id="settingsSectionAppearance">
                     <details class="settings-accordion" data-accordion="appearance">
                       <summary>Appearance</summary>
@@ -749,6 +768,19 @@
     <button id="bookmarkMenuRemoveBtn" class="btn bookmark-menu-btn" type="button">Remove</button>
   </div>
 
+  <div id="coachHintPopover" class="coach-hint-popover hidden" role="dialog" aria-label="Coach hint">
+    <div class="coach-hint-popover-card">
+      <div class="coach-hint-popover-head">
+        <div>
+          <div class="coach-hint-popover-title">Coach hint</div>
+          <div id="coachHintPopoverMeta" class="coach-hint-popover-meta"></div>
+        </div>
+        <button id="coachHintPopoverCloseBtn" class="btn coach-hint-popover-close" type="button" aria-label="Close coach hint">&times;</button>
+      </div>
+      <div id="coachHintPopoverBody" class="coach-hint-popover-body"></div>
+    </div>
+  </div>
+
   <div id="bookmarkModal" class="bookmark-modal hidden" role="dialog" aria-modal="true" aria-labelledby="bookmarkModalTitle">
     <div class="bookmark-modal-card">
       <h4 id="bookmarkModalTitle">Bookmark note</h4>
@@ -792,6 +824,6 @@
       <div id="fileModalError" class="summary-error hidden"></div>
     </div>
   </dialog>
-  <script src="/client.js?v=20260217s"></script>
+  <script src="/client.js?v=20260308g"></script>
 </body>
 </html>

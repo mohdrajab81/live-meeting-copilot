@@ -24,6 +24,7 @@ def _make_session_manager():
     speech.start_recognition.return_value = True
 
     translation = MagicMock()
+    shadow_translation = MagicMock()
     transcript_store = MagicMock()
     transcript_store.last_speech_activity_ts = 0.0
     transcript_store.get_finals_count.return_value = 0
@@ -53,6 +54,7 @@ def _make_session_manager():
         lock=lock,
         speech=speech,
         translation=translation,
+        shadow_translation=shadow_translation,
         transcript_store=transcript_store,
         coach_orch=coach_orch,
         topic_orch=topic_orch,
@@ -65,12 +67,12 @@ def _make_session_manager():
         get_config=lambda: RuntimeConfig(),
         coach=coach,
     )
-    return mgr, speech, translation, coach_orch, topic_orch, broadcast_from_thread, coach
+    return mgr, speech, translation, shadow_translation, coach_orch, topic_orch, broadcast_from_thread, coach
 
 
 @pytest.mark.asyncio
 async def test_stop_async_does_not_run_topic_flush_even_when_call_available():
-    mgr, speech, _, _, topic_orch, _, _ = _make_session_manager()
+    mgr, speech, _, _, _, topic_orch, _, _ = _make_session_manager()
     topic_orch.prepare_call_unlocked.return_value = {"trigger": "auto", "chunk_turns": []}
     mgr._do_finalize = MagicMock()
 
@@ -85,7 +87,7 @@ async def test_stop_async_does_not_run_topic_flush_even_when_call_available():
 
 @pytest.mark.asyncio
 async def test_stop_async_skips_topic_flush_when_no_call():
-    mgr, _, _, _, topic_orch, _, _ = _make_session_manager()
+    mgr, _, _, _, _, topic_orch, _, _ = _make_session_manager()
     topic_orch.prepare_call_unlocked.return_value = None
     mgr._do_finalize = MagicMock()
 
@@ -98,7 +100,7 @@ async def test_stop_async_skips_topic_flush_when_no_call():
 
 
 def test_do_finalize_resets_runtime_without_topics_side_effects():
-    mgr, _, translation, coach_orch, topic_orch, broadcast_from_thread, coach = _make_session_manager()
+    mgr, _, translation, shadow_translation, coach_orch, topic_orch, broadcast_from_thread, coach = _make_session_manager()
     topic_orch.topics_pending = True
 
     mgr._do_finalize()
@@ -107,24 +109,26 @@ def test_do_finalize_resets_runtime_without_topics_side_effects():
     assert topic_orch.topics_items[0]["status"] == "active"
     coach_orch.reset_runtime_unlocked.assert_called_once_with(keep_history=True)
     translation.reset_unlocked.assert_called_once()
+    shadow_translation.reset_unlocked.assert_called_once()
     coach.clear_conversation.assert_not_called()
     broadcast_from_thread.assert_not_called()
 
 
 def test_do_finalize_is_idempotent():
-    mgr, _, _, coach_orch, topic_orch, broadcast_from_thread, coach = _make_session_manager()
+    mgr, _, _, shadow_translation, coach_orch, topic_orch, broadcast_from_thread, coach = _make_session_manager()
 
     mgr._do_finalize()
     mgr._do_finalize()
 
     assert topic_orch.finalize_on_stop_unlocked.call_count == 0
     assert coach_orch.reset_runtime_unlocked.call_count == 2
+    assert shadow_translation.reset_unlocked.call_count == 2
     coach.clear_conversation.assert_not_called()
     assert broadcast_from_thread.call_count == 0
 
 
 def test_status_event_running_to_stopped_triggers_finalize():
-    mgr, _, _, _, _, broadcast_from_thread, _ = _make_session_manager()
+    mgr, _, _, _, _, _, broadcast_from_thread, _ = _make_session_manager()
     mgr.running = True
     mgr.status = "running"
     mgr.record_started_ts = time.time() - 1.0
@@ -158,7 +162,7 @@ def _final_payload():
 
 
 def test_create_final_item_preserves_sdk_timing_fields():
-    mgr, _, _, _, _, _, _ = _make_session_manager()
+    mgr, _, _, _, _, _, _, _ = _make_session_manager()
     now = time.time()
     payload = {
         "type": "final",
@@ -186,7 +190,7 @@ def test_create_final_item_preserves_sdk_timing_fields():
 
 
 def test_partial_does_not_enqueue_when_translation_disabled():
-    mgr, _, translation, _, _, _, _ = _make_session_manager()
+    mgr, _, translation, _, _, _, _, _ = _make_session_manager()
     mgr._get_config = lambda: RuntimeConfig(translation_enabled=False)
     translation.prepare_partial_unlocked.return_value = (
         {"type": "partial", "en": "hello", "ar": "", "speaker": "default", "speaker_label": "Speaker"},
@@ -200,7 +204,7 @@ def test_partial_does_not_enqueue_when_translation_disabled():
 
 
 def test_partial_enqueues_when_translation_enabled():
-    mgr, _, translation, _, _, _, _ = _make_session_manager()
+    mgr, _, translation, _, _, _, _, _ = _make_session_manager()
     req = {"kind": "partial"}
     translation.prepare_partial_unlocked.return_value = (
         {"type": "partial", "en": "hello", "ar": "", "speaker": "default", "speaker_label": "Speaker"},
@@ -214,7 +218,7 @@ def test_partial_enqueues_when_translation_enabled():
 
 
 def test_partial_clear_discards_live_partial_and_translation_state():
-    mgr, _, translation, _, _, broadcast_from_thread, _ = _make_session_manager()
+    mgr, _, translation, _, _, _, broadcast_from_thread, _ = _make_session_manager()
     mgr._transcript.clear_live_partial_unlocked = MagicMock(
         return_value={
             "speaker": "default",
@@ -238,7 +242,7 @@ def test_partial_clear_discards_live_partial_and_translation_state():
 
 
 def test_final_does_not_enqueue_when_translation_disabled():
-    mgr, _, translation, coach_orch, _, _, _ = _make_session_manager()
+    mgr, _, translation, shadow_translation, coach_orch, _, _, _ = _make_session_manager()
     final_item = {
         "type": "final", "en": "hello world", "ar": "", "speaker": "default",
         "speaker_label": "Speaker", "segment_id": "seg-1", "revision": 1,
@@ -250,22 +254,26 @@ def test_final_does_not_enqueue_when_translation_disabled():
     mgr._handle_final_event(_final_payload(), RuntimeConfig(translation_enabled=False))
 
     translation.enqueue_from_thread.assert_not_called()
+    shadow_translation.enqueue_from_thread.assert_not_called()
 
 
 def test_final_enqueues_when_translation_enabled():
-    mgr, _, translation, coach_orch, _, _, _ = _make_session_manager()
+    mgr, _, translation, shadow_translation, coach_orch, _, _, _ = _make_session_manager()
     req = {"kind": "final"}
+    shadow_req = {"kind": "final_shadow"}
     final_item = {
         "type": "final", "en": "hello world", "ar": "", "speaker": "default",
         "speaker_label": "Speaker", "segment_id": "seg-1", "revision": 1,
         "ts": time.time(), "start_ts": time.time(),
     }
     translation.prepare_final_unlocked.return_value = (final_item, req)
+    shadow_translation.build_request.return_value = shadow_req
     coach_orch.should_trigger_unlocked.return_value = False
 
     mgr._handle_final_event(_final_payload(), RuntimeConfig(translation_enabled=True))
 
     translation.enqueue_from_thread.assert_called_once_with(req)
+    shadow_translation.enqueue_from_thread.assert_called_once_with(shadow_req)
 
 
 # ---------------------------------------------------------------------------
@@ -274,7 +282,7 @@ def test_final_enqueues_when_translation_enabled():
 
 @pytest.mark.asyncio
 async def test_stop_async_runs_summary():
-    mgr, _, _, _, topic_orch, _, _ = _make_session_manager()
+    mgr, _, _, _, _, topic_orch, _, _ = _make_session_manager()
     topic_orch.prepare_call_unlocked.return_value = None
     mgr._do_finalize = MagicMock()
 
@@ -287,7 +295,7 @@ async def test_stop_async_runs_summary():
 
 @pytest.mark.asyncio
 async def test_stop_async_summary_failure_does_not_block():
-    mgr, _, _, _, topic_orch, _, _ = _make_session_manager()
+    mgr, _, _, _, _, topic_orch, _, _ = _make_session_manager()
     topic_orch.prepare_call_unlocked.return_value = None
     mgr._summary_orch.run_summary = AsyncMock(side_effect=RuntimeError("summary failed"))
     mgr._do_finalize = MagicMock()

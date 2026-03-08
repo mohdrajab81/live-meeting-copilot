@@ -64,7 +64,7 @@ def _make_result(**kwargs) -> SummaryResult:
     defaults = dict(
         executive_summary="Good meeting.",
         key_points=["point A", "point B"],
-        action_items=[{"item": "Follow up", "owner": "Alice", "due_date": None}],
+        action_items=[{"item": "Follow up", "owner": "Alice", "due_date_text": None, "due_date": None}],
         topic_key_points=[],
         keywords=[],
         entities=[],
@@ -141,7 +141,7 @@ def test_snapshot_unlocked_flattens_summary_result():
     orch.summary_result = {
         "executive_summary": "Summary text",
         "key_points": ["k1", "k2"],
-        "action_items": [{"item": "do x", "owner": "A", "due_date": None}],
+        "action_items": [{"item": "do x", "owner": "A", "due_date_text": None, "due_date": None}],
     }
     snap = orch.snapshot_unlocked()
     assert snap["executive_summary"] == "Summary text"
@@ -841,6 +841,87 @@ async def test_run_summary_computes_topic_minutes_from_utterance_ids():
     assert payload["topic_key_points"][0]["estimated_duration_minutes"] == 2.0
     assert payload["topic_breakdown"][0]["name"] == "Main Discussion"
     assert payload["topic_breakdown"][0]["actual_min"] == 2.0
+
+
+@pytest.mark.asyncio
+async def test_run_summary_repairs_topic_coverage_and_corrects_origin():
+    base = time.time()
+    finals = [
+        {
+            "ts": base + 1.0,
+            "start_ts": base + 0.0,
+            "end_ts": base + 10.0,
+            "duration_sec": 10.0,
+            "speaker_label": "Remote",
+            "en": "Topic one.",
+        },
+        {
+            "ts": base + 12.0,
+            "start_ts": base + 10.0,
+            "end_ts": base + 20.0,
+            "duration_sec": 10.0,
+            "speaker_label": "Remote",
+            "en": "Greeting filler.",
+        },
+        {
+            "ts": base + 25.0,
+            "start_ts": base + 20.0,
+            "end_ts": base + 30.0,
+            "duration_sec": 10.0,
+            "speaker_label": "Remote",
+            "en": "Marketing update.",
+        },
+        {
+            "ts": base + 38.0,
+            "start_ts": base + 30.0,
+            "end_ts": base + 40.0,
+            "duration_sec": 10.0,
+            "speaker_label": "Remote",
+            "en": "Operations next steps.",
+        },
+    ]
+    defs = [
+        {"name": "Project Status", "expected_duration_min": 2},
+        {"name": "Marketing campaign", "expected_duration_min": 1},
+    ]
+    orch, svc, broadcast, _ = _make_orch(finals=finals, topic_defs=defs)
+    svc.generate.return_value = _make_result(
+        topic_key_points=[
+            {
+                "topic_name": "Project Status",
+                "estimated_duration_minutes": None,
+                "utterance_ids": ["U0001"],
+                "origin": "Agenda",
+                "key_points": ["k1"],
+            },
+            {
+                "topic_name": "Marketing campaign",
+                "estimated_duration_minutes": None,
+                "utterance_ids": ["U0003"],
+                "origin": "Agenda",
+                "key_points": ["k2"],
+            },
+            {
+                "topic_name": "Team operations and next steps",
+                "estimated_duration_minutes": None,
+                "utterance_ids": ["U0004"],
+                "origin": "Agenda",
+                "key_points": ["k3"],
+            },
+        ]
+    )
+
+    await orch.run_summary()
+
+    payload = broadcast.await_args.args[0]
+    topic_groups = payload["topic_key_points"]
+    assert topic_groups[0]["utterance_ids"] == ["U0001", "U0002"]
+    assert topic_groups[0]["origin"] == "Agenda"
+    assert topic_groups[1]["utterance_ids"] == ["U0003"]
+    assert topic_groups[1]["origin"] == "Agenda"
+    assert topic_groups[2]["utterance_ids"] == ["U0004"]
+    assert topic_groups[2]["origin"] == "Inferred"
+    assert all(group["topic_name"] != "Unassigned / Other" for group in topic_groups)
 
 
 # ---------------------------------------------------------------------------

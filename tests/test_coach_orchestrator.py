@@ -151,6 +151,17 @@ class TestShouldTrigger:
         config = RuntimeConfig(coach_enabled=True, coach_trigger_speaker="local", coach_cooldown_sec=0)
         assert orch.should_trigger_unlocked({"speaker": "local"}, config)
 
+    def test_single_mode_default_speaker_ignores_trigger_filter(self):
+        orch = _make_orchestrator()
+        orch.coach_last_run_ts = 0
+        config = RuntimeConfig(
+            coach_enabled=True,
+            capture_mode="single",
+            coach_trigger_speaker="remote",
+            coach_cooldown_sec=0,
+        )
+        assert orch.should_trigger_unlocked({"speaker": "default"}, config)
+
     def test_ignore_cooldown_bypasses_cooldown(self):
         orch = _make_orchestrator()
         orch.coach_last_run_ts = time.time()  # just ran
@@ -331,6 +342,23 @@ class TestPrepareCallUnlocked:
         # Only last 3 turns should appear; early ones should not
         assert "turn 0" not in prompt
 
+    def test_single_mode_default_speaker_still_prepares_call(self):
+        finals = [_final_item("default", "single mode turn")]
+        orch = _make_orchestrator(finals=finals)
+        orch.coach_last_sent_final_idx = 0
+        orch.coach_last_run_ts = 0
+        config = RuntimeConfig(
+            coach_enabled=True,
+            capture_mode="single",
+            coach_cooldown_sec=0,
+            coach_trigger_speaker="remote",
+        )
+
+        result = orch.prepare_call_unlocked(_final_item("default", "single mode turn"), config)
+
+        assert result is not None
+        assert "single mode turn" in result[0]
+
 
 # ---------------------------------------------------------------------------
 # snapshot_unlocked
@@ -400,6 +428,36 @@ async def test_run_coach_logs_exact_prompt_when_debug_enabled():
 
 
 @pytest.mark.asyncio
+async def test_run_coach_drops_no_answer_needed_reply():
+    coach = _make_coach()
+    coach.ask.return_value = MagicMock(
+        text="no_answer_needed",
+        response_id="resp-1",
+        conversation_id="conv-1",
+        create_ms=50,
+        approve_ms=10,
+        approval_rounds=1,
+        approval_count=1,
+        total_ms=200,
+    )
+    orch = _make_orchestrator(coach=coach)
+
+    await orch.run_coach(
+        "Prompt",
+        _final_item(),
+        group_id="coach-2",
+        trigger_ts=time.time(),
+        inflight_end_idx=3,
+    )
+
+    assert orch.coach_hints == []
+    orch._broadcast.assert_not_awaited()
+    assert orch.coach_last_sent_final_idx == 3
+    messages = [call.args[1] for call in orch._broadcast_log.await_args_list]
+    assert any("reason=no_answer_needed" in msg for msg in messages)
+
+
+@pytest.mark.asyncio
 async def test_request_manual_logs_exact_prompt_when_debug_enabled():
     orch = _make_orchestrator()
     orch._get_config = lambda: RuntimeConfig(debug=True)
@@ -410,3 +468,27 @@ async def test_request_manual_logs_exact_prompt_when_debug_enabled():
     assert any("Coach manual prompt exact:" in msg for msg in messages)
     assert any("Manual user message (same conversation):" in msg for msg in messages)
     assert any("What happened in the meeting?" in msg for msg in messages)
+
+
+@pytest.mark.asyncio
+async def test_request_manual_drops_no_answer_needed_reply():
+    coach = _make_coach()
+    coach.ask.return_value = MagicMock(
+        text="no_answer_needed",
+        response_id="resp-1",
+        conversation_id="conv-1",
+        create_ms=50,
+        approve_ms=10,
+        approval_rounds=1,
+        approval_count=1,
+        total_ms=200,
+    )
+    orch = _make_orchestrator(coach=coach)
+
+    hint = await orch.request_manual(prompt="hello", speaker_label="Manual")
+
+    assert hint is None
+    assert orch.coach_hints == []
+    orch._broadcast.assert_not_awaited()
+    messages = [call.args[1] for call in orch._broadcast_log.await_args_list]
+    assert any("Coach manual reply dropped: reason=no_answer_needed" in msg for msg in messages)

@@ -1,5 +1,6 @@
 import asyncio
 import csv
+from datetime import datetime
 import io
 import json
 import threading
@@ -17,6 +18,7 @@ from app.services.topic_summary import (
     apply_topic_durations_from_utterance_ids,
     build_expected_agenda_context,
     build_topic_breakdown_from_definitions,
+    enforce_topic_coverage,
     prepare_transcript_utterances,
     render_transcript_for_prompt,
 )
@@ -397,17 +399,30 @@ async def summary_from_transcript(
     agenda_context = build_expected_agenda_context(topic_defs)
     if agenda_context:
         transcript_text = agenda_context + "\n\nTRANSCRIPT:\n" + transcript_text
+    session_date_iso = None
+    if transcript_rows:
+        first = transcript_rows[0]
+        ts = float(first.get("start_ts") or first.get("ts") or 0.0)
+        if ts > 0:
+            session_date_iso = datetime.fromtimestamp(ts).date().isoformat()
 
     try:
         result = await asyncio.to_thread(
-            controller.summary_service.generate, transcript_text
+            controller.summary_service.generate,
+            transcript_text,
+            session_date_iso=session_date_iso,
         )
     except Exception as ex:
         raise HTTPException(status_code=502, detail=f"Summary generation failed: {ex}")
 
     runtime_cfg = controller.get_runtime_config()
-    resolved_topic_groups = apply_topic_durations_from_utterance_ids(
+    repaired_topic_groups = enforce_topic_coverage(
         result.topic_key_points,
+        topic_defs,
+        transcript_rows,
+    )
+    resolved_topic_groups = apply_topic_durations_from_utterance_ids(
+        repaired_topic_groups,
         transcript_rows,
         duration_mode=runtime_cfg.summary_topic_duration_mode,
         gap_threshold_sec=runtime_cfg.summary_topic_gap_threshold_sec,

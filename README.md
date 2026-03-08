@@ -22,8 +22,9 @@ Windows meeting copilot for real-time transcription, English-to-Arabic translati
 
 ## Quick Start (2 Minutes)
 
-1. Copy `.env.example` to `.env` and set your Azure values.
-2. Run:
+1. Run setup.
+2. Fill in your Azure values when `.env` opens in Notepad.
+3. Start the app.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
@@ -40,8 +41,9 @@ For full setup, see [`INSTALL.md`](INSTALL.md) and [`docs/QUICK_START_GUIDE.md`]
 |---|---|
 | Real-time speech transcription (English, multiple accents) | Azure AI Services key |
 | Live English-to-Arabic translation | Azure AI Services key |
+| Higher-quality final Arabic patching (optional shadow mode) | Azure AI Services key + Azure AI Foundry project endpoint |
 | AI coaching suggestions | Azure AI Foundry (optional) |
-| Agenda definitions and adherence in summary output | Azure AI Foundry (optional) |
+| Agenda definitions in Settings and agenda adherence in summary output | Azure AI Foundry (optional for summary generation) |
 | Structured meeting summary generation | Azure AI Foundry (optional) |
 
 The application runs entirely on your local machine. No cloud hosting is required.

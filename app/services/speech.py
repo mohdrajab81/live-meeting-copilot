@@ -11,6 +11,7 @@ from app.utils.audio_devices import list_capture_devices
 
 EventCallback = Callable[[dict[str, Any]], None]
 ConfigProvider = Callable[[], RuntimeConfig]
+SessionReadyCallback = Callable[[str, str, str], None]
 
 
 class SpeechService:
@@ -77,13 +78,14 @@ class SpeechService:
 
         config.speech_recognition_language = cfg.recognition_language
         config.set_property(
-            speech_sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs,
+            speech_sdk.PropertyId.Speech_SegmentationSilenceTimeoutMs,
             str(cfg.end_silence_ms),
         )
         config.set_property(
             speech_sdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs,
             str(cfg.initial_silence_ms),
         )
+        config.set_profanity(speech_sdk.ProfanityOption.Raw)
         return config
 
     def _make_recognizer(self, config, audio):
@@ -125,6 +127,8 @@ class SpeechService:
         speaker_key: str,
         speaker_label: str,
         restart_event: threading.Event,
+        on_session_ready: SessionReadyCallback | None = None,
+        start_requested_ts: float | None = None,
     ) -> None:
         timing_state: dict[str, Any] = {
             "anchor_ts": time.time(),
@@ -133,6 +137,8 @@ class SpeechService:
             "last_partial_ts": 0.0,
             "last_partial_offset_sec": None,
             "last_partial_duration_sec": None,
+            "first_partial_logged": False,
+            "speech_start_logged": False,
         }
 
         def _safe_float(value: Any) -> float | None:
@@ -163,6 +169,18 @@ class SpeechService:
             )
             return offset_sec, duration_sec
 
+        def _startup_ms() -> int:
+            anchor = _safe_float(start_requested_ts) or _safe_float(
+                timing_state.get("anchor_ts")
+            ) or time.time()
+            return int(max(0.0, (time.time() - anchor) * 1000.0))
+
+        def _offset_from_event(evt: Any) -> float | None:
+            raw_offset_ticks = _safe_float(getattr(evt, "offset", None))
+            if raw_offset_ticks is None:
+                return None
+            return raw_offset_ticks / 10_000_000.0
+
         def _emit_partial_clear(reason: str) -> None:
             self._emit(
                 {
@@ -185,6 +203,22 @@ class SpeechService:
             timing_state["last_partial_ts"] = time.time()
             timing_state["last_partial_offset_sec"] = offset_sec
             timing_state["last_partial_duration_sec"] = duration_sec
+            if cfg.debug and not timing_state["first_partial_logged"]:
+                timing_state["first_partial_logged"] = True
+                self._emit(
+                    {
+                        "type": "log",
+                        "level": "debug",
+                        "message": (
+                            f"[{speaker_label}] First partial emitted: "
+                            f"session_id={timing_state.get('session_id') or '-'}, "
+                            f"startup_ms={_startup_ms()}, "
+                            f"offset_sec={offset_sec if offset_sec is not None else '-'}, "
+                            f"duration_sec={duration_sec if duration_sec is not None else '-'}, "
+                            f"preview='{_preview(en_text)}'"
+                        ),
+                    }
+                )
             if cfg.debug:
                 now = time.time()
                 last = self._last_partial_debug_ts.get(speaker_key, 0.0)
@@ -347,9 +381,16 @@ class SpeechService:
                         "level": "debug",
                         "message": (
                             f"[{speaker_label}] Session started: "
-                            f"session_id={timing_state['session_id'] or '-'}"
+                            f"session_id={timing_state['session_id'] or '-'}, "
+                            f"startup_ms={_startup_ms()}"
                         ),
                     }
+                )
+            if on_session_ready is not None:
+                on_session_ready(
+                    speaker_key,
+                    speaker_label,
+                    str(timing_state.get("session_id") or ""),
                 )
 
         def on_session_stopped(evt: Any) -> None:
@@ -369,6 +410,40 @@ class SpeechService:
                     }
                 )
             _emit_partial_clear("azure_session_stopped")
+
+        def on_speech_start_detected(evt: Any) -> None:
+            if not cfg.debug or timing_state["speech_start_logged"]:
+                return
+            timing_state["speech_start_logged"] = True
+            offset_sec = _offset_from_event(evt)
+            self._emit(
+                {
+                    "type": "log",
+                    "level": "debug",
+                    "message": (
+                        f"[{speaker_label}] Speech start detected: "
+                        f"session_id={timing_state.get('session_id') or '-'}, "
+                        f"startup_ms={_startup_ms()}, "
+                        f"offset_sec={offset_sec if offset_sec is not None else '-'}"
+                    ),
+                }
+            )
+
+        def on_speech_end_detected(evt: Any) -> None:
+            if not cfg.debug:
+                return
+            offset_sec = _offset_from_event(evt)
+            self._emit(
+                {
+                    "type": "log",
+                    "level": "debug",
+                    "message": (
+                        f"[{speaker_label}] Speech end detected: "
+                        f"session_id={timing_state.get('session_id') or '-'}, "
+                        f"offset_sec={offset_sec if offset_sec is not None else '-'}"
+                    ),
+                }
+            )
 
         def on_canceled(evt: Any) -> None:
             details = evt.cancellation_details
@@ -411,8 +486,69 @@ class SpeechService:
         recognizer.session_started.connect(on_session_started)
         recognizer.session_stopped.connect(on_session_stopped)
         recognizer.canceled.connect(on_canceled)
+        speech_start_signal = getattr(recognizer, "speech_start_detected", None)
+        if speech_start_signal is not None:
+            speech_start_signal.connect(on_speech_start_detected)
+        speech_end_signal = getattr(recognizer, "speech_end_detected", None)
+        if speech_end_signal is not None:
+            speech_end_signal.connect(on_speech_end_detected)
 
-    def _start_single_mode(self, cfg: RuntimeConfig) -> list[dict]:
+    def _make_initial_session_ready_notifier(
+        self,
+        expected_speaker_keys: set[str],
+        *,
+        start_requested_ts: float,
+    ) -> SessionReadyCallback:
+        expected = {
+            str(key or "").strip()
+            for key in expected_speaker_keys
+            if str(key or "").strip()
+        }
+        ready_keys: set[str] = set()
+        lock = threading.RLock()
+        state = {"emitted": False}
+
+        def notify(speaker_key: str, speaker_label: str, session_id: str) -> None:
+            should_emit = False
+            ready_count = 0
+            total_count = len(expected)
+            with lock:
+                if state["emitted"]:
+                    return
+                cleaned_key = str(speaker_key or "").strip()
+                if not cleaned_key:
+                    return
+                ready_keys.add(cleaned_key)
+                ready_count = len(ready_keys)
+                if ready_keys >= expected:
+                    state["emitted"] = True
+                    should_emit = True
+            if should_emit:
+                startup_ms = int(max(0.0, (time.time() - start_requested_ts) * 1000.0))
+                self._emit(
+                    {
+                        "type": "log",
+                        "level": "info",
+                        "message": (
+                            "Azure recognition session ready: "
+                            f"channels={ready_count}/{total_count}, "
+                            f"startup_ms={startup_ms}, "
+                            f"last_channel={speaker_label}, "
+                            f"session_id={session_id or '-'}"
+                        ),
+                    }
+                )
+                self._emit({"type": "status", "status": "listening", "running": True})
+
+        return notify
+
+    def _start_single_mode(
+        self,
+        cfg: RuntimeConfig,
+        *,
+        on_session_ready: SessionReadyCallback | None = None,
+        start_requested_ts: float | None = None,
+    ) -> list[dict]:
         restart_evt = threading.Event()
         device_id = (cfg.input_device_id or "").strip()
 
@@ -455,7 +591,15 @@ class SpeechService:
 
         config = self._make_speech_config(cfg)
         recognizer = self._make_recognizer(config, audio_factory())
-        self._wire_handlers(recognizer, cfg, "default", "Speaker", restart_evt)
+        self._wire_handlers(
+            recognizer,
+            cfg,
+            "default",
+            "Speaker",
+            restart_evt,
+            on_session_ready=on_session_ready,
+            start_requested_ts=start_requested_ts,
+        )
         recognizer.start_continuous_recognition_async().get()
         return [
             {
@@ -467,7 +611,13 @@ class SpeechService:
             }
         ]
 
-    def _start_dual_mode(self, cfg: RuntimeConfig) -> list[dict]:
+    def _start_dual_mode(
+        self,
+        cfg: RuntimeConfig,
+        *,
+        on_session_ready: SessionReadyCallback | None = None,
+        start_requested_ts: float | None = None,
+    ) -> list[dict]:
         local_label = (cfg.local_speaker_label or "You").strip() or "You"
         remote_label = (cfg.remote_speaker_label or "Remote").strip() or "Remote"
 
@@ -528,9 +678,23 @@ class SpeechService:
         local_recognizer = self._make_recognizer(local_cfg, local_audio_factory())
         remote_recognizer = self._make_recognizer(remote_cfg, remote_audio_factory())
 
-        self._wire_handlers(local_recognizer, cfg, "local", local_label, local_restart)
         self._wire_handlers(
-            remote_recognizer, cfg, "remote", remote_label, remote_restart
+            local_recognizer,
+            cfg,
+            "local",
+            local_label,
+            local_restart,
+            on_session_ready=on_session_ready,
+            start_requested_ts=start_requested_ts,
+        )
+        self._wire_handlers(
+            remote_recognizer,
+            cfg,
+            "remote",
+            remote_label,
+            remote_restart,
+            on_session_ready=on_session_ready,
+            start_requested_ts=start_requested_ts,
         )
 
         local_started = False
@@ -585,13 +749,19 @@ class SpeechService:
         speech_cfg = self._make_speech_config(cfg)
         new_recognizer = self._make_recognizer(speech_cfg, ch["audio_factory"]())
         self._wire_handlers(
-            new_recognizer, cfg, ch["speaker_key"], ch["speaker_label"], new_evt
+            new_recognizer,
+            cfg,
+            ch["speaker_key"],
+            ch["speaker_label"],
+            new_evt,
+            start_requested_ts=time.time(),
         )
         new_recognizer.start_continuous_recognition_async().get()
         ch["recognizer"] = new_recognizer
         ch["restart_event"] = new_evt
 
     def _worker(self) -> None:
+        start_requested_ts = time.time()
         self._emit(
             {
                 "type": "log",
@@ -607,19 +777,40 @@ class SpeechService:
         try:
             self._refresh_device_labels()
             cfg = self._get_runtime_config()
+            if cfg.capture_mode == "dual":
+                expected_speakers = {"local", "remote"}
+            else:
+                expected_speakers = {"default"}
+            on_session_ready = self._make_initial_session_ready_notifier(
+                expected_speakers,
+                start_requested_ts=start_requested_ts,
+            )
 
             if cfg.capture_mode == "dual":
-                channels = self._start_dual_mode(cfg)
+                channels = self._start_dual_mode(
+                    cfg,
+                    on_session_ready=on_session_ready,
+                    start_requested_ts=start_requested_ts,
+                )
             else:
-                channels = self._start_single_mode(cfg)
+                channels = self._start_single_mode(
+                    cfg,
+                    on_session_ready=on_session_ready,
+                    start_requested_ts=start_requested_ts,
+                )
 
             with self._lock:
                 self._recognizers = [ch["recognizer"] for ch in channels]
 
             self._emit(
-                {"type": "log", "level": "info", "message": "Recognition started"}
+                {
+                    "type": "log",
+                    "level": "info",
+                    "message": (
+                        "Recognition transport initialized; waiting for Azure session start"
+                    ),
+                }
             )
-            self._emit({"type": "status", "status": "listening", "running": True})
 
             # Monitor loop: handle per-channel buffer-overflow restarts individually
             # so a silent channel never interrupts a healthy active one.

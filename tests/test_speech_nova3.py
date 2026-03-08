@@ -92,15 +92,15 @@ def test_build_live_options_respects_large_end_silence() -> None:
     svc = Nova3SpeechService(
         settings=_settings(nova3_api_key="x"),
         on_event=lambda _e: None,
-        get_runtime_config=lambda: RuntimeConfig(end_silence_ms=1600),
+        get_runtime_config=lambda: RuntimeConfig(end_silence_ms=1000),
     )
     options = svc._build_live_options(
-        RuntimeConfig(end_silence_ms=1600),
+        RuntimeConfig(end_silence_ms=1000),
         sample_rate=16000,
         channels=1,
     )
-    assert options["endpointing"] == "1600"
-    assert options["utterance_end_ms"] == "1600"
+    assert options["endpointing"] == "1000"
+    assert options["utterance_end_ms"] == "1000"
 
 
 def test_integrate_results_event_emits_partial_with_stream_mapping() -> None:

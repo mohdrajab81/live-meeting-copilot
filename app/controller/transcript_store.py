@@ -167,6 +167,9 @@ class TranscriptStore:
                 "timing_source": str(item.get("timing_source", "event_only") or "event_only"),
                 "recognizer_session_id": str(item.get("recognizer_session_id", "") or ""),
                 "recognizer_anchor_ts": recognizer_anchor_ts,
+                "shadow_translation": self._normalize_shadow_translation(
+                    item.get("shadow_translation")
+                ),
             }
         )
         if len(self.finals) > max_finals:
@@ -301,6 +304,48 @@ class TranscriptStore:
         if telemetry_final:
             await self._broadcast(telemetry_final)
 
+    async def apply_shadow_translation_result(
+        self,
+        req: dict[str, Any],
+        result: dict[str, Any],
+    ) -> None:
+        segment_id = str(req.get("segment_id", "") or "")
+        revision = int(req.get("revision", 0) or 0)
+        debug = bool(req.get("debug", False))
+        normalized = self._normalize_shadow_translation(result)
+        if not segment_id or normalized is None:
+            return
+
+        out_final: dict[str, Any] | None = None
+        with self._lock:
+            target_idx = -1
+            for idx in range(len(self.finals) - 1, -1, -1):
+                item = self.finals[idx]
+                if str(item.get("segment_id", "")) != segment_id:
+                    continue
+                if int(item.get("revision", 0)) != revision:
+                    continue
+                target_idx = idx
+                break
+            if target_idx < 0:
+                return
+            self.finals[target_idx]["shadow_translation"] = dict(normalized)
+            if normalized.get("status") == "completed" and str(normalized.get("text", "") or "").strip():
+                self.finals[target_idx]["ar"] = str(normalized.get("text", "") or "").strip()
+                out_final = dict(self.finals[target_idx])
+
+        payload = {
+            "type": "final_shadow_patch",
+            "segment_id": segment_id,
+            "revision": revision,
+            "ar": out_final.get("ar", "") if out_final else "",
+            "shadow_translation": dict(normalized),
+        }
+        await self._broadcast(payload)
+        await self._emit_trace_async(
+            payload, channel="translation_final_shadow_patch", debug=debug
+        )
+
     # ── Snapshot helpers ──────────────────────────────────────────────────────
 
     def snapshot_unlocked(self) -> dict[str, Any]:
@@ -335,4 +380,30 @@ class TranscriptStore:
             "translation_samples": len(self.translation_latency_ms),
             "translation_chars": self.translation_chars,
             "estimated_cost_usd": estimated_cost_usd,
+        }
+
+    @staticmethod
+    def _normalize_shadow_translation(raw: Any) -> dict[str, Any] | None:
+        if not isinstance(raw, dict):
+            return None
+        provider = " ".join(str(raw.get("provider", "") or "").split()).strip()
+        model = " ".join(str(raw.get("model", "") or "").split()).strip()
+        status = " ".join(str(raw.get("status", "") or "").split()).strip().lower()
+        if status not in {"completed", "failed"}:
+            status = "failed" if raw.get("error") else "completed"
+        text = str(raw.get("text", "") or "").strip()
+        error = " ".join(str(raw.get("error", "") or "").split()).strip() or None
+        latency_ms_raw = raw.get("latency_ms")
+        latency_ms: int | None = None
+        try:
+            latency_ms = max(0, int(latency_ms_raw))
+        except Exception:
+            latency_ms = None
+        return {
+            "provider": provider,
+            "model": model,
+            "status": status,
+            "text": text,
+            "latency_ms": latency_ms,
+            "error": error,
         }

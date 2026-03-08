@@ -9,6 +9,41 @@ def _norm(value: Any) -> str:
     return " ".join(str(value or "").split()).strip().lower()
 
 
+def _normalize_text_list(items: list[Any] | None, *, max_items: int = 12) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items or []:
+        text = " ".join(str(item or "").split()).strip()
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+        if len(out) >= max(1, int(max_items)):
+            break
+    return out
+
+
+def _parse_utterance_num(value: Any) -> int | None:
+    raw = " ".join(str(value or "").split()).strip().upper()
+    if not raw or not raw.startswith("U"):
+        return None
+    try:
+        num = int(raw[1:])
+    except Exception:
+        return None
+    return num if num > 0 else None
+
+
+def _sort_utterance_ids(ids: list[str]) -> list[str]:
+    return sorted(
+        ids,
+        key=lambda uid: (_parse_utterance_num(uid) or 10**9, uid),
+    )
+
+
 def parse_topic_definitions(raw_defs: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -33,6 +68,152 @@ def parse_topic_definitions(raw_defs: list[dict[str, Any]] | None) -> list[dict[
             }
         )
     return out
+
+
+def enforce_topic_coverage(
+    topic_groups: list[dict[str, Any]] | None,
+    topic_defs: list[dict[str, Any]] | None,
+    rows: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Deterministically repair model topic assignments to guarantee utterance coverage.
+
+    Rules enforced here:
+    - only transcript utterance IDs are allowed
+    - each utterance ID belongs to exactly one topic
+    - non-agenda topics are forced to origin="Inferred"
+    - missing IDs are assigned to the nearest topic by utterance proximity
+    - if no nearby topic is available, IDs fall back to "Unassigned / Other"
+    """
+
+    valid_ids: list[str] = []
+    valid_id_set: set[str] = set()
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        uid = " ".join(str(row.get("utterance_id") or "").split()).strip().upper()
+        if not uid or uid in valid_id_set:
+            continue
+        if _parse_utterance_num(uid) is None:
+            continue
+        valid_ids.append(uid)
+        valid_id_set.add(uid)
+
+    defs = parse_topic_definitions(topic_defs)
+    agenda_name_by_key = {_norm(row.get("name")): str(row.get("name") or "").strip() for row in defs}
+
+    topics: list[dict[str, Any]] = []
+    topic_idx_by_key: dict[str, int] = {}
+    globally_assigned: set[str] = set()
+
+    for raw_group in topic_groups or []:
+        if not isinstance(raw_group, dict):
+            continue
+        topic_name_raw = " ".join(str(raw_group.get("topic_name") or "").split()).strip()
+        if not topic_name_raw:
+            continue
+        topic_key = _norm(topic_name_raw)
+        canonical_name = agenda_name_by_key.get(topic_key, topic_name_raw)
+        origin_value = "Agenda" if topic_key in agenda_name_by_key else "Inferred"
+        normalized_ids: list[str] = []
+        seen_local: set[str] = set()
+        for raw_uid in list(raw_group.get("utterance_ids") or []):
+            uid = " ".join(str(raw_uid or "").split()).strip().upper()
+            if uid in seen_local or uid in globally_assigned or uid not in valid_id_set:
+                continue
+            seen_local.add(uid)
+            globally_assigned.add(uid)
+            normalized_ids.append(uid)
+
+        if topic_key in topic_idx_by_key:
+            topic = topics[topic_idx_by_key[topic_key]]
+            topic["utterance_ids"] = _sort_utterance_ids(
+                list(topic.get("utterance_ids") or []) + normalized_ids
+            )
+            topic["key_points"] = _normalize_text_list(
+                list(topic.get("key_points") or []) + list(raw_group.get("key_points") or []),
+                max_items=8,
+            )
+            topic["origin"] = origin_value
+            topic["topic_name"] = canonical_name
+            continue
+
+        topic_idx_by_key[topic_key] = len(topics)
+        topics.append(
+            {
+                "topic_name": canonical_name,
+                "estimated_duration_minutes": None,
+                "utterance_ids": _sort_utterance_ids(normalized_ids),
+                "origin": origin_value,
+                "key_points": _normalize_text_list(list(raw_group.get("key_points") or []), max_items=8),
+            }
+        )
+
+    def choose_repair_topic(uid: str) -> int | None:
+        missing_num = _parse_utterance_num(uid)
+        if missing_num is None:
+            return None
+        prev_choice: tuple[int, int] | None = None
+        next_choice: tuple[int, int] | None = None
+
+        for idx, topic in enumerate(topics):
+            nums = [
+                _parse_utterance_num(existing)
+                for existing in list(topic.get("utterance_ids") or [])
+            ]
+            nums = [num for num in nums if num is not None]
+            if not nums:
+                continue
+            prev_nums = [num for num in nums if num < missing_num]
+            next_nums = [num for num in nums if num > missing_num]
+            if prev_nums:
+                prev_num = max(prev_nums)
+                prev_dist = missing_num - prev_num
+                if prev_choice is None or prev_dist < prev_choice[0]:
+                    prev_choice = (prev_dist, idx)
+            if next_nums:
+                next_num = min(next_nums)
+                next_dist = next_num - missing_num
+                if next_choice is None or next_dist < next_choice[0]:
+                    next_choice = (next_dist, idx)
+
+        if prev_choice and next_choice and prev_choice[1] == next_choice[1]:
+            return prev_choice[1]
+        if prev_choice and not next_choice:
+            return prev_choice[1]
+        if next_choice and not prev_choice:
+            return next_choice[1]
+        if prev_choice and next_choice:
+            if prev_choice[0] < next_choice[0]:
+                return prev_choice[1]
+            if next_choice[0] < prev_choice[0]:
+                return next_choice[1]
+            return prev_choice[1]
+        return None
+
+    missing_ids = [uid for uid in valid_ids if uid not in globally_assigned]
+    if globally_assigned:
+        other_idx: int | None = None
+        for uid in missing_ids:
+            target_idx = choose_repair_topic(uid)
+            if target_idx is None:
+                if other_idx is None:
+                    other_idx = len(topics)
+                    topics.append(
+                        {
+                            "topic_name": "Unassigned / Other",
+                            "estimated_duration_minutes": None,
+                            "utterance_ids": [],
+                            "origin": "Inferred",
+                            "key_points": [],
+                        }
+                    )
+                target_idx = other_idx
+            topics[target_idx]["utterance_ids"] = _sort_utterance_ids(
+                list(topics[target_idx].get("utterance_ids") or []) + [uid]
+            )
+            globally_assigned.add(uid)
+
+    return topics
 
 
 def build_expected_agenda_context(topic_defs: list[dict[str, Any]] | None) -> str:
