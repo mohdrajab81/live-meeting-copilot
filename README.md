@@ -65,6 +65,27 @@ The application runs entirely on your local machine. No cloud hosting is require
 
 ## Documentation Index
 
+### Docs by Audience
+
+**End users**
+- [`INSTALL.md`](INSTALL.md) - full installation guide for all package types
+- [`docs/QUICK_START_GUIDE.md`](docs/QUICK_START_GUIDE.md) - fastest path to a working session
+- [`docs/AZURE_PROVISIONING.md`](docs/AZURE_PROVISIONING.md) - Azure account, resource, and credential setup
+- [`docs/DUAL_MODE_SETUP.md`](docs/DUAL_MODE_SETUP.md) - local and remote speaker capture setup
+
+**Evaluators and recruiters**
+- [`docs/PRODUCT_OVERVIEW.md`](docs/PRODUCT_OVERVIEW.md) - product framing, UX, capabilities, and constraints
+
+**Developers and maintainers**
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - canonical technical structure, contracts, flows, and limits
+- [`docs/ENGINEERING_RATIONALE.md`](docs/ENGINEERING_RATIONALE.md) - design tradeoffs, history, and implementation rationale
+- [`docs/BUILD_GUIDE.md`](docs/BUILD_GUIDE.md) - build and packaging workflow
+
+**Starting point inside `docs/`**
+- [`docs/README.md`](docs/README.md) - short documentation map grouped by audience
+
+---
+
 | Document | Purpose |
 |---|---|
 | [`INSTALL.md`](INSTALL.md) | Complete installation guide — all three package types |
