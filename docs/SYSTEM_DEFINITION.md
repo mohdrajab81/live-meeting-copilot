@@ -1,5 +1,8 @@
 # System Definition
 
+> Legacy document. Its reference material has been folded into [`ARCHITECTURE.md`](ARCHITECTURE.md).
+> Keep this file only as migration-era background material.
+
 > **Developer document.** This file is a reference for developers and maintainers.
 > It is not needed to install, configure, or use the application.
 > End users should refer to `INSTALL.md` and `docs/AZURE_PROVISIONING.md` instead.

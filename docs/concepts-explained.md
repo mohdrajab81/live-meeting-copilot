@@ -1,5 +1,9 @@
 # Technical Concepts Explained — Plain English Guide
 
+> Legacy document. The maintained explanation of design tradeoffs and history is now
+> [`ENGINEERING_RATIONALE.md`](ENGINEERING_RATIONALE.md).
+> Keep this file only as migration-era background material.
+
 This document explains every significant technical concept in the Live Meeting Copilot project in clear, plain language. It is intended to help you understand *why* the code is built the way it is, so you can explain it to others without needing to look at the code.
 
 ---

@@ -1,5 +1,8 @@
 # Live Meeting Copilot - Low-Level Design
 
+> Legacy document. Its normative content has been consolidated into [`ARCHITECTURE.md`](ARCHITECTURE.md).
+> Keep this file only as migration-era background material.
+
 ## 1. Scope and goals
 The system captures live speech, produces EN transcript, optionally translates EN->AR, broadcasts updates to the UI, and can invoke optional agent features:
 - conversation coach hints,

@@ -1,5 +1,9 @@
 # Architecture Summary
 
+> Legacy document. The canonical technical reference is now [`ARCHITECTURE.md`](ARCHITECTURE.md).
+> Historical reasoning and tradeoffs now live in [`ENGINEERING_RATIONALE.md`](ENGINEERING_RATIONALE.md).
+> Keep this file only as migration-era background material.
+
 ## Purpose
 Live meeting copilot that:
 - captures speech (single or dual input),

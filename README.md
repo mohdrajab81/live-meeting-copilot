@@ -71,8 +71,10 @@ The application runs entirely on your local machine. No cloud hosting is require
 | [`docs/QUICK_START_GUIDE.md`](docs/QUICK_START_GUIDE.md) | Get to a working session in 10 minutes |
 | [`docs/AZURE_PROVISIONING.md`](docs/AZURE_PROVISIONING.md) | Create Azure resources and credentials (beginner-friendly) |
 | [`docs/DUAL_MODE_SETUP.md`](docs/DUAL_MODE_SETUP.md) | Capture local and remote speakers separately |
+| [`docs/PRODUCT_OVERVIEW.md`](docs/PRODUCT_OVERVIEW.md) | Product-facing overview of the system, features, and constraints |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Canonical technical architecture and runtime contracts |
+| [`docs/ENGINEERING_RATIONALE.md`](docs/ENGINEERING_RATIONALE.md) | Design tradeoffs, history, and why the system is built this way |
 | `docs/BUILD_GUIDE.md` | Build distributable packages — repository only, not included in packages |
-| `docs/SYSTEM_DEFINITION.md` | Architecture and agent model — repository only, not included in packages |
 | [`LICENSE`](LICENSE) | Open-source license terms |
 
 ---
